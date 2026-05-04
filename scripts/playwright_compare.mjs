@@ -587,6 +587,16 @@ function checkExpectations(results, expectations) {
         `${result.name}: non-media diff ${formatPercent(result.nonMedia.diffRatio)} exceeded ${maxNonMediaDiffPercent.toFixed(2)}%`,
       );
     }
+    const maxNonMediaNonTextDiffPercent =
+      expected.maxNonMediaNonTextDiffPercent ?? expectations.maxNonMediaNonTextDiffPercent;
+    if (
+      Number.isFinite(maxNonMediaNonTextDiffPercent) &&
+      result.nonMediaNonText.diffRatio * 100 > maxNonMediaNonTextDiffPercent
+    ) {
+      failures.push(
+        `${result.name}: non-media non-text diff ${formatPercent(result.nonMediaNonText.diffRatio)} exceeded ${maxNonMediaNonTextDiffPercent.toFixed(2)}%`,
+      );
+    }
     const maxWarnings = expected.maxWarnings ?? expectations.maxWarnings;
     if (Number.isFinite(maxWarnings) && result.warningCount > maxWarnings) {
       failures.push(
@@ -605,8 +615,8 @@ function renderMarkdownReport(results, args, expectations) {
     `- Remote image loading in Rust renderer: ${args.allowRemote ? 'enabled' : 'disabled'}`,
     `- Output directory: \`${args.workDir}\``,
     '',
-    '| Template | Browser | Rust | Diff | Media Diff | Text Diff | Non-Media Diff | Non-Media Non-Text Diff | Diff Target | Non-Media Target | Warnings | Files |',
-    '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
+    '| Template | Browser | Rust | Diff | Media Diff | Text Diff | Non-Media Diff | Non-Media Non-Text Diff | Diff Target | Non-Media Target | Non-Media Non-Text Target | Warnings | Files |',
+    '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
   ];
 
   for (const result of results) {
@@ -623,6 +633,12 @@ function renderMarkdownReport(results, args, expectations) {
       expected?.targetNonMediaDiffPercent ?? expectations?.targetNonMediaDiffPercent;
     const nonMediaMax =
       expected?.maxNonMediaDiffPercent ?? expectations?.maxNonMediaDiffPercent;
+    const nonMediaNonTextTarget =
+      expected?.targetNonMediaNonTextDiffPercent ??
+      expectations?.targetNonMediaNonTextDiffPercent;
+    const nonMediaNonTextMax =
+      expected?.maxNonMediaNonTextDiffPercent ??
+      expectations?.maxNonMediaNonTextDiffPercent;
     const targetText = Number.isFinite(target)
       ? `${target.toFixed(2)}%`
       : Number.isFinite(max)
@@ -633,8 +649,13 @@ function renderMarkdownReport(results, args, expectations) {
       : Number.isFinite(nonMediaMax)
         ? `<= ${nonMediaMax.toFixed(2)}%`
         : '';
+    const nonMediaNonTextTargetText = Number.isFinite(nonMediaNonTextTarget)
+      ? `${nonMediaNonTextTarget.toFixed(2)}%`
+      : Number.isFinite(nonMediaNonTextMax)
+        ? `<= ${nonMediaNonTextMax.toFixed(2)}%`
+        : '';
     lines.push(
-      `| ${result.name} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${percent} | ${mediaPercent} | ${textPercent} | ${nonMediaPercent} | ${nonMediaNonTextPercent} | ${targetText} | ${nonMediaTargetText} | ${result.warningCount} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) |`,
+      `| ${result.name} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${percent} | ${mediaPercent} | ${textPercent} | ${nonMediaPercent} | ${nonMediaNonTextPercent} | ${targetText} | ${nonMediaTargetText} | ${nonMediaNonTextTargetText} | ${result.warningCount} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) |`,
     );
   }
   lines.push('');

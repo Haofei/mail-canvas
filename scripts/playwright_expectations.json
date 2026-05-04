@@ -5,55 +5,68 @@
   "templates": {
     "waypoint-saas-app-store-links": {
       "maxDiffPercent": 0.75,
-      "maxNonMediaDiffPercent": 1
+      "maxNonMediaDiffPercent": 1,
+      "maxNonMediaNonTextDiffPercent": 0.15
     },
     "waypoint-marketplace-credit-expiring": {
       "maxDiffPercent": 1,
-      "maxNonMediaDiffPercent": 1.1
+      "maxNonMediaDiffPercent": 1.1,
+      "maxNonMediaNonTextDiffPercent": 0.2
     },
     "waypoint-marketplace-qr": {
       "maxDiffPercent": 1,
-      "maxNonMediaDiffPercent": 1.35
+      "maxNonMediaDiffPercent": 1.35,
+      "maxNonMediaNonTextDiffPercent": 0.35
     },
     "waypoint-social-new-follower": {
       "maxDiffPercent": 1.25,
-      "maxNonMediaDiffPercent": 1.15
+      "maxNonMediaDiffPercent": 1.15,
+      "maxNonMediaNonTextDiffPercent": 0.25
     },
     "waypoint-ecommerce-promo-code": {
       "maxDiffPercent": 1.25,
-      "maxNonMediaDiffPercent": 3.1
+      "maxNonMediaDiffPercent": 3.1,
+      "maxNonMediaNonTextDiffPercent": 0.8
     },
     "mailgun-action": {
       "maxDiffPercent": 4.9,
-      "maxNonMediaDiffPercent": 4.9
+      "maxNonMediaDiffPercent": 4.9,
+      "maxNonMediaNonTextDiffPercent": 0.35
     },
     "leemunroe-inlined": {
       "maxDiffPercent": 7.8,
-      "maxNonMediaDiffPercent": 7.8
+      "maxNonMediaDiffPercent": 7.8,
+      "maxNonMediaNonTextDiffPercent": 0.6
     },
     "waypoint-marketplace-first-listing-notification": {
       "maxDiffPercent": 8.7,
-      "maxNonMediaDiffPercent": 8.8
+      "maxNonMediaDiffPercent": 8.8,
+      "maxNonMediaNonTextDiffPercent": 1.4
     },
     "sendgrid-merriweather-receipt": {
       "maxDiffPercent": 9,
-      "maxNonMediaDiffPercent": 9.1
+      "maxNonMediaDiffPercent": 9.1,
+      "maxNonMediaNonTextDiffPercent": 4.6
     },
     "postmark-example": {
       "maxDiffPercent": 9.8,
-      "maxNonMediaDiffPercent": 9.8
+      "maxNonMediaDiffPercent": 9.8,
+      "maxNonMediaNonTextDiffPercent": 4.6
     },
     "colorlib-template-1": {
       "maxDiffPercent": 19.2,
-      "maxNonMediaDiffPercent": 12.4
+      "maxNonMediaDiffPercent": 12.4,
+      "maxNonMediaNonTextDiffPercent": 7.6
     },
     "colorlib-template-3": {
       "maxDiffPercent": 8.9,
-      "maxNonMediaDiffPercent": 8.1
+      "maxNonMediaDiffPercent": 8.1,
+      "maxNonMediaNonTextDiffPercent": 4.5
     },
     "colorlib-template-4": {
       "maxDiffPercent": 11.3,
-      "maxNonMediaDiffPercent": 9.2
+      "maxNonMediaDiffPercent": 9.2,
+      "maxNonMediaNonTextDiffPercent": 3.6
     }
   }
 }
