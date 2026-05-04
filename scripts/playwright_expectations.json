@@ -31,10 +31,16 @@
       "maxDiffPercent": 9
     },
     "postmark-example": {
-      "maxDiffPercent": 10.4
+      "maxDiffPercent": 9.8
+    },
+    "colorlib-template-1": {
+      "maxDiffPercent": 20.3
+    },
+    "colorlib-template-3": {
+      "maxDiffPercent": 8.9
     },
     "colorlib-template-4": {
-      "maxDiffPercent": 16.6
+      "maxDiffPercent": 11.8
     }
   }
 }

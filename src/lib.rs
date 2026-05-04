@@ -2332,6 +2332,8 @@ struct Style {
     margin: Edges,
     margin_left_auto: bool,
     margin_right_auto: bool,
+    margin_top_em: Option<f32>,
+    margin_bottom_em: Option<f32>,
     padding: Edges,
     background: Option<Rgba>,
     background_image: Option<ImageData>,
@@ -2397,6 +2399,8 @@ impl Style {
             margin: Edges::ZERO,
             margin_left_auto: false,
             margin_right_auto: false,
+            margin_top_em: None,
+            margin_bottom_em: None,
             padding: Edges::ZERO,
             background: None,
             background_image: None,
@@ -2462,6 +2466,8 @@ impl Style {
             margin: Edges::ZERO,
             margin_left_auto: false,
             margin_right_auto: false,
+            margin_top_em: None,
+            margin_bottom_em: None,
             padding: Edges::ZERO,
             background: None,
             background_image: None,
@@ -2524,52 +2530,43 @@ impl Style {
             "h1" => {
                 style.set_font_size(parent.font_size * 2.0);
                 style.font_weight = FontWeight::BOLD;
-                style.margin.top = 0.67 * parent.font_size;
-                style.margin.bottom = 0.67 * parent.font_size;
+                style.set_default_em_margins(0.67, 0.67);
             }
             "h2" => {
                 style.set_font_size(parent.font_size * 1.5);
                 style.font_weight = FontWeight::BOLD;
-                style.margin.top = 0.83 * parent.font_size;
-                style.margin.bottom = 0.83 * parent.font_size;
+                style.set_default_em_margins(0.83, 0.83);
             }
             "h3" => {
                 style.set_font_size(parent.font_size * 1.17);
                 style.font_weight = FontWeight::BOLD;
-                style.margin.top = parent.font_size;
-                style.margin.bottom = parent.font_size;
+                style.set_default_em_margins(1.0, 1.0);
             }
             "h4" => {
                 style.font_weight = FontWeight::BOLD;
-                style.margin.top = 1.33 * parent.font_size;
-                style.margin.bottom = 1.33 * parent.font_size;
+                style.set_default_em_margins(1.33, 1.33);
             }
             "h5" => {
                 style.set_font_size(parent.font_size * 0.83);
                 style.font_weight = FontWeight::BOLD;
-                style.margin.top = 1.67 * parent.font_size;
-                style.margin.bottom = 1.67 * parent.font_size;
+                style.set_default_em_margins(1.67, 1.67);
             }
             "h6" => {
                 style.set_font_size(parent.font_size * 0.67);
                 style.font_weight = FontWeight::BOLD;
-                style.margin.top = 2.33 * parent.font_size;
-                style.margin.bottom = 2.33 * parent.font_size;
+                style.set_default_em_margins(2.33, 2.33);
             }
             "small" => style.set_font_size(parent.font_size * 0.85),
             "p" => {
-                style.margin.top = parent.font_size;
-                style.margin.bottom = parent.font_size;
+                style.set_default_em_margins(1.0, 1.0);
             }
             "ul" => {
-                style.margin.top = 16.0;
-                style.margin.bottom = 16.0;
+                style.set_default_em_margins(1.0, 1.0);
                 style.padding.left = 40.0;
                 style.list_style_type = ListStyleType::Disc;
             }
             "ol" => {
-                style.margin.top = 16.0;
-                style.margin.bottom = 16.0;
+                style.set_default_em_margins(1.0, 1.0);
                 style.padding.left = 40.0;
                 style.list_style_type = ListStyleType::Decimal;
             }
@@ -2596,6 +2593,19 @@ impl Style {
         if let Some(factor) = self.line_height_factor {
             self.line_height = self.font_size * factor;
         }
+        if let Some(factor) = self.margin_top_em {
+            self.margin.top = self.font_size * factor;
+        }
+        if let Some(factor) = self.margin_bottom_em {
+            self.margin.bottom = self.font_size * factor;
+        }
+    }
+
+    fn set_default_em_margins(&mut self, top: f32, bottom: f32) {
+        self.margin_top_em = Some(top);
+        self.margin_bottom_em = Some(bottom);
+        self.margin.top = self.font_size * top;
+        self.margin.bottom = self.font_size * bottom;
     }
 
     fn apply_declaration(&mut self, name: &str, value: &str) {
@@ -2622,12 +2632,15 @@ impl Style {
                 if let Some((edges, left_auto, right_auto)) =
                     parse_margin_edges(value, self.font_size)
                 {
+                    self.margin_top_em = None;
+                    self.margin_bottom_em = None;
                     self.margin = edges;
                     self.margin_left_auto = left_auto;
                     self.margin_right_auto = right_auto;
                 }
             }
             "margin-top" => {
+                self.margin_top_em = None;
                 self.margin.top = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
             }
             "margin-right" => {
@@ -2635,6 +2648,7 @@ impl Style {
                 self.margin.right = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
             }
             "margin-bottom" => {
+                self.margin_bottom_em = None;
                 self.margin.bottom = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
             }
             "margin-left" => {
@@ -3904,11 +3918,25 @@ fn parse_hex_color(hex: &str) -> Option<Rgba> {
             let b = u8::from_str_radix(&hex[2..3].repeat(2), 16).ok()?;
             Some(Rgba::rgb(r, g, b))
         }
+        4 => {
+            let r = u8::from_str_radix(&hex[0..1].repeat(2), 16).ok()?;
+            let g = u8::from_str_radix(&hex[1..2].repeat(2), 16).ok()?;
+            let b = u8::from_str_radix(&hex[2..3].repeat(2), 16).ok()?;
+            let a = u8::from_str_radix(&hex[3..4].repeat(2), 16).ok()?;
+            Some(Rgba::with_alpha(r, g, b, a))
+        }
         6 => {
             let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
             let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
             let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
             Some(Rgba::rgb(r, g, b))
+        }
+        8 => {
+            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+            let a = u8::from_str_radix(&hex[6..8], 16).ok()?;
+            Some(Rgba::with_alpha(r, g, b, a))
         }
         _ => None,
     }
@@ -3917,19 +3945,65 @@ fn parse_hex_color(hex: &str) -> Option<Rgba> {
 fn parse_rgb_function(value: &str) -> Option<Rgba> {
     let start = value.find('(')?;
     let end = value.rfind(')')?;
-    let channels: Vec<&str> = value[start + 1..end].split(',').collect();
-    if channels.len() < 3 {
-        return None;
+    let body = value[start + 1..end].trim();
+    if body.contains(',') {
+        let channels: Vec<&str> = body.split(',').collect();
+        if channels.len() < 3 {
+            return None;
+        }
+        let r = parse_rgb_channel(channels[0])?;
+        let g = parse_rgb_channel(channels[1])?;
+        let b = parse_rgb_channel(channels[2])?;
+        let a = channels
+            .get(3)
+            .and_then(|alpha| parse_alpha_channel(alpha))
+            .unwrap_or(255);
+        return Some(Rgba::with_alpha(r, g, b, a));
     }
-    let r = channels[0].trim().parse().ok()?;
-    let g = channels[1].trim().parse().ok()?;
-    let b = channels[2].trim().parse().ok()?;
-    let a = channels
-        .get(3)
-        .and_then(|alpha| alpha.trim().parse::<f32>().ok())
-        .map(|alpha| (alpha.clamp(0.0, 1.0) * 255.0).round() as u8)
-        .unwrap_or(255);
+
+    let (channels, alpha) = body
+        .split_once('/')
+        .map_or((body, None), |(channels, alpha)| (channels, Some(alpha)));
+    let mut channels = channels.split_whitespace();
+    let r = parse_rgb_channel(channels.next()?)?;
+    let g = parse_rgb_channel(channels.next()?)?;
+    let b = parse_rgb_channel(channels.next()?)?;
+    let a = alpha.and_then(parse_alpha_channel).unwrap_or(255);
     Some(Rgba::with_alpha(r, g, b, a))
+}
+
+fn parse_rgb_channel(value: &str) -> Option<u8> {
+    let value = value.trim();
+    if let Some(percent) = value.strip_suffix('%') {
+        return percent
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .filter(|value| value.is_finite())
+            .map(|value| (value.clamp(0.0, 100.0) * 2.55).round() as u8);
+    }
+    value
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .map(|value| value.round().clamp(0.0, 255.0) as u8)
+}
+
+fn parse_alpha_channel(value: &str) -> Option<u8> {
+    let value = value.trim();
+    if let Some(percent) = value.strip_suffix('%') {
+        return percent
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .filter(|value| value.is_finite())
+            .map(|value| (value.clamp(0.0, 100.0) * 2.55).round() as u8);
+    }
+    value
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .map(|value| (value.clamp(0.0, 1.0) * 255.0).round() as u8)
 }
 
 fn parse_line_height_declaration(value: &str, font_size: f32) -> Option<(f32, Option<f32>)> {
@@ -5644,12 +5718,19 @@ mod tests {
         let h1 = Style::from_parent_for_tag(&parent, "h1");
         assert_eq!(h1.font_weight, FontWeight::BOLD);
         assert!((h1.font_size - 32.0).abs() < 0.1);
-        assert!((h1.margin.bottom - 10.72).abs() < 0.1);
+        assert!((h1.margin.bottom - 21.44).abs() < 0.1);
 
         let h3 = Style::from_parent_for_tag(&parent, "h3");
         assert_eq!(h3.font_weight, FontWeight::BOLD);
         assert!((h3.font_size - 18.72).abs() < 0.1);
-        assert!((h3.margin.top - 16.0).abs() < 0.1);
+        assert!((h3.margin.top - 18.72).abs() < 0.1);
+
+        let mut h2 = Style::from_parent_for_tag(&parent, "h2");
+        h2.apply_declaration("font-size", "28px");
+        assert!((h2.margin.bottom - 23.24).abs() < 0.1);
+        h2.apply_declaration("margin-bottom", "0");
+        h2.apply_declaration("font-size", "32px");
+        assert!((h2.margin.bottom - 0.0).abs() < 0.1);
     }
 
     #[test]
@@ -6015,6 +6096,25 @@ mod tests {
                 y: PositionAxis::End,
             }
         );
+    }
+
+    #[test]
+    fn parses_alpha_color_serializations() {
+        assert_eq!(parse_color("#000c"), Some(Rgba::with_alpha(0, 0, 0, 0xcc)));
+        assert_eq!(
+            parse_color("#11223380"),
+            Some(Rgba::with_alpha(0x11, 0x22, 0x33, 0x80))
+        );
+        assert_eq!(
+            parse_color("rgb(0 0 0 / 80%)"),
+            Some(Rgba::with_alpha(0, 0, 0, 204))
+        );
+
+        let mut style = Style::initial();
+        for (name, value) in css_declarations("background: rgba(0,0,0,.8)") {
+            style.apply_declaration(&name, &value);
+        }
+        assert_eq!(style.background, Some(Rgba::with_alpha(0, 0, 0, 204)));
     }
 
     #[test]
@@ -6491,6 +6591,23 @@ mod tests {
         })
         .expect("inline block");
         assert!((inline_block.rect.x - 40.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn inlined_compound_class_inline_block_keeps_background() {
+        let layout = layout_for_test(
+            r#"<style>
+                .btn { display:inline-block; padding:12px 24px; }
+                .btn.btn-primary { background:#f3a333; color:#fff; }
+            </style><p><a class="btn btn-primary">Read more</a></p>"#,
+            240,
+        );
+        let button = find_layout(&layout, |child| {
+            child.style.background == Some(Rgba::rgb(0xf3, 0xa3, 0x33))
+        })
+        .expect("button");
+        assert!(button.rect.width > 80.0);
+        assert!(button.rect.height > 30.0);
     }
 
     #[test]
