@@ -813,6 +813,9 @@ impl<'a> LayoutEngine<'a> {
             if child_style.display == Display::None {
                 continue;
             }
+            if matches!(child_style.position, Position::Absolute | Position::Fixed) {
+                continue;
+            }
 
             if child_style.display == Display::Inline
                 && tag != "img"
@@ -855,14 +858,22 @@ impl<'a> LayoutEngine<'a> {
                 previous_margin_bottom = None;
             }
             let list_marker = if tag == "li" {
-                match parent_tag.as_deref() {
-                    Some("ol") => {
+                match child_style.list_style_type {
+                    ListStyleType::None => None,
+                    ListStyleType::Decimal => {
                         let marker = format!("{ordered_list_index}.");
                         ordered_list_index += 1;
                         Some(marker)
                     }
-                    Some("ul") => Some("\u{2022}".to_string()),
-                    _ => None,
+                    ListStyleType::Disc => match parent_tag.as_deref() {
+                        Some("ol") => {
+                            let marker = format!("{ordered_list_index}.");
+                            ordered_list_index += 1;
+                            Some(marker)
+                        }
+                        Some("ul") => Some("\u{2022}".to_string()),
+                        _ => None,
+                    },
                 }
             } else {
                 None
@@ -1104,12 +1115,19 @@ impl<'a> LayoutEngine<'a> {
         let inner_y = rect_y + style.border.top + style.padding.top;
         let inner_width = style.inner_width_for_outer(outer_width);
 
-        let (children, content_height) =
+        let (mut children, content_height) =
             self.layout_children(node, &style, inner_x, inner_y, inner_width, depth)?;
         let min_height = style.resolve_height(0.0).unwrap_or(0.0);
         let rect_height = (content_height + style.padding.vertical() + style.border.vertical())
             .max(min_height)
             .max(0.0);
+        self.append_absolute_children(
+            node,
+            &style,
+            Rect::new(rect_x, rect_y, outer_width, rect_height),
+            &mut children,
+            depth,
+        )?;
 
         Ok(Some(FlowBox {
             advance: style.margin.top + rect_height + style.margin.bottom,
@@ -1192,6 +1210,9 @@ impl<'a> LayoutEngine<'a> {
             if child_style.display == Display::None {
                 continue;
             }
+            if matches!(child_style.position, Position::Absolute | Position::Fixed) {
+                continue;
+            }
             let Some(flow) = self.layout_element_with_style(
                 &child,
                 child_style,
@@ -1243,6 +1264,13 @@ impl<'a> LayoutEngine<'a> {
             (root_layout.size.height + style.padding.vertical() + style.border.vertical())
                 .max(min_height)
                 .max(0.0);
+        self.append_absolute_children(
+            node,
+            &style,
+            Rect::new(rect_x, rect_y, outer_width, rect_height),
+            &mut children,
+            depth,
+        )?;
 
         Ok(Some(FlowBox {
             advance: style.margin.top + rect_height + style.margin.bottom,
@@ -1335,19 +1363,22 @@ impl<'a> LayoutEngine<'a> {
                         .max(explicit_height)
                         .max(1.0);
                 row_height = row_height.max(cell_height);
-                cell_boxes.push(LayoutBox {
-                    kind: LayoutKind::Cell,
-                    rect: Rect::new(cell_x, row_y, cell_width, cell_height),
-                    style: cell_style,
-                    children,
-                });
+                cell_boxes.push((
+                    cell.node.clone(),
+                    LayoutBox {
+                        kind: LayoutKind::Cell,
+                        rect: Rect::new(cell_x, row_y, cell_width, cell_height),
+                        style: cell_style,
+                        children,
+                    },
+                ));
             }
 
             if cell_boxes.is_empty() {
                 continue;
             }
 
-            for cell in &mut cell_boxes {
+            for (cell_node, cell) in &mut cell_boxes {
                 let delta = (row_height - cell.rect.height).max(0.0);
                 let offset_y = match cell.style.vertical_align {
                     VerticalAlign::Top => 0.0,
@@ -1358,13 +1389,20 @@ impl<'a> LayoutEngine<'a> {
                     translate_layout_children(cell, 0.0, offset_y);
                 }
                 cell.rect.height = row_height;
+                self.append_absolute_children(
+                    cell_node,
+                    &cell.style,
+                    cell.rect,
+                    &mut cell.children,
+                    depth + 1,
+                )?;
             }
 
             row_boxes.push(LayoutBox {
                 kind: LayoutKind::Row,
                 rect: Rect::new(content_x, row_y, content_width, row_height),
                 style: row_style,
-                children: cell_boxes,
+                children: cell_boxes.into_iter().map(|(_, cell)| cell).collect(),
             });
             row_y += row_height + spacing;
         }
@@ -1384,6 +1422,100 @@ impl<'a> LayoutEngine<'a> {
                 children: row_boxes,
             },
         }))
+    }
+
+    fn append_absolute_children(
+        &mut self,
+        node: &NodeRef,
+        parent_style: &Style,
+        containing_rect: Rect,
+        children: &mut Vec<LayoutBox>,
+        depth: usize,
+    ) -> Result<()> {
+        let mut absolute_children = Vec::new();
+        for child in node.children() {
+            let Some(tag) = element_tag(&child) else {
+                continue;
+            };
+            if is_metadata_tag(&tag) {
+                continue;
+            }
+            let mut child_style = self.style_for_node(&child, parent_style);
+            if child_style.display == Display::None
+                || !matches!(child_style.position, Position::Absolute | Position::Fixed)
+                || !absolute_style_has_own_paint(&child_style)
+            {
+                continue;
+            }
+            let Some(flow) =
+                self.layout_absolute_child(&child, &mut child_style, containing_rect, depth + 1)?
+            else {
+                continue;
+            };
+            absolute_children.push(flow.node);
+        }
+        if !absolute_children.is_empty() {
+            children.splice(0..0, absolute_children);
+        }
+        Ok(())
+    }
+
+    fn layout_absolute_child(
+        &mut self,
+        child: &NodeRef,
+        child_style: &mut Style,
+        containing_rect: Rect,
+        depth: usize,
+    ) -> Result<Option<FlowBox>> {
+        let left = child_style
+            .inset_left
+            .and_then(|length| length.resolve(containing_rect.width));
+        let right = child_style
+            .inset_right
+            .and_then(|length| length.resolve(containing_rect.width));
+        let top = child_style
+            .inset_top
+            .and_then(|length| length.resolve(containing_rect.height));
+        let bottom = child_style
+            .inset_bottom
+            .and_then(|length| length.resolve(containing_rect.height));
+
+        if child_style.width.is_none() {
+            if let (Some(left), Some(right)) = (left, right) {
+                child_style.width =
+                    Some(Length::Px((containing_rect.width - left - right).max(0.0)));
+            }
+        }
+        if child_style.height.is_none() {
+            if let (Some(top), Some(bottom)) = (top, bottom) {
+                child_style.height =
+                    Some(Length::Px((containing_rect.height - top - bottom).max(0.0)));
+            }
+        }
+
+        let resolved_width = child_style
+            .resolve_width(containing_rect.width)
+            .map(|width| child_style.outer_width_for_declared(width))
+            .unwrap_or(containing_rect.width)
+            .max(1.0);
+        let x = if let Some(left) = left {
+            containing_rect.x + left
+        } else if let Some(right) = right {
+            containing_rect.x + containing_rect.width - right - resolved_width
+        } else {
+            containing_rect.x
+        };
+
+        let resolved_height = child_style.resolve_height(containing_rect.height);
+        let y = if let Some(top) = top {
+            containing_rect.y + top
+        } else if let (Some(bottom), Some(height)) = (bottom, resolved_height) {
+            containing_rect.y + containing_rect.height - bottom - height
+        } else {
+            containing_rect.y
+        };
+
+        self.layout_element_with_style(child, child_style.clone(), x, y, resolved_width, depth)
     }
 
     fn preferred_table_outer_width(
@@ -1922,6 +2054,10 @@ fn clear_float_y(floats: &[PlacedFloat], clear: Clear) -> f32 {
         .fold(0.0, f32::max)
 }
 
+fn absolute_style_has_own_paint(style: &Style) -> bool {
+    style.background.is_some() || style.background_image.is_some() || style.border.max_width() > 0.0
+}
+
 fn float_intersects_y(float: &PlacedFloat, y: f32) -> bool {
     y >= float.rect.y && y < float.rect.y + float.rect.height
 }
@@ -2022,7 +2158,7 @@ impl LayoutPainter<'_> {
                 self.pixmap,
                 self.scale,
                 layout.rect,
-                background,
+                with_opacity(background, layout.style.opacity),
                 layout.style.border_radius,
             );
         }
@@ -2203,6 +2339,7 @@ struct Style {
     background_repeat: BackgroundRepeat,
     background_size: BackgroundSize,
     background_position: BackgroundPosition,
+    opacity: f32,
     color: Rgba,
     font_family: Option<String>,
     font_weight: FontWeight,
@@ -2217,7 +2354,13 @@ struct Style {
     text_transform: TextTransform,
     vertical_align: VerticalAlign,
     wrap: TextWrap,
+    list_style_type: ListStyleType,
     box_sizing: BoxSizing,
+    position: Position,
+    inset_top: Option<Length>,
+    inset_right: Option<Length>,
+    inset_bottom: Option<Length>,
+    inset_left: Option<Length>,
     flex_direction: FlexDirection,
     flex_wrap: FlexWrap,
     justify_content: JustifyContent,
@@ -2261,6 +2404,7 @@ impl Style {
             background_repeat: BackgroundRepeat::Repeat,
             background_size: BackgroundSize::Auto,
             background_position: BackgroundPosition::default(),
+            opacity: 1.0,
             color: Rgba::BLACK,
             font_family: None,
             font_weight: FontWeight::NORMAL,
@@ -2275,7 +2419,13 @@ impl Style {
             text_transform: TextTransform::None,
             vertical_align: VerticalAlign::Top,
             wrap: TextWrap::WordOrGlyph,
+            list_style_type: ListStyleType::Disc,
             box_sizing: BoxSizing::ContentBox,
+            position: Position::Static,
+            inset_top: None,
+            inset_right: None,
+            inset_bottom: None,
+            inset_left: None,
             flex_direction: FlexDirection::Row,
             flex_wrap: FlexWrap::NoWrap,
             justify_content: JustifyContent::FlexStart,
@@ -2319,6 +2469,7 @@ impl Style {
             background_repeat: BackgroundRepeat::Repeat,
             background_size: BackgroundSize::Auto,
             background_position: BackgroundPosition::default(),
+            opacity: 1.0,
             color: parent.color,
             font_family: parent.font_family.clone(),
             font_weight: parent.font_weight,
@@ -2341,7 +2492,13 @@ impl Style {
             text_transform: parent.text_transform,
             vertical_align: VerticalAlign::Top,
             wrap: parent.wrap,
+            list_style_type: parent.list_style_type,
             box_sizing: parent.box_sizing,
+            position: Position::Static,
+            inset_top: None,
+            inset_right: None,
+            inset_bottom: None,
+            inset_left: None,
             flex_direction: FlexDirection::Row,
             flex_wrap: FlexWrap::NoWrap,
             justify_content: JustifyContent::FlexStart,
@@ -2404,10 +2561,17 @@ impl Style {
                 style.margin.top = parent.font_size;
                 style.margin.bottom = parent.font_size;
             }
-            "ul" | "ol" => {
+            "ul" => {
                 style.margin.top = 16.0;
                 style.margin.bottom = 16.0;
                 style.padding.left = 40.0;
+                style.list_style_type = ListStyleType::Disc;
+            }
+            "ol" => {
+                style.margin.top = 16.0;
+                style.margin.bottom = 16.0;
+                style.padding.left = 40.0;
+                style.list_style_type = ListStyleType::Decimal;
             }
             "hr" => {
                 style.margin.top = 8.0;
@@ -2533,6 +2697,13 @@ impl Style {
                 self.background_image_src = parse_background_image(value);
                 self.background_image = None;
             }
+            "opacity" => {
+                if let Ok(opacity) = value.trim().parse::<f32>() {
+                    if opacity.is_finite() {
+                        self.opacity = opacity.clamp(0.0, 1.0);
+                    }
+                }
+            }
             "color" => {
                 if let Some(color) = parse_color(value) {
                     self.color = color;
@@ -2595,6 +2766,11 @@ impl Style {
                     self.wrap = TextWrap::None;
                 }
             }
+            "list-style" | "list-style-type" => {
+                if let Some(list_style_type) = parse_list_style_type(value) {
+                    self.list_style_type = list_style_type;
+                }
+            }
             "word-break" => {
                 if value.trim().eq_ignore_ascii_case("break-all") {
                     self.wrap = TextWrap::Glyph;
@@ -2613,6 +2789,15 @@ impl Style {
                     self.box_sizing = box_sizing;
                 }
             }
+            "position" => {
+                if let Some(position) = parse_position(value) {
+                    self.position = position;
+                }
+            }
+            "top" => self.inset_top = parse_length(value),
+            "right" => self.inset_right = parse_length(value),
+            "bottom" => self.inset_bottom = parse_length(value),
+            "left" => self.inset_left = parse_length(value),
             "flex-direction" => {
                 if let Some(direction) = parse_flex_direction(value) {
                     self.flex_direction = direction;
@@ -2866,6 +3051,14 @@ enum AlignItems {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Position {
+    Static,
+    Relative,
+    Absolute,
+    Fixed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FloatSide {
     None,
     Left,
@@ -2878,6 +3071,13 @@ enum Clear {
     Left,
     Right,
     Both,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListStyleType {
+    Disc,
+    Decimal,
+    None,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2962,6 +3162,16 @@ impl Rgba {
 
     const fn with_alpha(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
+    }
+}
+
+fn with_opacity(color: Rgba, opacity: f32) -> Rgba {
+    if opacity >= 1.0 {
+        return color;
+    }
+    Rgba {
+        a: ((f32::from(color.a) * opacity.clamp(0.0, 1.0)).round() as u8),
+        ..color
     }
 }
 
@@ -3331,6 +3541,36 @@ fn parse_flex_factor(value: &str) -> Option<f32> {
         .parse::<f32>()
         .ok()
         .filter(|value| value.is_finite() && *value >= 0.0)
+}
+
+fn parse_position(value: &str) -> Option<Position> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "static" => Some(Position::Static),
+        "relative" => Some(Position::Relative),
+        "absolute" => Some(Position::Absolute),
+        "fixed" => Some(Position::Fixed),
+        _ => None,
+    }
+}
+
+fn parse_list_style_type(value: &str) -> Option<ListStyleType> {
+    let lower = value.trim().to_ascii_lowercase();
+    if lower.split_whitespace().any(|token| token == "none") {
+        return Some(ListStyleType::None);
+    }
+    if lower
+        .split_whitespace()
+        .any(|token| matches!(token, "decimal" | "decimal-leading-zero"))
+    {
+        return Some(ListStyleType::Decimal);
+    }
+    if lower
+        .split_whitespace()
+        .any(|token| matches!(token, "disc" | "circle" | "square"))
+    {
+        return Some(ListStyleType::Disc);
+    }
+    None
 }
 
 fn parse_float_side(value: &str) -> Option<FloatSide> {
@@ -4936,16 +5176,28 @@ fn draw_image_clipped(
         return;
     }
 
+    let source_pixel_width = image.width as f32 / target_width as f32;
+    let source_pixel_height = image.height as f32 / target_height as f32;
+    let downscaling = source_pixel_width > 1.2 || source_pixel_height > 1.2;
+
     for py in start_y..end_y {
         let css_y = (py as f32 + 0.5) / scale;
-        let src_y = ((py - y0) as f32 + 0.5) * image.height as f32 / target_height as f32 - 0.5;
+        let src_y0 = (py - y0) as f32 * image.height as f32 / target_height as f32;
+        let src_y1 = (py - y0 + 1) as f32 * image.height as f32 / target_height as f32;
+        let src_y = (src_y0 + src_y1) / 2.0 - 0.5;
         for px in start_x..end_x {
             let css_x = (px as f32 + 0.5) / scale;
             if !point_in_rounded_rect(css_x, css_y, rect, radius) {
                 continue;
             }
-            let src_x = ((px - x0) as f32 + 0.5) * image.width as f32 / target_width as f32 - 0.5;
-            let [r, g, b, a] = sample_image_bilinear(image, src_x, src_y);
+            let src_x0 = (px - x0) as f32 * image.width as f32 / target_width as f32;
+            let src_x1 = (px - x0 + 1) as f32 * image.width as f32 / target_width as f32;
+            let src_x = (src_x0 + src_x1) / 2.0 - 0.5;
+            let [r, g, b, a] = if downscaling {
+                sample_image_area(image, src_x0, src_y0, src_x1, src_y1)
+            } else {
+                sample_image_bilinear(image, src_x, src_y)
+            };
             let dst_index = ((py as u32 * pixmap_width as u32 + px as u32) * 4) as usize;
             composite_pixel(&mut data[dst_index..dst_index + 4], r, g, b, a);
         }
@@ -5013,6 +5265,58 @@ fn sample_image_bilinear(image: &ImageData, x: f32, y: f32) -> [u8; 4] {
         sampled[channel] = lerp(top, bottom, ty).round().clamp(0.0, 255.0) as u8;
     }
 
+    sampled
+}
+
+fn sample_image_area(image: &ImageData, x0: f32, y0: f32, x1: f32, y1: f32) -> [u8; 4] {
+    let max_x = image.width as f32;
+    let max_y = image.height as f32;
+    let x0 = x0.clamp(0.0, max_x);
+    let y0 = y0.clamp(0.0, max_y);
+    let x1 = x1.clamp(0.0, max_x);
+    let y1 = y1.clamp(0.0, max_y);
+    if x1 <= x0 || y1 <= y0 {
+        return sample_image_bilinear(image, (x0 + x1) / 2.0 - 0.5, (y0 + y1) / 2.0 - 0.5);
+    }
+
+    let sx0 = x0.floor().max(0.0) as u32;
+    let sy0 = y0.floor().max(0.0) as u32;
+    let sx1 = x1.ceil().min(max_x) as u32;
+    let sy1 = y1.ceil().min(max_y) as u32;
+    let mut sums = [0.0_f32; 4];
+    let mut total = 0.0_f32;
+
+    for sy in sy0..sy1 {
+        let py0 = sy as f32;
+        let py1 = py0 + 1.0;
+        let wy = (py1.min(y1) - py0.max(y0)).max(0.0);
+        if wy <= 0.0 {
+            continue;
+        }
+        for sx in sx0..sx1 {
+            let px0 = sx as f32;
+            let px1 = px0 + 1.0;
+            let wx = (px1.min(x1) - px0.max(x0)).max(0.0);
+            let weight = wx * wy;
+            if weight <= 0.0 {
+                continue;
+            }
+            let pixel = image_pixel(image, sx, sy);
+            for channel in 0..4 {
+                sums[channel] += pixel[channel] as f32 * weight;
+            }
+            total += weight;
+        }
+    }
+
+    if total <= 0.0 {
+        return sample_image_bilinear(image, (x0 + x1) / 2.0 - 0.5, (y0 + y1) / 2.0 - 0.5);
+    }
+
+    let mut sampled = [0; 4];
+    for channel in 0..4 {
+        sampled[channel] = (sums[channel] / total).round().clamp(0.0, 255.0) as u8;
+    }
     sampled
 }
 
@@ -5596,11 +5900,39 @@ mod tests {
     #[test]
     fn parses_float_and_clear_style_model() {
         let mut style = Style::initial();
+        style.apply_declaration("position", "absolute");
+        style.apply_declaration("opacity", ".3");
+        style.apply_declaration("top", "10px");
         style.apply_declaration("float", "right");
         style.apply_declaration("clear", "both");
 
+        assert_eq!(style.position, Position::Absolute);
+        assert!((style.opacity - 0.3).abs() < 0.01);
+        assert_eq!(style.inset_top, Some(Length::Px(10.0)));
         assert_eq!(style.float_side, FloatSide::Right);
         assert_eq!(style.clear, Clear::Both);
+    }
+
+    #[test]
+    fn absolute_positioned_children_do_not_advance_block_flow() {
+        let layout = layout_for_test(
+            r#"<div style="width:100px">
+                <div style="position:absolute;width:100px;height:80px;background:#111"></div>
+                <p style="margin:0;height:10px;background:#222"></p>
+            </div>"#,
+            100,
+        );
+        let paragraph = find_layout(&layout, |child| {
+            child.style.background == Some(Rgba::rgb(0x22, 0x22, 0x22))
+        })
+        .expect("paragraph");
+        let absolute = find_layout(&layout, |child| {
+            child.style.background == Some(Rgba::rgb(0x11, 0x11, 0x11))
+        })
+        .expect("absolute");
+        assert!((paragraph.rect.y - 0.0).abs() < 0.1);
+        assert!((absolute.rect.y - 0.0).abs() < 0.1);
+        assert!((absolute.rect.height - 80.0).abs() < 0.1);
     }
 
     #[test]
@@ -5838,6 +6170,19 @@ mod tests {
         );
         assert!(marker.is_some());
         assert!(text.is_some());
+    }
+
+    #[test]
+    fn list_style_none_suppresses_markers() {
+        let layout = layout_for_test(
+            r#"<ul style="list-style:none"><li>First</li><li style="list-style-type:none">Second</li></ul>"#,
+            200,
+        );
+        let marker = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "\u{2022}" || text == "1."),
+        );
+        assert!(marker.is_none());
     }
 
     #[test]
@@ -6116,6 +6461,21 @@ mod tests {
         let sampled = sample_image_bilinear(&image, 0.5, 0.0);
 
         assert_eq!(sampled, [128, 128, 128, 255]);
+    }
+
+    #[test]
+    fn area_image_sampling_averages_downscaled_pixels() {
+        let image = ImageData {
+            width: 2,
+            height: 2,
+            rgba: vec![
+                0, 0, 0, 255, 100, 100, 100, 255, 200, 200, 200, 255, 255, 255, 255, 255,
+            ],
+        };
+
+        let sampled = sample_image_area(&image, 0.0, 0.0, 2.0, 2.0);
+
+        assert_eq!(sampled, [139, 139, 139, 255]);
     }
 
     #[test]

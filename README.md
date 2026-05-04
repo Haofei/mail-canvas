@@ -63,10 +63,21 @@ npx playwright install chromium
 npm run compare:playwright
 ```
 
-The comparison script downloads the same 55-template set, captures Chromium
+The comparison script downloads the shared template set, captures Chromium
 screenshots, renders the templates with the Rust renderer, and writes
 browser/rust/diff/side-by-side PNGs plus `report.md` under
 `/tmp/email-render-playwright-compare`.
+
+For the fixed regression subset, run:
+
+```sh
+npm run test:playwright-regression
+```
+
+That command uses `scripts/playwright_expectations.json` to pin the template
+set, viewport width, warning limits, and current maximum diff thresholds. The
+report still shows a 1% target so thresholds can be tightened as layout fidelity
+improves.
 
 ## Current Limits
 
@@ -77,9 +88,9 @@ browser/rust/diff/side-by-side PNGs plus `report.md` under
   viewport width. Remote stylesheets are disabled.
 - Supported layout is the email subset: block flow, nested tables, cells,
   `rowspan`/`colspan`, `col` widths, padding, margin, simple borders,
-  backgrounds, text, and images.
+  backgrounds, text, images, a flexbox subset, and basic `float`/`clear`.
 - Supported image sources are `data:`, local `file:`, and opt-in remote
   `http(s)` URLs. Failed or blocked images render as placeholders with warnings.
 - CSS support is intentionally narrow and email-oriented. It does not implement
   selectors/layout after CSS inlining beyond the inline declarations the layout
-  engine understands.
+  engine understands. Remote stylesheet links are disabled.

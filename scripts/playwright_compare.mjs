@@ -24,6 +24,7 @@ function parseArgs(argv) {
     only: [],
     allowRemote: true,
     keep: false,
+    expectations: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -58,6 +59,9 @@ function parseArgs(argv) {
       case '--keep':
         args.keep = true;
         break;
+      case '--expectations':
+        args.expectations = path.resolve(next());
+        break;
       default:
         throw new Error(`unknown argument: ${arg}`);
     }
@@ -74,6 +78,10 @@ function parseArgs(argv) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const expectations = args.expectations ? await loadExpectations(args.expectations) : null;
+  if (expectations?.width && args.width === DEFAULT_WIDTH) {
+    args.width = expectations.width;
+  }
   if (!args.keep) {
     await rm(args.workDir, { recursive: true, force: true });
   }
@@ -90,10 +98,7 @@ async function main() {
   await Promise.all(Object.values(dirs).map((dir) => mkdir(dir, { recursive: true })));
 
   const renderer = await ensureRenderer();
-  const templates =
-    args.only.length === 0
-      ? TEMPLATES.slice(0, args.limit)
-      : TEMPLATES.filter(([name]) => args.only.includes(name));
+  const templates = selectTemplates(args, expectations);
   if (templates.length === 0) {
     throw new Error(`no templates matched --only: ${args.only.join(', ')}`);
   }
@@ -121,8 +126,38 @@ async function main() {
     path.join(args.workDir, 'comparison.json'),
     `${JSON.stringify({ generatedAt: new Date().toISOString(), args, results }, null, 2)}\n`,
   );
-  await writeFile(path.join(args.workDir, 'report.md'), renderMarkdownReport(results, args));
+  const failures = expectations ? checkExpectations(results, expectations) : [];
+  await writeFile(path.join(args.workDir, 'report.md'), renderMarkdownReport(results, args, expectations));
   console.log(`outputs: ${args.workDir}`);
+  if (failures.length > 0) {
+    for (const failure of failures) {
+      console.error(failure);
+    }
+    process.exitCode = 1;
+  }
+}
+
+async function loadExpectations(expectationsPath) {
+  const raw = await readFile(expectationsPath, 'utf8');
+  return JSON.parse(raw);
+}
+
+function selectTemplates(args, expectations) {
+  const expectedNames = expectations ? Object.keys(expectations.templates ?? {}) : [];
+  const wanted =
+    args.only.length > 0
+      ? args.only
+      : expectedNames.length > 0
+        ? expectedNames
+        : TEMPLATES.slice(0, args.limit).map(([name]) => name);
+  const wantedSet = new Set(wanted);
+  const templates = TEMPLATES.filter(([name]) => wantedSet.has(name));
+  const found = new Set(templates.map(([name]) => name));
+  const missing = wanted.filter((name) => !found.has(name));
+  if (missing.length > 0) {
+    throw new Error(`unknown template names: ${missing.join(', ')}`);
+  }
+  return templates;
 }
 
 async function ensureRenderer() {
@@ -366,7 +401,30 @@ function printResult(result) {
   );
 }
 
-function renderMarkdownReport(results, args) {
+function checkExpectations(results, expectations) {
+  const failures = [];
+  for (const result of results) {
+    const expected = expectations.templates?.[result.name];
+    if (!expected) {
+      continue;
+    }
+    const maxDiffPercent = expected.maxDiffPercent ?? expectations.maxDiffPercent;
+    if (Number.isFinite(maxDiffPercent) && result.diffRatio * 100 > maxDiffPercent) {
+      failures.push(
+        `${result.name}: diff ${(result.diffRatio * 100).toFixed(2)}% exceeded ${maxDiffPercent.toFixed(2)}%`,
+      );
+    }
+    const maxWarnings = expected.maxWarnings ?? expectations.maxWarnings;
+    if (Number.isFinite(maxWarnings) && result.warningCount > maxWarnings) {
+      failures.push(
+        `${result.name}: warnings ${result.warningCount} exceeded ${maxWarnings}`,
+      );
+    }
+  }
+  return failures;
+}
+
+function renderMarkdownReport(results, args, expectations) {
   const lines = [
     '# Playwright Comparison Report',
     '',
@@ -374,14 +432,22 @@ function renderMarkdownReport(results, args) {
     `- Remote image loading in Rust renderer: ${args.allowRemote ? 'enabled' : 'disabled'}`,
     `- Output directory: \`${args.workDir}\``,
     '',
-    '| Template | Browser | Rust | Diff | Warnings | Files |',
-    '|---|---:|---:|---:|---:|---|',
+    '| Template | Browser | Rust | Diff | Target | Warnings | Files |',
+    '|---|---:|---:|---:|---:|---:|---|',
   ];
 
   for (const result of results) {
     const percent = `${(result.diffRatio * 100).toFixed(2)}%`;
+    const expected = expectations?.templates?.[result.name];
+    const target = expected?.targetDiffPercent ?? expectations?.targetDiffPercent;
+    const max = expected?.maxDiffPercent ?? expectations?.maxDiffPercent;
+    const targetText = Number.isFinite(target)
+      ? `${target.toFixed(2)}%`
+      : Number.isFinite(max)
+        ? `<= ${max.toFixed(2)}%`
+        : '';
     lines.push(
-      `| ${result.name} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${percent} | ${result.warningCount} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) |`,
+      `| ${result.name} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${percent} | ${targetText} | ${result.warningCount} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) |`,
     );
   }
   lines.push('');
