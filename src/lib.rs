@@ -516,7 +516,7 @@ fn css_import_urls(css: &str) -> Vec<String> {
             .map_or(css.len(), |rel| statement_start + rel);
         let statement = &css[statement_start..statement_end];
         if let Some(url) = first_css_url(statement).or_else(|| first_quoted_css_string(statement)) {
-            urls.push(url);
+            urls.push(normalize_resource_url(&url));
         }
         offset = statement_end.saturating_add(1);
     }
@@ -661,6 +661,15 @@ fn document_base_url(document: &NodeRef) -> Option<Url> {
     let base = find_first_tag(document, "base")?;
     let href = attr(&base, "href")?;
     Url::parse(&href).ok()
+}
+
+fn normalize_resource_url(url: &str) -> String {
+    let url = url.trim();
+    if url.starts_with("//") {
+        format!("https:{url}")
+    } else {
+        url.to_string()
+    }
 }
 
 struct LayoutEngine<'a> {
@@ -2419,7 +2428,7 @@ struct Style {
     border_style: BorderLineStyle,
     border_collapse: BorderCollapse,
     table_layout_fixed: bool,
-    cell_padding: f32,
+    cell_padding: Edges,
     cell_spacing: f32,
 }
 
@@ -2488,7 +2497,7 @@ impl Style {
             border_style: BorderLineStyle::Solid,
             border_collapse: BorderCollapse::Separate,
             table_layout_fixed: false,
-            cell_padding: 0.0,
+            cell_padding: Edges::ZERO,
             cell_spacing: 0.0,
         }
     }
@@ -2538,7 +2547,7 @@ impl Style {
                 parent.align_from_attribute
             },
             text_transform: parent.text_transform,
-            vertical_align: VerticalAlign::Top,
+            vertical_align: default_vertical_align(tag, parent.vertical_align),
             wrap: parent.wrap,
             list_style_type: parent.list_style_type,
             box_sizing: parent.box_sizing,
@@ -2565,7 +2574,7 @@ impl Style {
             border_style: BorderLineStyle::Solid,
             border_collapse: BorderCollapse::Separate,
             table_layout_fixed: false,
-            cell_padding: 0.0,
+            cell_padding: Edges::ZERO,
             cell_spacing: 0.0,
         };
 
@@ -3009,21 +3018,18 @@ impl Style {
         (width - self.padding.horizontal() - self.border.horizontal()).max(1.0)
     }
 
-    fn apply_table_cell_padding(&mut self, padding: f32) {
-        if padding <= 0.0 {
-            return;
+    fn apply_table_cell_padding(&mut self, padding: Edges) {
+        if !self.padding_explicit.top && padding.top > 0.0 {
+            self.padding.top = padding.top;
         }
-        if !self.padding_explicit.top {
-            self.padding.top = padding;
+        if !self.padding_explicit.right && padding.right > 0.0 {
+            self.padding.right = padding.right;
         }
-        if !self.padding_explicit.right {
-            self.padding.right = padding;
+        if !self.padding_explicit.bottom && padding.bottom > 0.0 {
+            self.padding.bottom = padding.bottom;
         }
-        if !self.padding_explicit.bottom {
-            self.padding.bottom = padding;
-        }
-        if !self.padding_explicit.left {
-            self.padding.left = padding;
+        if !self.padding_explicit.left && padding.left > 0.0 {
+            self.padding.left = padding.left;
         }
     }
 
@@ -3471,9 +3477,16 @@ fn style_for_node_with_fonts(
         style.vertical_align = vertical_align;
     }
     if tag == "table" {
-        if let Some(cell_padding) = attrs.get("cellpadding").and_then(parse_px) {
-            style.cell_padding = cell_padding;
-        }
+        style.cell_padding = attrs
+            .get("cellpadding")
+            .and_then(parse_px)
+            .map(Edges::all)
+            .unwrap_or(Edges {
+                top: 0.0,
+                right: 1.0,
+                bottom: 0.0,
+                left: 1.0,
+            });
         if let Some(cell_spacing) = attrs.get("cellspacing").and_then(parse_px) {
             style.cell_spacing = cell_spacing;
         }
@@ -3514,10 +3527,19 @@ fn default_display(tag: &str) -> Display {
         | "center" | "blockquote" | "ul" | "ol" | "li" | "h1" | "h2" | "h3" | "h4" | "h5"
         | "h6" | "hr" => Display::Block,
         "table" => Display::Table,
+        "thead" | "tbody" | "tfoot" => Display::Block,
         "tr" => Display::TableRow,
         "td" | "th" => Display::TableCell,
         "script" | "style" | "head" | "meta" | "link" | "title" | "base" => Display::None,
         _ => Display::Inline,
+    }
+}
+
+fn default_vertical_align(tag: &str, parent: VerticalAlign) -> VerticalAlign {
+    match tag {
+        "thead" | "tbody" | "tfoot" | "tr" => VerticalAlign::Middle,
+        "td" | "th" => parent,
+        _ => VerticalAlign::Top,
     }
 }
 
@@ -6429,6 +6451,21 @@ mod tests {
     }
 
     #[test]
+    fn table_cells_use_email_default_horizontal_cellpadding() {
+        let layout = layout_for_test(
+            r#"<table width="100"><tr><td><img width="20" height="10" alt=""></td></tr></table>"#,
+            100,
+        );
+        let cell =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Cell)).expect("cell");
+        let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
+            .expect("image");
+
+        assert!((image.rect.x - (cell.rect.x + 1.0)).abs() < 0.1);
+        assert!((image.rect.y - cell.rect.y).abs() < 0.1);
+    }
+
+    #[test]
     fn table_cell_css_padding_overrides_cellpadding_attribute() {
         let layout = layout_for_test(
             r#"<table width="100" cellpadding="1"><tr><td style="padding:0"><img width="20" height="10" alt=""></td></tr></table>"#,
@@ -6441,6 +6478,20 @@ mod tests {
 
         assert!((image.rect.x - cell.rect.x).abs() < 0.1);
         assert!((image.rect.y - cell.rect.y).abs() < 0.1);
+    }
+
+    #[test]
+    fn table_cells_inherit_browser_middle_valign_from_rows() {
+        let layout = layout_for_test(
+            r#"<table width="100" cellpadding="0"><tr><td height="40"><img width="20" height="10" alt=""></td></tr></table>"#,
+            100,
+        );
+        let cell =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Cell)).expect("cell");
+        let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
+            .expect("image");
+
+        assert!((image.rect.y - (cell.rect.y + 15.0)).abs() < 0.1);
     }
 
     #[test]
@@ -6559,8 +6610,8 @@ mod tests {
             find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
         assert_eq!(table.children.len(), 2);
         assert_eq!(table.children[0].children.len(), 2);
-        assert!((table.children[0].children[0].rect.width - 150.0).abs() < 0.1);
-        assert!((table.children[0].children[1].rect.width - 150.0).abs() < 0.1);
+        assert!((table.children[0].children[0].rect.width - 154.0).abs() < 0.1);
+        assert!((table.children[0].children[1].rect.width - 146.0).abs() < 0.1);
     }
 
     #[test]

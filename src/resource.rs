@@ -109,6 +109,17 @@ fn load_remote_url(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
     }
     reject_private_host(url)?;
 
+    let mut last_error = None;
+    for _ in 0..3 {
+        match load_remote_url_once(url, policy) {
+            Ok(bytes) => return Ok(bytes),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow!("failed to fetch {url}")))
+}
+
+fn load_remote_url_once(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
     let agent = ureq::Agent::config_builder()
         .https_only(policy.https_only)
         .max_redirects(3)
