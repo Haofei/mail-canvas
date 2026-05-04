@@ -4,9 +4,6 @@
     clippy::cast_sign_loss
 )]
 
-use std::fs;
-use std::io::Cursor;
-use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,13 +13,22 @@ use cosmic_text::{
     Align as TextAlignMode, Attrs, Buffer, Color as TextColor, Family as FontFamily, FontSystem,
     Metrics, Shaping, Style as FontStyle, SwashCache, Weight as FontWeight, Wrap,
 };
-use css_inline::CSSInliner;
-use data_url::DataUrl;
-use image::{ImageReader, Limits};
 use kuchiki::{NodeRef, traits::TendrilSink as _};
 use pdf_writer::{Content, Name, Pdf, Rect as PdfRect, Ref};
 use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect as SkiaRect, Transform};
 use url::Url;
+
+mod css;
+mod document;
+mod resource;
+
+use css::{
+    css_format_hint, css_function_value, first_css_url, first_quoted_css_string,
+    font_face_declarations, inline_css, next_css_segment_end, strip_hidden_conditional_comments,
+    style_blocks, unquote_css_value,
+};
+pub use document::{PreparedDocument, build_document, build_document_from_files};
+use resource::{ImageData, ResourcePolicy, load_image, load_resource_bytes};
 
 const MAX_RENDER_PIXELS_PER_AXIS: u32 = 16_384;
 const MAX_CONSOLE_MESSAGES: usize = 50;
@@ -33,12 +39,6 @@ const MAX_WEB_FONTS: usize = 32;
 const DEFAULT_MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 const DEFAULT_MAX_DECODED_PIXELS: u64 = 16_000_000;
 const HARD_BREAK: char = '\u{000B}';
-
-#[derive(Debug, Clone)]
-pub struct PreparedDocument {
-    pub html: String,
-    pub base_url: Option<Url>,
-}
 
 #[derive(Debug, Clone)]
 pub struct RenderRequest {
@@ -366,109 +366,6 @@ impl EmailRenderer for RustEmailRenderer {
     }
 }
 
-pub fn build_document_from_files(
-    html_path: &Path,
-    css_path: Option<&Path>,
-    base_url: Option<&str>,
-    width: u32,
-) -> Result<PreparedDocument> {
-    let html = fs::read_to_string(html_path)
-        .with_context(|| format!("failed to read {}", html_path.display()))?;
-    let css = match css_path {
-        Some(path) => Some(
-            fs::read_to_string(path)
-                .with_context(|| format!("failed to read {}", path.display()))?,
-        ),
-        None => None,
-    };
-
-    let base = match base_url {
-        Some(raw) => Some(Url::parse(raw).with_context(|| format!("invalid --base-url {raw}"))?),
-        None => {
-            let dir = html_path.parent().unwrap_or_else(|| Path::new("."));
-            let dir = dir.canonicalize().with_context(|| {
-                format!("failed to resolve HTML parent directory: {}", dir.display())
-            })?;
-            Some(Url::from_directory_path(&dir).map_err(|()| {
-                anyhow!(
-                    "failed to convert HTML parent directory to base URL: {}",
-                    dir.display()
-                )
-            })?)
-        }
-    };
-
-    Ok(PreparedDocument {
-        html: build_document(&html, css.as_deref(), base.as_ref(), width),
-        base_url: base,
-    })
-}
-
-pub fn build_document(
-    source_html: &str,
-    css: Option<&str>,
-    base_url: Option<&Url>,
-    width: u32,
-) -> String {
-    let head = build_head_markup(css, base_url, width);
-    let lower = source_html.to_ascii_lowercase();
-    let looks_like_document = lower.contains("<!doctype")
-        || lower.contains("<html")
-        || lower.contains("<body")
-        || lower.contains("<head");
-
-    if !looks_like_document {
-        return format!(
-            "<!doctype html><html><head>{head}</head><body><div id=\"email-render-root\">{source_html}</div></body></html>"
-        );
-    }
-
-    inject_head_markup(source_html, &head)
-}
-
-fn inline_css(html: &str, viewport_width: u32) -> Result<String> {
-    let html = strip_hidden_conditional_comments(html);
-    let html = inject_active_media_styles(&html, viewport_width);
-    CSSInliner::options()
-        .load_remote_stylesheets(false)
-        .keep_style_tags(false)
-        .keep_link_tags(false)
-        .apply_width_attributes(true)
-        .apply_height_attributes(true)
-        .build()
-        .inline(&html)
-        .context("failed to inline CSS")
-}
-
-fn strip_hidden_conditional_comments(html: &str) -> String {
-    let lower = html.to_ascii_lowercase();
-    let mut out = String::with_capacity(html.len());
-    let mut offset = 0usize;
-
-    while let Some(start_rel) = lower[offset..].find("<!--[if") {
-        let start = offset + start_rel;
-        out.push_str(&html[offset..start]);
-
-        let Some(end_rel) = lower[start..].find("<![endif]-->") else {
-            out.push_str(&html[start..]);
-            return out;
-        };
-        let end = start + end_rel;
-        let opener = &lower[start..end.min(start + 128)];
-        if opener.contains("><!-->") {
-            let marker_len = "<!--[if".len();
-            out.push_str(&html[start..start + marker_len]);
-            offset = start + marker_len;
-            continue;
-        }
-
-        offset = end + "<![endif]-->".len();
-    }
-
-    out.push_str(&html[offset..]);
-    out
-}
-
 fn push_unique_case_insensitive(values: &mut Vec<String>, value: String) {
     if !values
         .iter()
@@ -476,46 +373,6 @@ fn push_unique_case_insensitive(values: &mut Vec<String>, value: String) {
     {
         values.push(value);
     }
-}
-
-fn inject_active_media_styles(html: &str, viewport_width: u32) -> String {
-    let css = active_media_css(html, viewport_width);
-    if css.trim().is_empty() {
-        return html.to_string();
-    }
-
-    let style = format!("\n<style id=\"email-render-active-media\">\n{css}\n</style>\n");
-    inject_head_markup(html, &style)
-}
-
-fn active_media_css(html: &str, viewport_width: u32) -> String {
-    let mut out = String::new();
-    for style in style_blocks(html) {
-        append_active_media_css(style, viewport_width, &mut out);
-    }
-    out
-}
-
-fn style_blocks(html: &str) -> Vec<&str> {
-    let lower = html.to_ascii_lowercase();
-    let mut blocks = Vec::new();
-    let mut offset = 0;
-
-    while let Some(start_rel) = lower[offset..].find("<style") {
-        let start = offset + start_rel;
-        let Some(open_rel) = lower[start..].find('>') else {
-            break;
-        };
-        let content_start = start + open_rel + 1;
-        let Some(end_rel) = lower[content_start..].find("</style>") else {
-            break;
-        };
-        let content_end = content_start + end_rel;
-        blocks.push(&html[content_start..content_end]);
-        offset = content_end + "</style>".len();
-    }
-
-    blocks
 }
 
 fn load_web_fonts_from_html(
@@ -561,7 +418,7 @@ fn load_web_fonts_from_html(
     let mut loaded_fonts = 0usize;
     let mut web_font_faces = Vec::new();
     for css in css_blocks {
-        for face in font_face_blocks(&css) {
+        for declarations in font_face_declarations(&css) {
             if loaded_fonts >= MAX_WEB_FONTS {
                 push_console_message(
                     warnings,
@@ -571,7 +428,6 @@ fn load_web_fonts_from_html(
                 return web_font_faces;
             }
 
-            let declarations = css_declarations(face);
             if !font_face_covers_basic_latin(&declarations) {
                 continue;
             }
@@ -658,40 +514,6 @@ fn css_import_urls(css: &str) -> Vec<String> {
     }
 
     urls
-}
-
-fn font_face_blocks(css: &str) -> Vec<&str> {
-    let lower = css.to_ascii_lowercase();
-    let mut faces = Vec::new();
-    let mut offset = 0usize;
-
-    while let Some(face_rel) = lower[offset..].find("@font-face") {
-        let face_start = offset + face_rel;
-        let Some(open_rel) = css[face_start..].find('{') else {
-            break;
-        };
-        let open = face_start + open_rel;
-        let Some(close) = find_matching_brace(css, open) else {
-            break;
-        };
-        faces.push(&css[open + 1..close]);
-        offset = close + 1;
-    }
-
-    faces
-}
-
-fn css_declarations(block: &str) -> Vec<(String, String)> {
-    split_css_top_level(block, ';')
-        .into_iter()
-        .filter_map(|declaration| {
-            let (name, value) = declaration.split_once(':')?;
-            Some((
-                name.trim().to_ascii_lowercase(),
-                strip_css_important(value.trim()).trim().to_string(),
-            ))
-        })
-        .collect()
 }
 
 fn declaration_value<'a>(declarations: &'a [(String, String)], name: &str) -> Option<&'a str> {
@@ -827,568 +649,10 @@ fn font_bytes_look_raw(bytes: &[u8]) -> bool {
         || bytes.starts_with(b"true")
 }
 
-fn css_format_hint(segment: &str) -> Option<String> {
-    let lower = segment.to_ascii_lowercase();
-    let format_start = lower.find("format(")?;
-    css_function_value(segment, format_start).map(|(value, _)| unquote_css_value(&value))
-}
-
-fn first_css_url(value: &str) -> Option<String> {
-    let lower = value.to_ascii_lowercase();
-    let url_start = lower.find("url(")?;
-    css_function_value(value, url_start).map(|(url, _)| url)
-}
-
-fn first_quoted_css_string(value: &str) -> Option<String> {
-    let trimmed = value.trim_start();
-    let quote = trimmed.as_bytes().first().copied()?;
-    if quote != b'\'' && quote != b'"' {
-        return None;
-    }
-
-    let mut index = 1usize;
-    let bytes = trimmed.as_bytes();
-    while index < bytes.len() {
-        match bytes[index] {
-            b'\\' => index += 2,
-            byte if byte == quote => return Some(trimmed[1..index].trim().to_string()),
-            _ => index += 1,
-        }
-    }
-    None
-}
-
-fn css_function_value(source: &str, function_start: usize) -> Option<(String, usize)> {
-    let open = source[function_start..].find('(')? + function_start;
-    let bytes = source.as_bytes();
-    let mut index = open + 1;
-    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
-        index += 1;
-    }
-
-    let quote = match bytes.get(index).copied() {
-        Some(b'\'') | Some(b'"') => {
-            let quote = bytes[index];
-            index += 1;
-            Some(quote)
-        }
-        _ => None,
-    };
-    let value_start = index;
-
-    if let Some(quote) = quote {
-        while index < bytes.len() {
-            match bytes[index] {
-                b'\\' => index += 2,
-                byte if byte == quote => {
-                    let value = source[value_start..index].trim().to_string();
-                    index += 1;
-                    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
-                        index += 1;
-                    }
-                    if bytes.get(index) == Some(&b')') {
-                        return Some((value, index + 1));
-                    }
-                    return None;
-                }
-                _ => index += 1,
-            }
-        }
-        return None;
-    }
-
-    while index < bytes.len() && bytes[index] != b')' {
-        index += 1;
-    }
-    if bytes.get(index) == Some(&b')') {
-        return Some((source[value_start..index].trim().to_string(), index + 1));
-    }
-    None
-}
-
-fn split_css_top_level(source: &str, separator: char) -> Vec<&str> {
-    let bytes = source.as_bytes();
-    let separator = separator as u8;
-    let mut parts = Vec::new();
-    let mut start = 0usize;
-    let mut index = 0usize;
-    let mut quote = None;
-    let mut paren_depth = 0usize;
-
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if let Some(current_quote) = quote {
-            if byte == b'\\' {
-                index += 2;
-                continue;
-            }
-            if byte == current_quote {
-                quote = None;
-            }
-            index += 1;
-            continue;
-        }
-
-        match byte {
-            b'\'' | b'"' => quote = Some(byte),
-            b'(' => paren_depth += 1,
-            b')' => paren_depth = paren_depth.saturating_sub(1),
-            byte if byte == separator && paren_depth == 0 => {
-                parts.push(source[start..index].trim());
-                start = index + 1;
-            }
-            _ => {}
-        }
-        index += 1;
-    }
-
-    if start <= source.len() {
-        parts.push(source[start..].trim());
-    }
-    parts
-}
-
-fn next_css_segment_end(source: &str, start: usize) -> usize {
-    let bytes = source.as_bytes();
-    let mut index = start;
-    let mut quote = None;
-    let mut paren_depth = 0usize;
-
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if let Some(current_quote) = quote {
-            if byte == b'\\' {
-                index += 2;
-                continue;
-            }
-            if byte == current_quote {
-                quote = None;
-            }
-            index += 1;
-            continue;
-        }
-        match byte {
-            b'\'' | b'"' => quote = Some(byte),
-            b'(' => paren_depth += 1,
-            b')' => paren_depth = paren_depth.saturating_sub(1),
-            b',' if paren_depth == 0 => return index,
-            _ => {}
-        }
-        index += 1;
-    }
-
-    source.len()
-}
-
-fn strip_css_important(value: &str) -> &str {
-    let trimmed = value.trim_end();
-    let lower = trimmed.to_ascii_lowercase();
-    if lower.ends_with("!important") {
-        trimmed[..trimmed.len() - "!important".len()].trim_end()
-    } else {
-        value
-    }
-}
-
-fn unquote_css_value(value: &str) -> String {
-    value
-        .trim()
-        .trim_matches('"')
-        .trim_matches('\'')
-        .trim()
-        .to_string()
-}
-
-fn append_active_media_css(css: &str, viewport_width: u32, out: &mut String) {
-    let lower = css.to_ascii_lowercase();
-    let mut offset = 0;
-
-    while let Some(media_rel) = lower[offset..].find("@media") {
-        let media_start = offset + media_rel;
-        let condition_start = media_start + "@media".len();
-        let Some(open_rel) = css[condition_start..].find('{') else {
-            break;
-        };
-        let open = condition_start + open_rel;
-        let Some(close) = find_matching_brace(css, open) else {
-            break;
-        };
-
-        if media_condition_matches(&css[condition_start..open], viewport_width) {
-            let body = css[open + 1..close].trim();
-            if !body.is_empty() {
-                out.push_str(body);
-                out.push('\n');
-            }
-        }
-        offset = close + 1;
-    }
-}
-
-fn find_matching_brace(source: &str, open: usize) -> Option<usize> {
-    let bytes = source.as_bytes();
-    if bytes.get(open) != Some(&b'{') {
-        return None;
-    }
-
-    let mut depth = 0usize;
-    let mut index = open;
-    let mut quote = None;
-    let mut in_comment = false;
-
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if in_comment {
-            if byte == b'*' && bytes.get(index + 1) == Some(&b'/') {
-                in_comment = false;
-                index += 2;
-            } else {
-                index += 1;
-            }
-            continue;
-        }
-
-        if let Some(current_quote) = quote {
-            if byte == b'\\' {
-                index += 2;
-                continue;
-            }
-            if byte == current_quote {
-                quote = None;
-            }
-            index += 1;
-            continue;
-        }
-
-        if byte == b'/' && bytes.get(index + 1) == Some(&b'*') {
-            in_comment = true;
-            index += 2;
-            continue;
-        }
-        if byte == b'\'' || byte == b'"' {
-            quote = Some(byte);
-            index += 1;
-            continue;
-        }
-        if byte == b'{' {
-            depth += 1;
-        } else if byte == b'}' {
-            depth = depth.saturating_sub(1);
-            if depth == 0 {
-                return Some(index);
-            }
-        }
-        index += 1;
-    }
-
-    None
-}
-
-fn media_condition_matches(condition: &str, viewport_width: u32) -> bool {
-    condition
-        .split(',')
-        .any(|query| single_media_query_matches(query, viewport_width))
-}
-
-fn single_media_query_matches(query: &str, viewport_width: u32) -> bool {
-    let query = query.to_ascii_lowercase();
-    let query = query.trim();
-    if query.is_empty()
-        || query.contains("not screen")
-        || query.contains("prefers-color-scheme")
-        || (query.contains("print") && !query.contains("screen") && !query.contains("all"))
-    {
-        return false;
-    }
-
-    let width = viewport_width as f32;
-    for max_width in media_width_constraints(query, "max-width") {
-        if width > max_width {
-            return false;
-        }
-    }
-    for min_width in media_width_constraints(query, "min-width") {
-        if width < min_width {
-            return false;
-        }
-    }
-    true
-}
-
-fn media_width_constraints(query: &str, name: &str) -> Vec<f32> {
-    let mut values = Vec::new();
-    let mut offset = 0;
-    while let Some(index_rel) = query[offset..].find(name) {
-        let index = offset + index_rel + name.len();
-        if let Some(colon_rel) = query[index..].find(':') {
-            let value_start = index + colon_rel + 1;
-            if let Some(value) = parse_leading_css_number(&query[value_start..]) {
-                values.push(value);
-            }
-            offset = value_start;
-        } else {
-            break;
-        }
-    }
-    values
-}
-
-fn parse_leading_css_number(value: &str) -> Option<f32> {
-    let value = value.trim_start();
-    let end = value
-        .char_indices()
-        .take_while(|(_, ch)| ch.is_ascii_digit() || matches!(ch, '.' | '+' | '-'))
-        .map(|(index, ch)| index + ch.len_utf8())
-        .last()?;
-    value[..end]
-        .parse::<f32>()
-        .ok()
-        .filter(|value| value.is_finite())
-}
-
-fn build_head_markup(css: Option<&str>, base_url: Option<&Url>, width: u32) -> String {
-    let mut head = String::new();
-    head.push_str("<meta charset=\"utf-8\">\n");
-    if let Some(base) = base_url {
-        head.push_str("<base href=\"");
-        head.push_str(&escape_attr(base.as_str()));
-        head.push_str("\">\n");
-    }
-    head.push_str("<style id=\"email-render-defaults\">\n");
-    head.push_str("html, body { margin: 0; padding: 0; }\n");
-    head.push_str(&format!(
-        "body {{ width: {width}px; min-width: {width}px; overflow: visible; background: #fff; }}\n"
-    ));
-    head.push_str("#email-render-root { width: 100%; }\n");
-    head.push_str("table { border-collapse: separate; border-spacing: 0; }\n");
-    head.push_str("img { display: block; }\n");
-    head.push_str("</style>\n");
-    if let Some(css) = css {
-        head.push_str("<style id=\"email-render-css\">\n");
-        head.push_str(css);
-        head.push_str("\n</style>\n");
-    }
-    head
-}
-
-fn inject_head_markup(source_html: &str, head: &str) -> String {
-    let lower = source_html.to_ascii_lowercase();
-
-    if let Some(index) = lower.find("</head>") {
-        let mut out = String::with_capacity(source_html.len() + head.len());
-        out.push_str(&source_html[..index]);
-        out.push_str(head);
-        out.push_str(&source_html[index..]);
-        return out;
-    }
-
-    if let Some(index) = lower.find("<html") {
-        if let Some(close_offset) = source_html[index..].find('>') {
-            let insert_at = index + close_offset + 1;
-            let mut out = String::with_capacity(source_html.len() + head.len() + 13);
-            out.push_str(&source_html[..insert_at]);
-            out.push_str("<head>");
-            out.push_str(head);
-            out.push_str("</head>");
-            out.push_str(&source_html[insert_at..]);
-            return out;
-        }
-    }
-
-    format!("<!doctype html><html><head>{head}</head>{source_html}</html>")
-}
-
-fn escape_attr(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('"', "&quot;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
-#[derive(Debug, Clone)]
-struct ResourcePolicy {
-    base_url: Option<Url>,
-    allow_remote: bool,
-    https_only: bool,
-    timeout: Duration,
-    max_image_bytes: usize,
-    max_decoded_pixels: u64,
-}
-
-impl ResourcePolicy {
-    fn from_request(request: &RenderRequest, document_base_url: Option<Url>) -> Self {
-        Self {
-            base_url: request.base_url.clone().or(document_base_url),
-            allow_remote: request.allow_remote,
-            https_only: request.https_only,
-            timeout: if request.timeout.is_zero() {
-                Duration::from_secs(8)
-            } else {
-                request.timeout
-            },
-            max_image_bytes: request.max_image_bytes.max(1),
-            max_decoded_pixels: request.max_decoded_pixels.max(1),
-        }
-    }
-}
-
 fn document_base_url(document: &NodeRef) -> Option<Url> {
     let base = find_first_tag(document, "base")?;
     let href = attr(&base, "href")?;
     Url::parse(&href).ok()
-}
-
-fn load_image(src: &str, policy: &ResourcePolicy) -> Result<ImageData> {
-    let bytes = load_resource_bytes(src, policy)?;
-    decode_image_bytes(&bytes, policy)
-}
-
-fn load_resource_bytes(src: &str, policy: &ResourcePolicy) -> Result<Vec<u8>> {
-    if src.trim_start().starts_with("data:") {
-        let data_url =
-            DataUrl::process(src).map_err(|error| anyhow!("invalid data URL: {error}"))?;
-        let (bytes, _) = data_url
-            .decode_to_vec()
-            .map_err(|error| anyhow!("invalid data URL body: {error:?}"))?;
-        ensure_resource_size(bytes.len(), policy.max_image_bytes)?;
-        return Ok(bytes);
-    }
-
-    let url = Url::parse(src)
-        .or_else(|_| {
-            policy
-                .base_url
-                .as_ref()
-                .ok_or(url::ParseError::RelativeUrlWithoutBase)
-                .and_then(|base| base.join(src))
-        })
-        .with_context(|| format!("failed to resolve resource URL {src}"))?;
-
-    match url.scheme() {
-        "file" => load_file_url(&url, policy),
-        "https" | "http" => load_remote_url(&url, policy),
-        scheme => bail!("unsupported resource URL scheme: {scheme}"),
-    }
-}
-
-fn load_file_url(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
-    let path = url
-        .to_file_path()
-        .map_err(|()| anyhow!("invalid file URL: {url}"))?;
-    if let Some(base) = &policy.base_url {
-        if base.scheme() == "file" {
-            if let Ok(root) = base.to_file_path() {
-                let root = root.canonicalize().unwrap_or(root);
-                let target = path.canonicalize().unwrap_or(path.clone());
-                if !target.starts_with(&root) {
-                    bail!(
-                        "file resource is outside the base directory: {}",
-                        target.display()
-                    );
-                }
-            }
-        }
-    }
-    let bytes = fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
-    ensure_resource_size(bytes.len(), policy.max_image_bytes)?;
-    Ok(bytes)
-}
-
-fn load_remote_url(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
-    if !policy.allow_remote {
-        bail!("remote resources are disabled");
-    }
-    if policy.https_only && url.scheme() != "https" {
-        bail!("non-HTTPS remote resource rejected");
-    }
-    reject_private_host(url)?;
-
-    let agent = ureq::Agent::config_builder()
-        .https_only(policy.https_only)
-        .max_redirects(3)
-        .timeout_global(Some(policy.timeout))
-        .build()
-        .new_agent();
-    let mut response = agent
-        .get(url.as_str())
-        .header(
-            "User-Agent",
-            "Mozilla/5.0 AppleWebKit/537.36 Chrome/120 Safari/537.36",
-        )
-        .call()
-        .with_context(|| format!("failed to fetch {url}"))?;
-    let bytes = response
-        .body_mut()
-        .with_config()
-        .limit(policy.max_image_bytes as u64)
-        .read_to_vec()
-        .with_context(|| format!("failed to read response body from {url}"))?;
-    ensure_resource_size(bytes.len(), policy.max_image_bytes)?;
-    Ok(bytes)
-}
-
-fn reject_private_host(url: &Url) -> Result<()> {
-    let Some(host) = url.host_str() else {
-        bail!("remote resource missing host");
-    };
-    if host.eq_ignore_ascii_case("localhost") {
-        bail!("localhost resource rejected");
-    }
-    if let Ok(ip) = host.parse::<IpAddr>() {
-        let rejected = match ip {
-            IpAddr::V4(ip) => {
-                ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified()
-            }
-            IpAddr::V6(ip) => {
-                ip.is_loopback()
-                    || ip.is_unspecified()
-                    || ip.is_unique_local()
-                    || ip.is_unicast_link_local()
-            }
-        };
-        if rejected {
-            bail!("private or local remote resource rejected");
-        }
-    }
-    Ok(())
-}
-
-fn ensure_resource_size(len: usize, max_len: usize) -> Result<()> {
-    if len > max_len {
-        bail!("resource is too large: {len} bytes > {max_len} bytes");
-    }
-    Ok(())
-}
-
-fn decode_image_bytes(bytes: &[u8], policy: &ResourcePolicy) -> Result<ImageData> {
-    ensure_resource_size(bytes.len(), policy.max_image_bytes)?;
-    let max_side = policy.max_decoded_pixels.min(u64::from(u32::MAX)) as u32;
-    let mut reader = ImageReader::new(Cursor::new(bytes));
-    let mut limits = Limits::default();
-    limits.max_image_width = Some(max_side);
-    limits.max_image_height = Some(max_side);
-    limits.max_alloc = Some(policy.max_decoded_pixels.saturating_mul(4));
-    reader.limits(limits);
-    let image = reader
-        .with_guessed_format()
-        .context("failed to guess image format")?
-        .decode()
-        .context("failed to decode image")?;
-    let rgba = image.to_rgba8();
-    let (width, height) = rgba.dimensions();
-    let pixels = u64::from(width).saturating_mul(u64::from(height));
-    if pixels > policy.max_decoded_pixels {
-        bail!(
-            "decoded image is too large: {pixels} pixels > {} pixels",
-            policy.max_decoded_pixels
-        );
-    }
-    Ok(ImageData {
-        width,
-        height,
-        rgba: rgba.into_raw(),
-    })
 }
 
 struct LayoutEngine<'a> {
@@ -3316,13 +2580,6 @@ impl PositionAxis {
             Self::End => 1.0,
         }
     }
-}
-
-#[derive(Debug, Clone)]
-struct ImageData {
-    width: u32,
-    height: u32,
-    rgba: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy)]

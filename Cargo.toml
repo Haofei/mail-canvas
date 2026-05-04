@@ -13,6 +13,7 @@ data-url = "0.3.2"
 fontdb = "0.23.0"
 image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 kuchiki = "0.8.1"
+lightningcss = { version = "1.0.0-alpha.71", default-features = false }
 pdf-writer = "0.14.0"
 tiny-skia = "0.11.4"
 ureq = { version = "3.3.0", default-features = false, features = ["rustls"] }
