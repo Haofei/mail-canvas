@@ -13,6 +13,7 @@ use cosmic_text::{
     Align as TextAlignMode, Attrs, Buffer, Color as TextColor, Family as FontFamily, FontSystem,
     Metrics, Shaping, Style as FontStyle, SwashCache, Weight as FontWeight, Wrap,
 };
+use image::{RgbaImage, imageops::FilterType};
 use kuchiki::{NodeRef, traits::TendrilSink as _};
 use pdf_writer::{Content, Name, Pdf, Rect as PdfRect, Ref};
 use taffy::geometry::{Rect as TaffyRect, Size as TaffySize};
@@ -5127,7 +5128,77 @@ fn blend_text_rect(pixmap: &mut Pixmap, x: i32, y: i32, width: u32, height: u32,
 }
 
 fn draw_image(pixmap: &mut Pixmap, scale: f32, rect: Rect, image: &ImageData, radius: f32) {
+    if radius <= 0.0 && draw_resized_image(pixmap, scale, rect, image, None, FilterType::Triangle) {
+        return;
+    }
     draw_image_clipped(pixmap, scale, rect, image, None, radius);
+}
+
+fn draw_resized_image(
+    pixmap: &mut Pixmap,
+    scale: f32,
+    rect: Rect,
+    image: &ImageData,
+    clip: Option<Rect>,
+    filter: FilterType,
+) -> bool {
+    if rect.width <= 0.0
+        || rect.height <= 0.0
+        || image.width == 0
+        || image.height == 0
+        || image.rgba.is_empty()
+    {
+        return false;
+    }
+    let target_width = (rect.width * scale).round().max(1.0) as u32;
+    let target_height = (rect.height * scale).round().max(1.0) as u32;
+    if target_width == image.width && target_height == image.height {
+        return false;
+    }
+    let Some(source) = RgbaImage::from_raw(image.width, image.height, image.rgba.clone()) else {
+        return false;
+    };
+    let resized = image::imageops::resize(&source, target_width, target_height, filter);
+    let pixmap_width = pixmap.width() as i32;
+    let pixmap_height = pixmap.height() as i32;
+    let data = pixmap.data_mut();
+    let x0 = (rect.x * scale).round() as i32;
+    let y0 = (rect.y * scale).round() as i32;
+    let mut start_x = x0.max(0);
+    let mut start_y = y0.max(0);
+    let mut end_x = x0.saturating_add(target_width as i32).min(pixmap_width);
+    let mut end_y = y0.saturating_add(target_height as i32).min(pixmap_height);
+    if let Some(clip) = clip {
+        let clip_x0 = (clip.x * scale).round() as i32;
+        let clip_y0 = (clip.y * scale).round() as i32;
+        let clip_x1 = ((clip.x + clip.width) * scale).round() as i32;
+        let clip_y1 = ((clip.y + clip.height) * scale).round() as i32;
+        start_x = start_x.max(clip_x0);
+        start_y = start_y.max(clip_y0);
+        end_x = end_x.min(clip_x1);
+        end_y = end_y.min(clip_y1);
+    }
+
+    if start_x >= end_x || start_y >= end_y {
+        return false;
+    }
+
+    for dst_y in start_y..end_y {
+        let py = dst_y - y0;
+        for dst_x in start_x..end_x {
+            let px = dst_x - x0;
+            let pixel = resized.get_pixel(px as u32, py as u32).0;
+            let dst_index = ((dst_y as u32 * pixmap_width as u32 + dst_x as u32) * 4) as usize;
+            composite_pixel(
+                &mut data[dst_index..dst_index + 4],
+                pixel[0],
+                pixel[1],
+                pixel[2],
+                pixel[3],
+            );
+        }
+    }
+    true
 }
 
 fn draw_background_image(
@@ -5147,6 +5218,16 @@ fn draw_background_image(
     let tile_y = positioned_offset(rect.y, rect.height, tile_height, position.y);
 
     if repeat == BackgroundRepeat::NoRepeat || size != BackgroundSize::Auto {
+        if draw_resized_image(
+            pixmap,
+            scale,
+            Rect::new(tile_x, tile_y, tile_width, tile_height),
+            image,
+            Some(rect),
+            FilterType::Triangle,
+        ) {
+            return;
+        }
         draw_image_clipped(
             pixmap,
             scale,
