@@ -8,6 +8,7 @@ use std::fs;
 use std::io::Cursor;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
@@ -269,6 +270,13 @@ fn font_database_families(db: &fontdb::Database) -> Vec<String> {
     families
 }
 
+#[derive(Debug, Clone)]
+struct WebFontFace {
+    css_family: String,
+    actual_family: String,
+    weight: FontWeight,
+}
+
 pub type ServoEmailRenderer = RustEmailRenderer;
 
 impl EmailRenderer for RustEmailRenderer {
@@ -279,7 +287,7 @@ impl EmailRenderer for RustEmailRenderer {
         let source_document = kuchiki::parse_html().one(render_html.clone());
         let resources = ResourcePolicy::from_request(&request, document_base_url(&source_document));
         let mut warnings = Vec::new();
-        load_web_fonts_from_html(
+        let web_font_faces = load_web_fonts_from_html(
             &render_html,
             &resources,
             self.font_system.db_mut(),
@@ -289,8 +297,12 @@ impl EmailRenderer for RustEmailRenderer {
         let available_font_families = font_database_families(self.font_system.db());
         let html = inline_css(&render_html, request.width)?;
         let document = kuchiki::parse_html().one(html);
-        let mut engine =
-            LayoutEngine::new(&mut self.font_system, resources, available_font_families);
+        let mut engine = LayoutEngine::new(
+            &mut self.font_system,
+            resources,
+            available_font_families,
+            web_font_faces,
+        );
         let mut layout = engine.layout_document(&document, request.width)?;
         for message in std::mem::take(&mut engine.warnings) {
             push_console_message(&mut warnings, message.level, &message.message);
@@ -511,7 +523,7 @@ fn load_web_fonts_from_html(
     policy: &ResourcePolicy,
     db: &mut fontdb::Database,
     warnings: &mut Vec<ConsoleMessage>,
-) {
+) -> Vec<WebFontFace> {
     let mut css_blocks: Vec<String> = style_blocks(html)
         .into_iter()
         .map(ToString::to_string)
@@ -547,6 +559,7 @@ fn load_web_fonts_from_html(
 
     let mut loaded_font_urls = Vec::new();
     let mut loaded_fonts = 0usize;
+    let mut web_font_faces = Vec::new();
     for css in css_blocks {
         for face in font_face_blocks(&css) {
             if loaded_fonts >= MAX_WEB_FONTS {
@@ -555,7 +568,7 @@ fn load_web_fonts_from_html(
                     "warn",
                     "maximum web font count reached; skipped remaining @font-face rules",
                 );
-                return;
+                return web_font_faces;
             }
 
             let declarations = css_declarations(face);
@@ -582,9 +595,22 @@ fn load_web_fonts_from_html(
                 .and_then(|bytes| decode_font_resource(&bytes, &candidate))
             {
                 Ok(font_data) => {
-                    let before = db.faces().count();
-                    db.load_font_data(font_data);
-                    if db.faces().count() > before {
+                    let ids = db.load_font_source(fontdb::Source::Binary(Arc::new(font_data)));
+                    if !ids.is_empty() {
+                        for id in ids {
+                            if let Some(face) = db.face(id) {
+                                let actual_family = face
+                                    .families
+                                    .first()
+                                    .map(|(family, _)| family.clone())
+                                    .unwrap_or_else(|| family.clone());
+                                web_font_faces.push(WebFontFace {
+                                    css_family: family.clone(),
+                                    actual_family,
+                                    weight: face.weight,
+                                });
+                            }
+                        }
                         loaded_font_urls.push(candidate.url);
                         loaded_fonts += 1;
                     } else {
@@ -606,6 +632,8 @@ fn load_web_fonts_from_html(
             }
         }
     }
+
+    web_font_faces
 }
 
 fn css_import_urls(css: &str) -> Vec<String> {
@@ -1367,6 +1395,7 @@ struct LayoutEngine<'a> {
     font_system: &'a mut FontSystem,
     resources: ResourcePolicy,
     available_font_families: Vec<String>,
+    web_font_faces: Vec<WebFontFace>,
     warnings: Vec<ConsoleMessage>,
 }
 
@@ -1375,17 +1404,38 @@ impl<'a> LayoutEngine<'a> {
         font_system: &'a mut FontSystem,
         resources: ResourcePolicy,
         available_font_families: Vec<String>,
+        web_font_faces: Vec<WebFontFace>,
     ) -> Self {
         Self {
             font_system,
             resources,
             available_font_families,
+            web_font_faces,
             warnings: Vec::new(),
         }
     }
 
     fn style_for_node(&self, node: &NodeRef, parent: &Style) -> Style {
-        style_for_node_with_fonts(node, parent, &self.available_font_families)
+        let mut style = style_for_node_with_fonts(
+            node,
+            parent,
+            &self.available_font_families,
+            &self.web_font_faces,
+        );
+        self.load_style_background(&mut style);
+        style
+    }
+
+    fn load_style_background(&self, style: &mut Style) {
+        let Some(src) = style.background_image_src.as_deref() else {
+            return;
+        };
+        if src.is_empty() {
+            return;
+        }
+        if let Ok(image) = load_image(src, &self.resources) {
+            style.background_image = Some(image);
+        }
     }
 
     fn layout_document(&mut self, document: &NodeRef, width: u32) -> Result<LayoutBox> {
@@ -1436,10 +1486,28 @@ impl<'a> LayoutEngine<'a> {
         let parent_tag = element_tag(node);
         let mut ordered_list_index = 1usize;
         let mut previous_margin_bottom = None;
+        let mut inline_row = Vec::new();
+        let mut inline_row_width = 0.0;
+        let mut inline_row_height = 0.0;
 
         for child in node.children() {
             if let Some(text_node) = child.as_text() {
-                append_text_span(&mut text, &text_node.borrow(), style.color);
+                let text_value = text_node.borrow();
+                if !inline_row.is_empty() && text_value.chars().all(is_collapsible_whitespace) {
+                    continue;
+                }
+                if flush_inline_row(
+                    &mut inline_row,
+                    &mut inline_row_width,
+                    &mut inline_row_height,
+                    style,
+                    width,
+                    &mut cursor_y,
+                    &mut children,
+                ) {
+                    previous_margin_bottom = None;
+                }
+                append_text_span(&mut text, &text_value, style.color);
                 continue;
             }
 
@@ -1451,6 +1519,17 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
             if tag == "br" {
+                if flush_inline_row(
+                    &mut inline_row,
+                    &mut inline_row_width,
+                    &mut inline_row_height,
+                    style,
+                    width,
+                    &mut cursor_y,
+                    &mut children,
+                ) {
+                    previous_margin_bottom = None;
+                }
                 append_text_span(&mut text, &HARD_BREAK.to_string(), style.color);
                 continue;
             }
@@ -1472,6 +1551,20 @@ impl<'a> LayoutEngine<'a> {
                 previous_margin_bottom = None;
             }
             let child_display = child_style.display;
+            let child_is_inline_flow = is_inline_flow(&tag, child_display);
+            if !child_is_inline_flow
+                && flush_inline_row(
+                    &mut inline_row,
+                    &mut inline_row_width,
+                    &mut inline_row_height,
+                    style,
+                    width,
+                    &mut cursor_y,
+                    &mut children,
+                )
+            {
+                previous_margin_bottom = None;
+            }
             let list_marker = if tag == "li" {
                 match parent_tag.as_deref() {
                     Some("ol") => {
@@ -1498,9 +1591,17 @@ impl<'a> LayoutEngine<'a> {
             };
             if let Some(flow) = flow {
                 let mut flow = flow;
-                if is_inline_flow(child_display) {
-                    align_inline_flow(&mut flow.node, style.text_align, width);
+                if child_is_inline_flow {
+                    if inline_row_width > 0.0 {
+                        translate_layout(&mut flow.node, inline_row_width, 0.0);
+                    }
+                    inline_row_width += flow.node.rect.width;
+                    inline_row_height = inline_row_height.max(flow.advance);
+                    inline_row.push(flow.node);
+                    previous_margin_bottom = None;
+                    continue;
                 }
+                align_table_child_to_parent_text(&mut flow.node, style, x, width);
                 let margin_overlap = if can_collapse_sibling_margin(child_display) {
                     previous_margin_bottom
                         .map(|previous: f32| previous.min(flow.node.style.margin.top))
@@ -1519,6 +1620,15 @@ impl<'a> LayoutEngine<'a> {
         }
 
         self.flush_text(&mut text, style, x, &mut cursor_y, width, &mut children)?;
+        flush_inline_row(
+            &mut inline_row,
+            &mut inline_row_width,
+            &mut inline_row_height,
+            style,
+            width,
+            &mut cursor_y,
+            &mut children,
+        );
         Ok((children, cursor_y - y))
     }
 
@@ -1578,6 +1688,13 @@ impl<'a> LayoutEngine<'a> {
         match style.display {
             Display::None => Ok(None),
             Display::Table => self.layout_table(node, style, x, y, containing_width, depth),
+            Display::Inline => {
+                let mut inline_style = style;
+                inline_style.width = None;
+                inline_style.min_width = None;
+                inline_style.max_width = None;
+                self.layout_block(node, inline_style, x, y, containing_width, depth)
+            }
             Display::InlineBlock => {
                 self.layout_inline_block(node, style, x, y, containing_width, depth)
             }
@@ -1686,29 +1803,32 @@ impl<'a> LayoutEngine<'a> {
         containing_width: f32,
         depth: usize,
     ) -> Result<Option<FlowBox>> {
-        let table_width = style
-            .resolve_width(containing_width)
-            .map(|width| style.outer_width_for_declared(width))
-            .unwrap_or(containing_width - style.margin.horizontal())
-            .max(1.0);
+        let grid = build_table_grid(node);
+        if grid.rows.is_empty() {
+            return self.layout_block(node, style, x, y, containing_width, depth);
+        }
+
+        let max_table_width = (containing_width - style.margin.horizontal()).max(1.0);
+        let spacing = if style.border_collapse == BorderCollapse::Collapse {
+            0.0
+        } else {
+            style.cell_spacing.max(0.0)
+        };
+        let table_width = if let Some(width) = style.resolve_width(containing_width) {
+            style.outer_width_for_declared(width)
+        } else {
+            self.preferred_table_outer_width(&grid, &style, max_table_width, spacing)?
+                .min(max_table_width)
+        }
+        .max(1.0);
         let rect_x = x + style.horizontal_offset(containing_width, table_width);
         let rect_y = y + style.margin.top;
         let content_x = rect_x + style.border.left + style.padding.left;
         let content_y = rect_y + style.border.top + style.padding.top;
         let content_width = style.inner_width_for_outer(table_width);
 
-        let grid = build_table_grid(node);
-        if grid.rows.is_empty() {
-            return self.layout_block(node, style, x, y, containing_width, depth);
-        }
-
         let mut row_boxes = Vec::new();
         let mut row_y = content_y;
-        let spacing = if style.border_collapse == BorderCollapse::Collapse {
-            0.0
-        } else {
-            style.cell_spacing.max(0.0)
-        };
         let column_widths =
             self.resolve_table_column_widths(&grid, &style, content_width, spacing)?;
 
@@ -1793,6 +1913,61 @@ impl<'a> LayoutEngine<'a> {
                 children: row_boxes,
             },
         }))
+    }
+
+    fn preferred_table_outer_width(
+        &mut self,
+        grid: &TableGrid,
+        table_style: &Style,
+        max_outer_width: f32,
+        spacing: f32,
+    ) -> Result<f32> {
+        let count = grid.column_count.max(1);
+        let max_content_width = table_style.inner_width_for_outer(max_outer_width);
+        let available =
+            (max_content_width - spacing * count.saturating_sub(1) as f32).max(count as f32);
+        let mut widths = vec![0.0_f32; count];
+
+        for (col, width) in grid.col_widths.iter().enumerate().take(count) {
+            if let Some(width) = width.and_then(|width| width.resolve(available)) {
+                widths[col] = widths[col].max(width.max(1.0));
+            }
+        }
+
+        for row in &grid.rows {
+            let row_style = self.style_for_node(&row.node, table_style);
+            for cell in &row.cells {
+                let mut cell_style = self.style_for_node(&cell.node, &row_style);
+                if cell_style.padding.is_zero() && table_style.cell_padding > 0.0 {
+                    cell_style.padding = Edges::all(table_style.cell_padding);
+                }
+
+                let preferred = if let Some(width) =
+                    cell_style.width.and_then(|width| width.resolve(available))
+                {
+                    cell_style.outer_width_for_declared(width)
+                } else {
+                    self.preferred_content_width(&cell.node, &cell_style, available)?
+                        + cell_style.padding.horizontal()
+                        + cell_style.border.horizontal()
+                }
+                .max(0.0);
+                let per_col = ((preferred - spacing * cell.colspan.saturating_sub(1) as f32)
+                    / cell.colspan as f32)
+                    .max(0.0);
+                for col in cell.col..cell.col + cell.colspan {
+                    if col < widths.len() {
+                        widths[col] = widths[col].max(per_col);
+                    }
+                }
+            }
+        }
+
+        let content_width = widths.iter().sum::<f32>() + spacing * count.saturating_sub(1) as f32;
+        Ok(
+            (content_width + table_style.padding.horizontal() + table_style.border.horizontal())
+                .max(1.0),
+        )
     }
 
     fn resolve_table_column_widths(
@@ -2121,7 +2296,12 @@ impl<'a> LayoutEngine<'a> {
             } else {
                 child_style
                     .resolve_width(containing_width)
-                    .unwrap_or(containing_width)
+                    .map(|width| child_style.outer_width_for_declared(width))
+                    .unwrap_or(
+                        self.preferred_content_width(&child, &child_style, containing_width)?
+                            + child_style.padding.horizontal()
+                            + child_style.border.horizontal(),
+                    )
             };
             max_width = max_width.max(child_width);
         }
@@ -2175,6 +2355,9 @@ impl LayoutPainter<'_> {
                 layout.style.border_radius,
             );
         }
+        if let Some(background_image) = &layout.style.background_image {
+            self.paint_background_image(layout.rect, background_image);
+        }
         if layout.style.border.max_width() > 0.0 {
             stroke_style_border(
                 self.pixmap,
@@ -2182,6 +2365,7 @@ impl LayoutPainter<'_> {
                 layout.rect,
                 layout.style.border,
                 layout.style.border_color,
+                layout.style.border_style,
                 layout.style.border_radius,
             );
         }
@@ -2276,6 +2460,10 @@ impl LayoutPainter<'_> {
     fn paint_image(&mut self, rect: Rect, image: &ImageData) {
         draw_image(self.pixmap, self.scale, rect, image);
     }
+
+    fn paint_background_image(&mut self, rect: Rect, image: &ImageData) {
+        draw_background_image(self.pixmap, self.scale, rect, image);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -2329,9 +2517,12 @@ struct Style {
     margin_right_auto: bool,
     padding: Edges,
     background: Option<Rgba>,
+    background_image: Option<ImageData>,
+    background_image_src: Option<String>,
     color: Rgba,
     font_family: Option<String>,
     font_weight: FontWeight,
+    font_face_weight: Option<FontWeight>,
     font_style: FontStyle,
     font_size: f32,
     line_height: f32,
@@ -2345,6 +2536,7 @@ struct Style {
     border: Edges,
     border_radius: f32,
     border_color: Rgba,
+    border_style: BorderLineStyle,
     border_collapse: BorderCollapse,
     cell_padding: f32,
     cell_spacing: f32,
@@ -2365,9 +2557,12 @@ impl Style {
             margin_right_auto: false,
             padding: Edges::ZERO,
             background: None,
+            background_image: None,
+            background_image_src: None,
             color: Rgba::BLACK,
             font_family: None,
             font_weight: FontWeight::NORMAL,
+            font_face_weight: None,
             font_style: FontStyle::Normal,
             font_size: 16.0,
             line_height: 22.4,
@@ -2381,6 +2576,7 @@ impl Style {
             border: Edges::ZERO,
             border_radius: 0.0,
             border_color: Rgba::BLACK,
+            border_style: BorderLineStyle::Solid,
             border_collapse: BorderCollapse::Separate,
             cell_padding: 0.0,
             cell_spacing: 0.0,
@@ -2401,9 +2597,12 @@ impl Style {
             margin_right_auto: false,
             padding: Edges::ZERO,
             background: None,
+            background_image: None,
+            background_image_src: None,
             color: parent.color,
             font_family: parent.font_family.clone(),
             font_weight: parent.font_weight,
+            font_face_weight: parent.font_face_weight,
             font_style: parent.font_style,
             font_size: parent.font_size,
             line_height: parent.line_height,
@@ -2421,6 +2620,7 @@ impl Style {
             border: Edges::ZERO,
             border_radius: 0.0,
             border_color: parent.border_color,
+            border_style: BorderLineStyle::Solid,
             border_collapse: BorderCollapse::Separate,
             cell_padding: 0.0,
             cell_spacing: 0.0,
@@ -2548,10 +2748,23 @@ impl Style {
             "padding-left" => {
                 self.padding.left = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
             }
-            "background" | "background-color" => {
+            "background" => {
                 if let Some(color) = parse_color(value) {
                     self.background = Some(color);
                 }
+                if let Some(src) = parse_background_image(value) {
+                    self.background_image_src = Some(src);
+                    self.background_image = None;
+                }
+            }
+            "background-color" => {
+                if let Some(color) = parse_color(value) {
+                    self.background = Some(color);
+                }
+            }
+            "background-image" => {
+                self.background_image_src = parse_background_image(value);
+                self.background_image = None;
             }
             "color" => {
                 if let Some(color) = parse_color(value) {
@@ -2566,6 +2779,7 @@ impl Style {
             "font-family" => {
                 if let Some(font_family) = parse_font_family(value) {
                     self.font_family = Some(font_family);
+                    self.font_face_weight = None;
                 }
             }
             "font-weight" => {
@@ -2633,6 +2847,11 @@ impl Style {
             }
             "border" => apply_border(self, value),
             "border-radius" => self.border_radius = parse_radius(value).unwrap_or(0.0).max(0.0),
+            "border-style" => {
+                if parse_border_line_style(value) == Some(BorderLineStyle::Dashed) {
+                    self.border_style = BorderLineStyle::Dashed;
+                }
+            }
             "border-width" => {
                 self.border = parse_edges(value).unwrap_or(Edges::ZERO);
             }
@@ -2651,6 +2870,14 @@ impl Style {
             "border-color" => {
                 if let Some(color) = parse_color(value) {
                     self.border_color = color;
+                }
+            }
+            "border-top-style"
+            | "border-right-style"
+            | "border-bottom-style"
+            | "border-left-style" => {
+                if parse_border_line_style(value) == Some(BorderLineStyle::Dashed) {
+                    self.border_style = BorderLineStyle::Dashed;
                 }
             }
             "border-top" => apply_border_side(self, BorderSide::Top, value),
@@ -2742,7 +2969,7 @@ impl Style {
         };
         let attrs = Attrs::new()
             .family(family)
-            .weight(self.font_weight)
+            .weight(self.font_face_weight.unwrap_or(self.font_weight))
             .style(self.font_style);
         if self.letter_spacing == 0.0 {
             attrs
@@ -2914,6 +3141,12 @@ enum BorderCollapse {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BorderLineStyle {
+    Solid,
+    Dashed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BoxSizing {
     BorderBox,
     ContentBox,
@@ -2946,13 +3179,14 @@ impl Rect {
 }
 
 fn style_for_node(node: &NodeRef, parent: &Style) -> Style {
-    style_for_node_with_fonts(node, parent, &[])
+    style_for_node_with_fonts(node, parent, &[], &[])
 }
 
 fn style_for_node_with_fonts(
     node: &NodeRef,
     parent: &Style,
     available_font_families: &[String],
+    web_font_faces: &[WebFontFace],
 ) -> Style {
     let Some(element) = node.as_element() else {
         return parent.clone();
@@ -2969,6 +3203,10 @@ fn style_for_node_with_fonts(
     }
     if let Some(background) = attrs.get("bgcolor").and_then(parse_color) {
         style.background = Some(background);
+    }
+    if let Some(background_image) = attrs.get("background") {
+        style.background_image_src = Some(background_image.trim().to_string());
+        style.background_image = None;
     }
     if let Some(raw_align) = attrs.get("align") {
         if tag == "table" {
@@ -3017,10 +3255,13 @@ fn style_for_node_with_fonts(
                 if *is_important == important {
                     match name.as_str() {
                         "font-family" => {
-                            if let Some(font_family) =
-                                parse_font_family_with_available(value, available_font_families)
-                            {
-                                style.font_family = Some(font_family);
+                            if let Some(selection) = parse_font_family_selection(
+                                value,
+                                available_font_families,
+                                web_font_faces,
+                            ) {
+                                style.font_family = Some(selection.family);
+                                style.font_face_weight = selection.forced_weight;
                             }
                         }
                         "font-weight" if is_inherit_keyword(value) => {
@@ -3216,6 +3457,14 @@ fn parse_color(value: &str) -> Option<Rgba> {
     parse_color_token(&value)
 }
 
+fn parse_background_image(value: &str) -> Option<String> {
+    let value = strip_important(value).trim();
+    if value.eq_ignore_ascii_case("none") {
+        return None;
+    }
+    first_css_url(value).map(|url| unquote_css_value(&url))
+}
+
 fn parse_color_token(value: &str) -> Option<Rgba> {
     let token = value.trim_matches(',');
     if let Some(hex) = token.strip_prefix('#') {
@@ -3336,34 +3585,91 @@ fn parse_font_family_with_available(
     value: &str,
     available_font_families: &[String],
 ) -> Option<String> {
+    parse_font_family_selection(value, available_font_families, &[])
+        .map(|selection| selection.family)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FontFamilySelection {
+    family: String,
+    forced_weight: Option<FontWeight>,
+}
+
+fn parse_font_family_selection(
+    value: &str,
+    available_font_families: &[String],
+    web_font_faces: &[WebFontFace],
+) -> Option<FontFamilySelection> {
     let candidates = parse_font_family_candidates(value);
 
     if let Some(first) = candidates.first() {
         if let Some(generic) = generic_font_family(first) {
-            return Some(generic.to_string());
+            return Some(FontFamilySelection {
+                family: generic.to_string(),
+                forced_weight: None,
+            });
         }
     }
 
     for family in &candidates {
+        if let Some(selection) = web_font_selection_for_family(family, web_font_faces) {
+            return Some(selection);
+        }
         if available_font_families
             .iter()
             .any(|available| available.eq_ignore_ascii_case(family))
         {
-            return Some(family.clone());
+            return Some(FontFamilySelection {
+                family: family.clone(),
+                forced_weight: None,
+            });
         }
     }
 
     for family in &candidates {
         if is_safe_system_font(family) {
-            return Some(family.clone());
+            return Some(FontFamilySelection {
+                family: family.clone(),
+                forced_weight: None,
+            });
         }
     }
     for family in &candidates {
         if let Some(generic) = generic_font_family(family) {
-            return Some(generic.to_string());
+            return Some(FontFamilySelection {
+                family: generic.to_string(),
+                forced_weight: None,
+            });
         }
     }
-    candidates.into_iter().next()
+    candidates
+        .into_iter()
+        .next()
+        .map(|family| FontFamilySelection {
+            family,
+            forced_weight: None,
+        })
+}
+
+fn web_font_selection_for_family(
+    family: &str,
+    web_font_faces: &[WebFontFace],
+) -> Option<FontFamilySelection> {
+    let mut matched = web_font_faces
+        .iter()
+        .filter(|face| face.css_family.eq_ignore_ascii_case(family));
+    let first = matched.next()?;
+    let mut weights = vec![first.weight];
+    for face in matched {
+        if !weights.iter().any(|weight| weight.0 == face.weight.0) {
+            weights.push(face.weight);
+        }
+    }
+
+    Some(FontFamilySelection {
+        family: first.actual_family.clone(),
+        forced_weight: (weights.len() == 1).then_some(weights[0]),
+    })
 }
 
 fn parse_font_family_candidates(value: &str) -> Vec<String> {
@@ -3441,6 +3747,9 @@ fn apply_border(style: &mut Style, value: &str) {
         style.border = Edges::ZERO;
         return;
     }
+    if parse_border_line_style(value) == Some(BorderLineStyle::Dashed) {
+        style.border_style = BorderLineStyle::Dashed;
+    }
 
     let mut saw_width = false;
     for token in value.split_whitespace() {
@@ -3471,6 +3780,9 @@ fn apply_border_side(style: &mut Style, side: BorderSide, value: &str) {
         set_border_side(&mut style.border, side, 0.0);
         return;
     }
+    if parse_border_line_style(value) == Some(BorderLineStyle::Dashed) {
+        style.border_style = BorderLineStyle::Dashed;
+    }
 
     let mut saw_width = false;
     for token in value.split_whitespace() {
@@ -3486,6 +3798,17 @@ fn apply_border_side(style: &mut Style, side: BorderSide, value: &str) {
     if !saw_width && !value.trim().is_empty() {
         set_border_side(&mut style.border, side, 1.0);
     }
+}
+
+fn parse_border_line_style(value: &str) -> Option<BorderLineStyle> {
+    for token in value.split_whitespace() {
+        match token.to_ascii_lowercase().as_str() {
+            "dashed" | "dotted" => return Some(BorderLineStyle::Dashed),
+            "solid" => return Some(BorderLineStyle::Solid),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn set_border_side(border: &mut Edges, side: BorderSide, width: f32) {
@@ -3670,24 +3993,68 @@ fn translate_layout(layout: &mut LayoutBox, dx: f32, dy: f32) {
     }
 }
 
-fn is_inline_flow(display: Display) -> bool {
-    matches!(display, Display::Inline | Display::InlineBlock)
+fn is_inline_flow(tag: &str, display: Display) -> bool {
+    matches!(display, Display::InlineBlock) || (display == Display::Inline && tag == "img")
 }
 
-fn can_collapse_sibling_margin(display: Display) -> bool {
-    matches!(display, Display::Block | Display::Table)
-}
+fn flush_inline_row(
+    row: &mut Vec<LayoutBox>,
+    row_width: &mut f32,
+    row_height: &mut f32,
+    style: &Style,
+    containing_width: f32,
+    cursor_y: &mut f32,
+    children: &mut Vec<LayoutBox>,
+) -> bool {
+    if row.is_empty() {
+        return false;
+    }
 
-fn align_inline_flow(layout: &mut LayoutBox, align: TextAlign, containing_width: f32) {
-    let free = (containing_width - layout.rect.width).max(0.0);
-    let dx = match align {
+    let free = (containing_width - *row_width).max(0.0);
+    let dx = match style.text_align {
         TextAlign::Left => 0.0,
         TextAlign::Center => free / 2.0,
         TextAlign::Right => free,
     };
-    if dx > 0.0 {
-        translate_layout(layout, dx, 0.0);
+    for mut child in row.drain(..) {
+        if dx > 0.0 {
+            translate_layout(&mut child, dx, 0.0);
+        }
+        children.push(child);
     }
+    *cursor_y += *row_height;
+    *row_width = 0.0;
+    *row_height = 0.0;
+    true
+}
+
+fn align_table_child_to_parent_text(
+    child: &mut LayoutBox,
+    parent_style: &Style,
+    container_x: f32,
+    container_width: f32,
+) {
+    if !matches!(child.kind, LayoutKind::Table)
+        || child.style.margin_left_auto
+        || child.style.margin_right_auto
+    {
+        return;
+    }
+
+    let free = (container_width - child.rect.width).max(0.0);
+    let target_x = match parent_style.text_align {
+        TextAlign::Center => container_x + free / 2.0,
+        TextAlign::Right => container_x + free,
+        TextAlign::Left => return,
+    };
+    let dx = target_x - child.rect.x;
+    if dx.abs() > f32::EPSILON {
+        translate_layout(child, dx, 0.0);
+    }
+}
+
+fn can_collapse_sibling_margin(display: Display) -> bool {
+    matches!(display, Display::Block | Display::Table)
 }
 
 fn attr(node: &NodeRef, name: &str) -> Option<String> {
@@ -4053,8 +4420,14 @@ fn stroke_style_border(
     rect: Rect,
     border: Edges,
     color: Rgba,
+    style: BorderLineStyle,
     _radius: f32,
 ) {
+    if style == BorderLineStyle::Dashed {
+        stroke_dashed_border(pixmap, scale, rect, border, color);
+        return;
+    }
+
     if border.top == border.right
         && border.top == border.bottom
         && border.top == border.left
@@ -4105,6 +4478,77 @@ fn stroke_style_border(
             ),
             color,
         );
+    }
+}
+
+fn stroke_dashed_border(pixmap: &mut Pixmap, scale: f32, rect: Rect, border: Edges, color: Rgba) {
+    if border.top > 0.0 {
+        fill_dashed_line(
+            pixmap,
+            scale,
+            Rect::new(rect.x, rect.y, rect.width, border.top),
+            color,
+            true,
+        );
+    }
+    if border.bottom > 0.0 {
+        fill_dashed_line(
+            pixmap,
+            scale,
+            Rect::new(
+                rect.x,
+                rect.y + rect.height - border.bottom,
+                rect.width,
+                border.bottom,
+            ),
+            color,
+            true,
+        );
+    }
+    if border.left > 0.0 {
+        fill_dashed_line(
+            pixmap,
+            scale,
+            Rect::new(rect.x, rect.y, border.left, rect.height),
+            color,
+            false,
+        );
+    }
+    if border.right > 0.0 {
+        fill_dashed_line(
+            pixmap,
+            scale,
+            Rect::new(
+                rect.x + rect.width - border.right,
+                rect.y,
+                border.right,
+                rect.height,
+            ),
+            color,
+            false,
+        );
+    }
+}
+
+fn fill_dashed_line(pixmap: &mut Pixmap, scale: f32, rect: Rect, color: Rgba, horizontal: bool) {
+    let thickness = if horizontal { rect.height } else { rect.width }.max(1.0);
+    let dash = (thickness * 3.0).max(6.0);
+    let gap = (thickness * 2.0).max(4.0);
+    let end = if horizontal {
+        rect.x + rect.width
+    } else {
+        rect.y + rect.height
+    };
+    let mut cursor = if horizontal { rect.x } else { rect.y };
+    while cursor < end {
+        let length = dash.min(end - cursor);
+        let dash_rect = if horizontal {
+            Rect::new(cursor, rect.y, length, rect.height)
+        } else {
+            Rect::new(rect.x, cursor, rect.width, length)
+        };
+        fill_rect(pixmap, scale, dash_rect, color);
+        cursor += dash + gap;
     }
 }
 
@@ -4163,6 +4607,41 @@ fn blend_text_rect(pixmap: &mut Pixmap, x: i32, y: i32, width: u32, height: u32,
 }
 
 fn draw_image(pixmap: &mut Pixmap, scale: f32, rect: Rect, image: &ImageData) {
+    draw_image_clipped(pixmap, scale, rect, image, None);
+}
+
+fn draw_background_image(pixmap: &mut Pixmap, scale: f32, rect: Rect, image: &ImageData) {
+    if image.width == 0 || image.height == 0 || rect.width <= 0.0 || rect.height <= 0.0 {
+        return;
+    }
+    let tile_width = image.width as f32;
+    let tile_height = image.height as f32;
+    let end_x = rect.x + rect.width;
+    let end_y = rect.y + rect.height;
+    let mut tile_y = rect.y;
+    while tile_y < end_y {
+        let mut tile_x = rect.x;
+        while tile_x < end_x {
+            draw_image_clipped(
+                pixmap,
+                scale,
+                Rect::new(tile_x, tile_y, tile_width, tile_height),
+                image,
+                Some(rect),
+            );
+            tile_x += tile_width.max(1.0);
+        }
+        tile_y += tile_height.max(1.0);
+    }
+}
+
+fn draw_image_clipped(
+    pixmap: &mut Pixmap,
+    scale: f32,
+    rect: Rect,
+    image: &ImageData,
+    clip: Option<Rect>,
+) {
     if rect.width <= 0.0
         || rect.height <= 0.0
         || image.width == 0
@@ -4185,8 +4664,20 @@ fn draw_image(pixmap: &mut Pixmap, scale: f32, rect: Rect, image: &ImageData) {
 
     let start_x = x0.max(0);
     let start_y = y0.max(0);
-    let end_x = x1.min(pixmap_width);
-    let end_y = y1.min(pixmap_height);
+    let mut start_x = start_x;
+    let mut start_y = start_y;
+    let mut end_x = x1.min(pixmap_width);
+    let mut end_y = y1.min(pixmap_height);
+    if let Some(clip) = clip {
+        let clip_x0 = (clip.x * scale).round() as i32;
+        let clip_y0 = (clip.y * scale).round() as i32;
+        let clip_x1 = ((clip.x + clip.width) * scale).round() as i32;
+        let clip_y1 = ((clip.y + clip.height) * scale).round() as i32;
+        start_x = start_x.max(clip_x0);
+        start_y = start_y.max(clip_y0);
+        end_x = end_x.min(clip_x1);
+        end_y = end_y.min(clip_y1);
+    }
     if start_x >= end_x || start_y >= end_y {
         return;
     }
@@ -4385,7 +4876,12 @@ fn layout_for_test(html: &str, width: u32) -> LayoutBox {
     let html = inline_css(&build_document(html, None, None, width), width).unwrap();
     let document = kuchiki::parse_html().one(html);
     let mut font_system = FontSystem::new();
-    let mut engine = LayoutEngine::new(&mut font_system, resource_policy_for_test(), Vec::new());
+    let mut engine = LayoutEngine::new(
+        &mut font_system,
+        resource_policy_for_test(),
+        Vec::new(),
+        Vec::new(),
+    );
     engine.layout_document(&document, width).unwrap()
 }
 
@@ -4561,6 +5057,20 @@ mod tests {
     }
 
     #[test]
+    fn web_font_alias_preserves_actual_face_weight() {
+        let faces = vec![WebFontFace {
+            css_family: "Merriweather".to_string(),
+            actual_family: "Merriweather".to_string(),
+            weight: FontWeight(250),
+        }];
+        let selection =
+            parse_font_family_selection(r#""Merriweather", Georgia, serif"#, &[], &faces)
+                .expect("font family");
+        assert_eq!(selection.family, "Merriweather");
+        assert_eq!(selection.forced_weight, Some(FontWeight(250)));
+    }
+
+    #[test]
     fn skips_non_latin_web_font_unicode_ranges() {
         let cyrillic = vec![(
             "unicode-range".to_string(),
@@ -4618,11 +5128,12 @@ mod tests {
     #[test]
     fn parses_border_side_shorthand() {
         let mut style = Style::initial();
-        style.apply_declaration("border-top", "10px solid #22BC66");
+        style.apply_declaration("border-top", "10px dashed #22BC66");
         style.apply_declaration("border-right", "18px solid #22BC66");
         assert_eq!(style.border.top, 10.0);
         assert_eq!(style.border.right, 18.0);
         assert_eq!(style.border_color, Rgba::rgb(0x22, 0xbc, 0x66));
+        assert_eq!(style.border_style, BorderLineStyle::Dashed);
     }
 
     #[test]
@@ -4630,6 +5141,22 @@ mod tests {
         let mut style = Style::initial();
         style.apply_declaration("border-radius", "12px");
         assert_eq!(style.border_radius, 12.0);
+    }
+
+    #[test]
+    fn parses_background_images_from_css_and_html_attributes() {
+        let mut style = Style::initial();
+        style.apply_declaration("background-image", "url('hero.jpg')");
+        assert_eq!(style.background_image_src.as_deref(), Some("hero.jpg"));
+
+        let document = kuchiki::parse_html()
+            .one(r#"<table><tr><td background="assets/top.jpg">A</td></tr></table>"#);
+        let cell = find_first_tag(&document, "td").expect("td");
+        let style = style_for_node(&cell, &Style::initial());
+        assert_eq!(
+            style.background_image_src.as_deref(),
+            Some("assets/top.jpg")
+        );
     }
 
     #[test]
@@ -4691,6 +5218,41 @@ mod tests {
         assert!(cells[0].rect.width > 1.0);
         assert!(cells[1].rect.width < 600.0);
         assert!(cells[2].rect.width > 1.0);
+    }
+
+    #[test]
+    fn auto_width_tables_shrink_to_contents() {
+        let layout = layout_for_test(
+            r##"<table><tr><td bgcolor="#cc7953"><a style="display:inline-block;padding:16px 36px;font-size:16px">Do Something</a></td></tr></table>"##,
+            600,
+        );
+        let table =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+        assert!(table.rect.width > 120.0);
+        assert!(table.rect.width < 240.0);
+    }
+
+    #[test]
+    fn auto_width_tables_shrink_block_cell_contents() {
+        let layout = layout_for_test(
+            r##"<table><tr><td style="padding:15px 25px"><p style="margin:0;font-size:15px;line-height:18px">Update Your Billing Info</p></td></tr></table>"##,
+            600,
+        );
+        let table =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+        assert!(table.rect.width > 170.0);
+        assert!(table.rect.width < 260.0);
+    }
+
+    #[test]
+    fn percentage_width_tables_still_fill_parent() {
+        let layout = layout_for_test(
+            r#"<table width="100%"><tr><td>Do Something</td></tr></table>"#,
+            600,
+        );
+        let table =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+        assert!((table.rect.width - 600.0).abs() < 0.1);
     }
 
     #[test]
@@ -4768,6 +5330,33 @@ mod tests {
     }
 
     #[test]
+    fn parent_align_centers_nested_table_without_centering_cell_text() {
+        let layout = layout_for_test(
+            r#"<table width="200"><tr><td align="center"><table width="100"><tr><td>Inner</td></tr></table></td></tr></table>"#,
+            200,
+        );
+        let inner_table = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::Table) && (child.rect.width - 100.0).abs() < 0.1
+        })
+        .expect("inner table");
+        assert!((inner_table.rect.x - 50.0).abs() < 0.1);
+        let text =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Text(_))).expect("text");
+        assert_eq!(text.style.text_align, TextAlign::Left);
+    }
+
+    #[test]
+    fn table_align_centers_auto_width_image_table() {
+        let layout = layout_for_test(
+            r#"<table width="640"><tr><td align="left"><table align="center"><tr><td><img width="220" height="35" alt=""></td></tr></table></td></tr></table>"#,
+            640,
+        );
+        let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
+            .expect("image");
+        assert!((image.rect.x - 210.0).abs() < 0.1);
+    }
+
+    #[test]
     fn table_align_attribute_does_not_align_cell_text() {
         let layout = layout_for_test(
             r#"<table align="center" width="100"><tr><td>Inner</td></tr></table>"#,
@@ -4798,6 +5387,17 @@ mod tests {
         let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
             .expect("image");
         assert!(image.rect.x < 1.0);
+    }
+
+    #[test]
+    fn inline_anchor_width_does_not_constrain_wrapped_image() {
+        let layout = layout_for_test(
+            r#"<div><a style="width:50%"><img style="width:100%" width="640" height="20" alt=""></a></div>"#,
+            640,
+        );
+        let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
+            .expect("image");
+        assert!((image.rect.width - 640.0).abs() < 0.1);
     }
 
     #[test]
@@ -4891,6 +5491,27 @@ mod tests {
         })
         .expect("inline block");
         assert!((inline_block.rect.x - 40.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn lays_out_adjacent_inline_blocks_on_one_row() {
+        let layout = layout_for_test(
+            r#"<div style="font-size:0"><div style="display:inline-block; width:50%; font-size:16px">A</div>
+            <div style="display:inline-block; width:50%; font-size:16px">B</div></div>"#,
+            200,
+        );
+        let a = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "A"),
+        )
+        .expect("A");
+        let b = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "B"),
+        )
+        .expect("B");
+        assert!((a.rect.y - b.rect.y).abs() < 0.1);
+        assert!((b.rect.x - a.rect.x - 100.0).abs() < 0.1);
     }
 
     #[test]
