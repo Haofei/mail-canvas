@@ -34,6 +34,18 @@ download "waypoint-ecommerce-delivery" \
   "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-delivery-notification.html"
 download "waypoint-marketplace-qr" \
   "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/marketplace-qr-tickets.html"
+download "waypoint-banking-payout" \
+  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/banking-payout.html"
+download "waypoint-ecommerce-promo-code" \
+  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-promo-code.html"
+download "waypoint-ecommerce-welcome" \
+  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-welcome.html"
+download "waypoint-saas-reset-password" \
+  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-reset-password.html"
+download "waypoint-saas-payment-declined" \
+  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-payment-declined.html"
+download "waypoint-social-new-comment" \
+  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/social-new-comment.html"
 download "mailpace-welcome" \
   "https://raw.githubusercontent.com/mailpace/templates/main/dist/welcome.html"
 download "mailpace-confirmation" \
@@ -54,6 +66,14 @@ download "postmark-receipt" \
   "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/receipt/content.html"
 download "postmark-invoice" \
   "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/invoice/content.html"
+download "postmark-comment-notification" \
+  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/comment-notification/content.html"
+download "postmark-dunning" \
+  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/dunning/content.html"
+download "postmark-user-invitation" \
+  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/user-invitation/content.html"
+download "postmark-trial-expiring" \
+  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/trial-expiring/content.html"
 
 for html in "$WORK_DIR"/html/*.html; do
   name="$(basename "$html" .html)"

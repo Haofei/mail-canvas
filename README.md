@@ -51,7 +51,7 @@ Important options:
 scripts/external_template_smoke.sh
 ```
 
-The smoke script downloads 18 open-source transactional email templates from
+The smoke script downloads 28 open-source transactional email templates from
 Mailgun, Waypoint, MailPace, and Postmark/ActiveCampaign, renders PNG and raster
 PDF outputs, and writes artifacts under `/tmp/email-render-external`.
 
@@ -63,7 +63,7 @@ npx playwright install chromium
 npm run compare:playwright
 ```
 
-The comparison script downloads the same 18-template set, captures Chromium
+The comparison script downloads the same 28-template set, captures Chromium
 screenshots, renders the templates with the Rust renderer, and writes
 browser/rust/diff/side-by-side PNGs plus `report.md` under
 `/tmp/email-render-playwright-compare`.
@@ -72,8 +72,9 @@ browser/rust/diff/side-by-side PNGs plus `report.md` under
 
 - PNG output is the primary target. PDF output is raster-only for now, so text is
   not searchable in generated PDFs.
-- CSS from `<style>` blocks and `--css` is inlined before rendering. Remote
-  stylesheets are disabled.
+- CSS from `<style>` blocks and `--css` is inlined before rendering. Active
+  width-based `@media` rules are folded into that inline pass for the requested
+  viewport width. Remote stylesheets are disabled.
 - Supported layout is the email subset: block flow, nested tables, cells,
   `rowspan`/`colspan`, `col` widths, padding, margin, simple borders,
   backgrounds, text, and images.

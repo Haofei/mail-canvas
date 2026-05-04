@@ -173,7 +173,7 @@ impl EmailRenderer for RustEmailRenderer {
     fn render_png(&mut self, request: RenderRequest) -> Result<RenderedImage> {
         validate_request(&request)?;
 
-        let html = inline_css(&request.html)?;
+        let html = inline_css(&request.html, request.width)?;
         let document = kuchiki::parse_html().one(html);
         let mut engine = LayoutEngine::new(
             &mut self.font_system,
@@ -300,7 +300,8 @@ pub fn build_document(
     inject_head_markup(source_html, &head)
 }
 
-fn inline_css(html: &str) -> Result<String> {
+fn inline_css(html: &str, viewport_width: u32) -> Result<String> {
+    let html = inject_active_media_styles(html, viewport_width);
     CSSInliner::options()
         .load_remote_stylesheets(false)
         .keep_style_tags(false)
@@ -308,8 +309,195 @@ fn inline_css(html: &str) -> Result<String> {
         .apply_width_attributes(true)
         .apply_height_attributes(true)
         .build()
-        .inline(html)
+        .inline(&html)
         .context("failed to inline CSS")
+}
+
+fn inject_active_media_styles(html: &str, viewport_width: u32) -> String {
+    let css = active_media_css(html, viewport_width);
+    if css.trim().is_empty() {
+        return html.to_string();
+    }
+
+    let style = format!("\n<style id=\"email-render-active-media\">\n{css}\n</style>\n");
+    inject_head_markup(html, &style)
+}
+
+fn active_media_css(html: &str, viewport_width: u32) -> String {
+    let mut out = String::new();
+    for style in style_blocks(html) {
+        append_active_media_css(style, viewport_width, &mut out);
+    }
+    out
+}
+
+fn style_blocks(html: &str) -> Vec<&str> {
+    let lower = html.to_ascii_lowercase();
+    let mut blocks = Vec::new();
+    let mut offset = 0;
+
+    while let Some(start_rel) = lower[offset..].find("<style") {
+        let start = offset + start_rel;
+        let Some(open_rel) = lower[start..].find('>') else {
+            break;
+        };
+        let content_start = start + open_rel + 1;
+        let Some(end_rel) = lower[content_start..].find("</style>") else {
+            break;
+        };
+        let content_end = content_start + end_rel;
+        blocks.push(&html[content_start..content_end]);
+        offset = content_end + "</style>".len();
+    }
+
+    blocks
+}
+
+fn append_active_media_css(css: &str, viewport_width: u32, out: &mut String) {
+    let lower = css.to_ascii_lowercase();
+    let mut offset = 0;
+
+    while let Some(media_rel) = lower[offset..].find("@media") {
+        let media_start = offset + media_rel;
+        let condition_start = media_start + "@media".len();
+        let Some(open_rel) = css[condition_start..].find('{') else {
+            break;
+        };
+        let open = condition_start + open_rel;
+        let Some(close) = find_matching_brace(css, open) else {
+            break;
+        };
+
+        if media_condition_matches(&css[condition_start..open], viewport_width) {
+            let body = css[open + 1..close].trim();
+            if !body.is_empty() {
+                out.push_str(body);
+                out.push('\n');
+            }
+        }
+        offset = close + 1;
+    }
+}
+
+fn find_matching_brace(source: &str, open: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    if bytes.get(open) != Some(&b'{') {
+        return None;
+    }
+
+    let mut depth = 0usize;
+    let mut index = open;
+    let mut quote = None;
+    let mut in_comment = false;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if in_comment {
+            if byte == b'*' && bytes.get(index + 1) == Some(&b'/') {
+                in_comment = false;
+                index += 2;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+
+        if let Some(current_quote) = quote {
+            if byte == b'\\' {
+                index += 2;
+                continue;
+            }
+            if byte == current_quote {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+
+        if byte == b'/' && bytes.get(index + 1) == Some(&b'*') {
+            in_comment = true;
+            index += 2;
+            continue;
+        }
+        if byte == b'\'' || byte == b'"' {
+            quote = Some(byte);
+            index += 1;
+            continue;
+        }
+        if byte == b'{' {
+            depth += 1;
+        } else if byte == b'}' {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                return Some(index);
+            }
+        }
+        index += 1;
+    }
+
+    None
+}
+
+fn media_condition_matches(condition: &str, viewport_width: u32) -> bool {
+    condition
+        .split(',')
+        .any(|query| single_media_query_matches(query, viewport_width))
+}
+
+fn single_media_query_matches(query: &str, viewport_width: u32) -> bool {
+    let query = query.to_ascii_lowercase();
+    let query = query.trim();
+    if query.is_empty()
+        || query.contains("not screen")
+        || query.contains("prefers-color-scheme")
+        || (query.contains("print") && !query.contains("screen") && !query.contains("all"))
+    {
+        return false;
+    }
+
+    let width = viewport_width as f32;
+    for max_width in media_width_constraints(query, "max-width") {
+        if width > max_width {
+            return false;
+        }
+    }
+    for min_width in media_width_constraints(query, "min-width") {
+        if width < min_width {
+            return false;
+        }
+    }
+    true
+}
+
+fn media_width_constraints(query: &str, name: &str) -> Vec<f32> {
+    let mut values = Vec::new();
+    let mut offset = 0;
+    while let Some(index_rel) = query[offset..].find(name) {
+        let index = offset + index_rel + name.len();
+        if let Some(colon_rel) = query[index..].find(':') {
+            let value_start = index + colon_rel + 1;
+            if let Some(value) = parse_leading_css_number(&query[value_start..]) {
+                values.push(value);
+            }
+            offset = value_start;
+        } else {
+            break;
+        }
+    }
+    values
+}
+
+fn parse_leading_css_number(value: &str) -> Option<f32> {
+    let value = value.trim_start();
+    let end = value
+        .char_indices()
+        .take_while(|(_, ch)| ch.is_ascii_digit() || matches!(ch, '.' | '+' | '-'))
+        .map(|(index, ch)| index + ch.len_utf8())
+        .last()?;
+    value[..end]
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite())
 }
 
 fn build_head_markup(css: Option<&str>, base_url: Option<&Url>, width: u32) -> String {
@@ -679,6 +867,7 @@ impl<'a> LayoutEngine<'a> {
             return Ok(());
         }
 
+        let normalized = apply_text_transform(&normalized, style.text_transform);
         let height = self.measure_text_height(&normalized, width, style)?;
         children.push(LayoutBox {
             kind: LayoutKind::Text(normalized),
@@ -1121,7 +1310,10 @@ impl<'a> LayoutEngine<'a> {
                 let text = normalize_text(&inline_text);
                 inline_text.clear();
                 if !text.is_empty() {
-                    max_width = max_width.max(self.measure_text_width(&text, style));
+                    max_width = max_width.max(self.measure_text_width(
+                        &apply_text_transform(&text, style.text_transform),
+                        style,
+                    ));
                 }
                 continue;
             }
@@ -1142,7 +1334,11 @@ impl<'a> LayoutEngine<'a> {
             let text = normalize_text(&inline_text);
             inline_text.clear();
             if !text.is_empty() {
-                max_width = max_width.max(self.measure_text_width(&text, style));
+                max_width =
+                    max_width.max(self.measure_text_width(
+                        &apply_text_transform(&text, style.text_transform),
+                        style,
+                    ));
             }
 
             let child_width = if tag == "img" {
@@ -1161,7 +1357,9 @@ impl<'a> LayoutEngine<'a> {
 
         let text = normalize_text(&inline_text);
         if !text.is_empty() {
-            max_width = max_width.max(self.measure_text_width(&text, style));
+            max_width = max_width.max(
+                self.measure_text_width(&apply_text_transform(&text, style.text_transform), style),
+            );
         }
         Ok(max_width.max(1.0))
     }
@@ -1330,6 +1528,7 @@ struct Style {
     font_size: f32,
     line_height: f32,
     text_align: TextAlign,
+    text_transform: TextTransform,
     vertical_align: VerticalAlign,
     wrap: TextWrap,
     border_width: f32,
@@ -1359,6 +1558,7 @@ impl Style {
             font_size: 16.0,
             line_height: 22.4,
             text_align: TextAlign::Left,
+            text_transform: TextTransform::None,
             vertical_align: VerticalAlign::Top,
             wrap: TextWrap::WordOrGlyph,
             border_width: 0.0,
@@ -1387,7 +1587,12 @@ impl Style {
             font_style: parent.font_style,
             font_size: parent.font_size,
             line_height: parent.line_height,
-            text_align: parent.text_align,
+            text_align: if tag == "table" {
+                TextAlign::Left
+            } else {
+                parent.text_align
+            },
+            text_transform: parent.text_transform,
             vertical_align: VerticalAlign::Top,
             wrap: parent.wrap,
             border_width: 0.0,
@@ -1421,6 +1626,7 @@ impl Style {
     }
 
     fn apply_declaration(&mut self, name: &str, value: &str) {
+        let value = strip_important(value);
         match name {
             "display" => {
                 if let Some(display) = parse_display(value) {
@@ -1434,23 +1640,39 @@ impl Style {
             "min-height" => self.min_height = parse_length(value),
             "max-height" => self.max_height = parse_length(value),
             "margin" => {
-                if let Some(edges) = parse_edges(value) {
+                if let Some(edges) = parse_edges_with_font(value, self.font_size) {
                     self.margin = edges;
                 }
             }
-            "margin-top" => self.margin.top = parse_px(value).unwrap_or(0.0),
-            "margin-right" => self.margin.right = parse_px(value).unwrap_or(0.0),
-            "margin-bottom" => self.margin.bottom = parse_px(value).unwrap_or(0.0),
-            "margin-left" => self.margin.left = parse_px(value).unwrap_or(0.0),
+            "margin-top" => {
+                self.margin.top = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+            }
+            "margin-right" => {
+                self.margin.right = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+            }
+            "margin-bottom" => {
+                self.margin.bottom = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+            }
+            "margin-left" => {
+                self.margin.left = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+            }
             "padding" => {
-                if let Some(edges) = parse_edges(value) {
+                if let Some(edges) = parse_edges_with_font(value, self.font_size) {
                     self.padding = edges;
                 }
             }
-            "padding-top" => self.padding.top = parse_px(value).unwrap_or(0.0),
-            "padding-right" => self.padding.right = parse_px(value).unwrap_or(0.0),
-            "padding-bottom" => self.padding.bottom = parse_px(value).unwrap_or(0.0),
-            "padding-left" => self.padding.left = parse_px(value).unwrap_or(0.0),
+            "padding-top" => {
+                self.padding.top = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+            }
+            "padding-right" => {
+                self.padding.right = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+            }
+            "padding-bottom" => {
+                self.padding.bottom = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+            }
+            "padding-left" => {
+                self.padding.left = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+            }
             "background" | "background-color" => {
                 if let Some(color) = parse_color(value) {
                     self.background = Some(color);
@@ -1462,11 +1684,15 @@ impl Style {
                 }
             }
             "font-size" => {
-                if let Some(font_size) = parse_px(value) {
+                if let Some(font_size) = parse_font_size(value, self.font_size) {
                     self.set_font_size(font_size);
                 }
             }
-            "font-family" => self.font_family = parse_font_family(value),
+            "font-family" => {
+                if let Some(font_family) = parse_font_family(value) {
+                    self.font_family = Some(font_family);
+                }
+            }
             "font-weight" => self.font_weight = parse_font_weight(value),
             "font-style" => self.font_style = parse_font_style(value),
             "line-height" => {
@@ -1477,6 +1703,11 @@ impl Style {
             "text-align" | "align" => {
                 if let Some(align) = parse_text_align(value) {
                     self.text_align = align;
+                }
+            }
+            "text-transform" => {
+                if let Some(transform) = parse_text_transform(value) {
+                    self.text_transform = transform;
                 }
             }
             "vertical-align" => {
@@ -1503,7 +1734,12 @@ impl Style {
                 }
             }
             "border" => apply_border(self, value),
-            "border-width" => self.border_width = parse_px(value).unwrap_or(0.0),
+            "border-width" => {
+                self.border_width = parse_edges(value)
+                    .map(|edges| edges.top.max(edges.right).max(edges.bottom).max(edges.left))
+                    .or_else(|| parse_px(value))
+                    .unwrap_or(0.0);
+            }
             "border-color" => {
                 if let Some(color) = parse_color(value) {
                     self.border_color = color;
@@ -1550,15 +1786,30 @@ impl Style {
     }
 
     fn text_attrs(&self) -> Attrs<'_> {
-        let family = self
-            .font_family
-            .as_deref()
-            .map_or(FontFamily::SansSerif, FontFamily::Name);
+        let family = match self.font_family.as_deref().map(str::to_ascii_lowercase) {
+            Some(family) if family == "serif" => FontFamily::Serif,
+            Some(family) if family == "monospace" => FontFamily::Monospace,
+            Some(family) if family == "sans-serif" => FontFamily::SansSerif,
+            Some(_) => self
+                .font_family
+                .as_deref()
+                .map_or(FontFamily::SansSerif, FontFamily::Name),
+            None => FontFamily::SansSerif,
+        };
         Attrs::new()
             .family(family)
             .weight(self.font_weight)
             .style(self.font_style)
     }
+}
+
+fn strip_important(value: &str) -> &str {
+    let value = value.trim();
+    let lower = value.to_ascii_lowercase();
+    if let Some(stripped) = lower.strip_suffix("!important") {
+        return value[..stripped.len()].trim();
+    }
+    value
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1665,6 +1916,14 @@ impl TextAlign {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TextTransform {
+    None,
+    Uppercase,
+    Lowercase,
+    Capitalize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VerticalAlign {
     Top,
     Middle,
@@ -1737,8 +1996,10 @@ fn style_for_node(node: &NodeRef, parent: &Style) -> Style {
     if let Some(background) = attrs.get("bgcolor").and_then(parse_color) {
         style.background = Some(background);
     }
-    if let Some(align) = attrs.get("align").and_then(parse_text_align) {
-        style.text_align = align;
+    if tag != "table" {
+        if let Some(align) = attrs.get("align").and_then(parse_text_align) {
+            style.text_align = align;
+        }
     }
     if tag == "table" {
         if let Some(cell_padding) = attrs.get("cellpadding").and_then(parse_px) {
@@ -1754,15 +2015,31 @@ fn style_for_node(node: &NodeRef, parent: &Style) -> Style {
         }
     }
     if let Some(style_attr) = attrs.get("style") {
+        let mut declarations = Vec::new();
         for declaration in style_attr.split(';') {
             let Some((name, value)) = declaration.split_once(':') else {
                 continue;
             };
-            style.apply_declaration(&name.trim().to_ascii_lowercase(), value.trim());
+            declarations.push((
+                name.trim().to_ascii_lowercase(),
+                value.trim().to_string(),
+                declaration_is_important(value),
+            ));
+        }
+        for important in [false, true] {
+            for (name, value, is_important) in &declarations {
+                if *is_important == important {
+                    style.apply_declaration(name, value);
+                }
+            }
         }
     }
 
     style
+}
+
+fn declaration_is_important(value: &str) -> bool {
+    value.trim().to_ascii_lowercase().ends_with("!important")
 }
 
 fn default_display(tag: &str) -> Display {
@@ -1807,22 +2084,57 @@ fn parse_length(value: &str) -> Option<Length> {
 }
 
 fn parse_px(value: &str) -> Option<f32> {
+    parse_css_length(value, 16.0, true)
+}
+
+fn parse_css_length(value: &str, font_size: f32, allow_unitless: bool) -> Option<f32> {
     let value = value.trim().trim_matches('"').trim_matches('\'');
     if value.eq_ignore_ascii_case("auto") || value.is_empty() {
         return None;
     }
-    let number = value
-        .strip_suffix("px")
-        .or_else(|| value.strip_suffix("PX"))
-        .unwrap_or(value)
-        .trim();
-    number.parse::<f32>().ok().filter(|value| value.is_finite())
+    let lower = value.to_ascii_lowercase();
+    let (number, multiplier) = if let Some(number) = lower.strip_suffix("rem") {
+        (number, 16.0)
+    } else if let Some(number) = lower.strip_suffix("em") {
+        (number, font_size.max(1.0))
+    } else if let Some(number) = lower.strip_suffix("px") {
+        (number, 1.0)
+    } else if let Some(number) = lower.strip_suffix("pt") {
+        (number, 96.0 / 72.0)
+    } else if allow_unitless {
+        (lower.as_str(), 1.0)
+    } else {
+        return None;
+    };
+
+    number
+        .trim()
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .map(|value| value * multiplier)
+}
+
+fn parse_font_size(value: &str, parent_font_size: f32) -> Option<f32> {
+    parse_css_length(value, parent_font_size, false).or_else(|| {
+        value
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .filter(|value| value.is_finite() && *value == 0.0)
+    })
 }
 
 fn parse_edges(value: &str) -> Option<Edges> {
+    parse_edges_with_font(value, 16.0)
+}
+
+fn parse_edges_with_font(value: &str, font_size: f32) -> Option<Edges> {
     let values: Vec<f32> = value
         .split_whitespace()
-        .filter_map(|token| parse_px(token).or(Some(0.0).filter(|_| token == "auto")))
+        .filter_map(|token| {
+            parse_css_length(token, font_size, true).or(Some(0.0).filter(|_| token == "auto"))
+        })
         .collect();
 
     match values.as_slice() {
@@ -1926,8 +2238,16 @@ fn parse_line_height(value: &str, font_size: f32) -> Option<f32> {
     if value.eq_ignore_ascii_case("normal") {
         return Some(font_size * 1.4);
     }
-    if let Some(px) = parse_px(value) {
-        return Some(px);
+    if let Some(percent) = value.strip_suffix('%') {
+        return percent
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .filter(|value| value.is_finite())
+            .map(|value| font_size * value / 100.0);
+    }
+    if let Some(length) = parse_css_length(value, font_size, false) {
+        return Some(length);
     }
     value
         .parse::<f32>()
@@ -1945,6 +2265,16 @@ fn parse_text_align(value: &str) -> Option<TextAlign> {
     }
 }
 
+fn parse_text_transform(value: &str) -> Option<TextTransform> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "none" => Some(TextTransform::None),
+        "uppercase" => Some(TextTransform::Uppercase),
+        "lowercase" => Some(TextTransform::Lowercase),
+        "capitalize" => Some(TextTransform::Capitalize),
+        _ => None,
+    }
+}
+
 fn parse_vertical_align(value: &str) -> Option<VerticalAlign> {
     match value.trim().to_ascii_lowercase().as_str() {
         "top" | "text-top" => Some(VerticalAlign::Top),
@@ -1955,13 +2285,64 @@ fn parse_vertical_align(value: &str) -> Option<VerticalAlign> {
 }
 
 fn parse_font_family(value: &str) -> Option<String> {
-    let first = value.split(',').next()?.trim();
-    let family = first.trim_matches('"').trim_matches('\'').trim();
-    if family.is_empty() {
-        None
-    } else {
-        Some(family.to_string())
+    let candidates: Vec<String> = value
+        .split(',')
+        .filter_map(|candidate| {
+            let family = candidate.trim().trim_matches('"').trim_matches('\'').trim();
+            if family.is_empty()
+                || matches!(
+                    family.to_ascii_lowercase().as_str(),
+                    "inherit" | "initial" | "unset"
+                )
+            {
+                None
+            } else {
+                Some(family.to_string())
+            }
+        })
+        .collect();
+
+    if let Some(first) = candidates.first() {
+        if let Some(generic) = generic_font_family(first) {
+            return Some(generic.to_string());
+        }
     }
+    for family in &candidates {
+        if is_safe_system_font(family) {
+            return Some(family.clone());
+        }
+    }
+    for family in &candidates {
+        if let Some(generic) = generic_font_family(family) {
+            return Some(generic.to_string());
+        }
+    }
+    candidates.into_iter().next()
+}
+
+fn generic_font_family(value: &str) -> Option<&'static str> {
+    match value.to_ascii_lowercase().as_str() {
+        "sans-serif" | "ui-sans-serif" | "system-ui" | "-apple-system" => Some("sans-serif"),
+        "serif" | "ui-serif" => Some("serif"),
+        "monospace" | "ui-monospace" => Some("monospace"),
+        _ => None,
+    }
+}
+
+fn is_safe_system_font(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "arial"
+            | "helvetica"
+            | "helvetica neue"
+            | "segoe ui"
+            | "georgia"
+            | "times"
+            | "times new roman"
+            | "cambria"
+            | "courier"
+            | "courier new"
+    )
 }
 
 fn parse_font_weight(value: &str) -> FontWeight {
@@ -1990,16 +2371,18 @@ fn apply_border(style: &mut Style, value: &str) {
         return;
     }
 
+    let mut saw_width = false;
     for token in value.split_whitespace() {
         if let Some(width) = parse_px(token) {
             style.border_width = width;
+            saw_width = true;
         }
         if let Some(color) = parse_color(token) {
             style.border_color = color;
         }
     }
 
-    if style.border_width == 0.0 && !value.trim().is_empty() {
+    if !saw_width && !value.trim().is_empty() {
         style.border_width = 1.0;
     }
 }
@@ -2293,6 +2676,32 @@ fn normalize_text(text: &str) -> String {
     out.trim().to_string()
 }
 
+fn apply_text_transform(text: &str, transform: TextTransform) -> String {
+    match transform {
+        TextTransform::None => text.to_string(),
+        TextTransform::Uppercase => text.to_uppercase(),
+        TextTransform::Lowercase => text.to_lowercase(),
+        TextTransform::Capitalize => {
+            let mut out = String::with_capacity(text.len());
+            let mut at_word_start = true;
+            for ch in text.chars() {
+                if ch.is_alphanumeric() {
+                    if at_word_start {
+                        out.extend(ch.to_uppercase());
+                    } else {
+                        out.extend(ch.to_lowercase());
+                    }
+                    at_word_start = false;
+                } else {
+                    out.push(ch);
+                    at_word_start = ch.is_whitespace();
+                }
+            }
+            out
+        }
+    }
+}
+
 fn fill_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, color: Rgba) {
     if color.a == 0 || rect.width <= 0.0 || rect.height <= 0.0 {
         return;
@@ -2562,7 +2971,7 @@ fn resource_policy_for_test() -> ResourcePolicy {
 
 #[cfg(test)]
 fn layout_for_test(html: &str, width: u32) -> LayoutBox {
-    let html = inline_css(&build_document(html, None, None, width)).unwrap();
+    let html = inline_css(&build_document(html, None, None, width), width).unwrap();
     let document = kuchiki::parse_html().one(html);
     let mut font_system = FontSystem::new();
     let mut engine = LayoutEngine::new(&mut font_system, resource_policy_for_test());
@@ -2602,9 +3011,84 @@ mod tests {
             None,
             600,
         );
-        let inlined = inline_css(&html).unwrap();
+        let inlined = inline_css(&html, 600).unwrap();
         assert!(inlined.contains("style=\"color: #f00;\""));
         assert!(!inlined.contains("email-render-css"));
+    }
+
+    #[test]
+    fn applies_active_max_width_media_before_inlining() {
+        let html = build_document(
+            r#"<div class="x" style="padding: 24px">Hello</div>"#,
+            Some("@media only screen and (max-width: 640px) { .x { padding: 8px !important; } }"),
+            None,
+            600,
+        );
+        let inlined = inline_css(&html, 600).unwrap();
+        assert!(inlined.contains("padding: 8px"));
+    }
+
+    #[test]
+    fn ignores_inactive_max_width_media_rules() {
+        let html = build_document(
+            r#"<div class="x" style="padding: 24px">Hello</div>"#,
+            Some("@media only screen and (max-width: 480px) { .x { padding: 8px !important; } }"),
+            None,
+            600,
+        );
+        let inlined = inline_css(&html, 600).unwrap();
+        assert!(inlined.contains("padding: 24px"));
+        assert!(!inlined.contains("padding: 8px"));
+    }
+
+    #[test]
+    fn parses_unitless_line_height_as_font_multiplier() {
+        assert!((parse_line_height("1.625", 16.0).unwrap() - 26.0).abs() < 0.1);
+        assert!((parse_line_height("150%", 16.0).unwrap() - 24.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn parses_em_spacing_against_current_font_size() {
+        let edges = parse_edges_with_font(".4em 0 1.1875em", 16.0).unwrap();
+        assert!((edges.top - 6.4).abs() < 0.1);
+        assert!((edges.bottom - 19.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn selects_safe_fallback_font_from_web_font_stack() {
+        let family = parse_font_family(r#""Nunito Sans", Helvetica, Arial, sans-serif"#).unwrap();
+        assert_eq!(family, "Helvetica");
+        let family = parse_font_family("ui-serif, Georgia, serif").unwrap();
+        assert_eq!(family, "serif");
+    }
+
+    #[test]
+    fn important_longhand_declarations_override_later_shorthand() {
+        let layout = layout_for_test(
+            r#"<div style="padding-left: 24px !important; padding: 48px; background: #000">Hello</div>"#,
+            200,
+        );
+        let block = find_layout(&layout, |child| child.style.background == Some(Rgba::BLACK))
+            .expect("block");
+        assert!((block.style.padding.left - 24.0).abs() < 0.1);
+        assert!((block.style.padding.top - 48.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn zero_border_shorthand_does_not_create_default_border() {
+        let mut style = Style::initial();
+        style.apply_declaration("border", "0");
+        assert_eq!(style.border_width, 0.0);
+    }
+
+    #[test]
+    fn applies_text_transform_to_text_nodes() {
+        let layout = layout_for_test(r#"<p style="text-transform: uppercase">Confirm</p>"#, 200);
+        let text = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "CONFIRM"),
+        );
+        assert!(text.is_some());
     }
 
     #[test]
@@ -2633,6 +3117,28 @@ mod tests {
         assert_eq!(table.children[0].children.len(), 2);
         assert!((table.children[0].children[0].rect.width - 150.0).abs() < 0.1);
         assert!((table.children[0].children[1].rect.width - 150.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn nested_table_content_does_not_inherit_outer_align_attribute() {
+        let layout = layout_for_test(
+            r#"<table width="200"><tr><td align="center"><table width="100"><tr><td>Inner</td></tr></table></td></tr></table>"#,
+            200,
+        );
+        let text =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Text(_))).expect("text");
+        assert_eq!(text.style.text_align, TextAlign::Left);
+    }
+
+    #[test]
+    fn table_align_attribute_does_not_align_cell_text() {
+        let layout = layout_for_test(
+            r#"<table align="center" width="100"><tr><td>Inner</td></tr></table>"#,
+            200,
+        );
+        let text =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Text(_))).expect("text");
+        assert_eq!(text.style.text_align, TextAlign::Left);
     }
 
     #[test]

@@ -48,6 +48,30 @@ const TEMPLATES = [
     'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/marketplace-qr-tickets.html',
   ],
   [
+    'waypoint-banking-payout',
+    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/banking-payout.html',
+  ],
+  [
+    'waypoint-ecommerce-promo-code',
+    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-promo-code.html',
+  ],
+  [
+    'waypoint-ecommerce-welcome',
+    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-welcome.html',
+  ],
+  [
+    'waypoint-saas-reset-password',
+    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-reset-password.html',
+  ],
+  [
+    'waypoint-saas-payment-declined',
+    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-payment-declined.html',
+  ],
+  [
+    'waypoint-social-new-comment',
+    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/social-new-comment.html',
+  ],
+  [
     'mailpace-welcome',
     'https://raw.githubusercontent.com/mailpace/templates/main/dist/welcome.html',
   ],
@@ -86,6 +110,22 @@ const TEMPLATES = [
   [
     'postmark-invoice',
     'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/invoice/content.html',
+  ],
+  [
+    'postmark-comment-notification',
+    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/comment-notification/content.html',
+  ],
+  [
+    'postmark-dunning',
+    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/dunning/content.html',
+  ],
+  [
+    'postmark-user-invitation',
+    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/user-invitation/content.html',
+  ],
+  [
+    'postmark-trial-expiring',
+    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/trial-expiring/content.html',
   ],
 ];
 
