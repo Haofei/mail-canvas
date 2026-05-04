@@ -18,62 +18,12 @@ download() {
   curl -fsSL -o "$WORK_DIR/html/$name.html" "$url"
 }
 
-download "leemunroe-inlined" \
-  "https://raw.githubusercontent.com/leemunroe/responsive-html-email-template/master/email-inlined.html"
-download "mailgun-action" \
-  "https://raw.githubusercontent.com/mailgun/transactional-email-templates/master/templates/inlined/action.html"
-download "mailgun-alert" \
-  "https://raw.githubusercontent.com/mailgun/transactional-email-templates/master/templates/inlined/alert.html"
-download "mailgun-billing" \
-  "https://raw.githubusercontent.com/mailgun/transactional-email-templates/master/templates/inlined/billing.html"
-download "waypoint-saas-otp" \
-  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-one-time-passcode-otp.html"
-download "waypoint-saas-receipt" \
-  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-subscription-receipt.html"
-download "waypoint-ecommerce-delivery" \
-  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-delivery-notification.html"
-download "waypoint-marketplace-qr" \
-  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/marketplace-qr-tickets.html"
-download "waypoint-banking-payout" \
-  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/banking-payout.html"
-download "waypoint-ecommerce-promo-code" \
-  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-promo-code.html"
-download "waypoint-ecommerce-welcome" \
-  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-welcome.html"
-download "waypoint-saas-reset-password" \
-  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-reset-password.html"
-download "waypoint-saas-payment-declined" \
-  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-payment-declined.html"
-download "waypoint-social-new-comment" \
-  "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/social-new-comment.html"
-download "mailpace-welcome" \
-  "https://raw.githubusercontent.com/mailpace/templates/main/dist/welcome.html"
-download "mailpace-confirmation" \
-  "https://raw.githubusercontent.com/mailpace/templates/main/dist/confirmation.html"
-download "mailpace-password-reset" \
-  "https://raw.githubusercontent.com/mailpace/templates/main/dist/password_reset.html"
-download "mailpace-receipt" \
-  "https://raw.githubusercontent.com/mailpace/templates/main/dist/receipt.html"
-download "mailpace-security-alert" \
-  "https://raw.githubusercontent.com/mailpace/templates/main/dist/security_alert.html"
-download "mailpace-account-deleted" \
-  "https://raw.githubusercontent.com/mailpace/templates/main/dist/account_deleted.html"
-download "postmark-welcome" \
-  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/welcome/content.html"
-download "postmark-password-reset" \
-  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/password-reset/content.html"
-download "postmark-receipt" \
-  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/receipt/content.html"
-download "postmark-invoice" \
-  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/invoice/content.html"
-download "postmark-comment-notification" \
-  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/comment-notification/content.html"
-download "postmark-dunning" \
-  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/dunning/content.html"
-download "postmark-user-invitation" \
-  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/user-invitation/content.html"
-download "postmark-trial-expiring" \
-  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/trial-expiring/content.html"
+while IFS=$'\t' read -r name url; do
+  download "$name" "$url"
+done < <(
+  cd "$ROOT_DIR"
+  node --input-type=module -e 'import { TEMPLATES } from "./scripts/templates.mjs"; for (const [name, url] of TEMPLATES) console.log(name + "\t" + url);'
+)
 
 for html in "$WORK_DIR"/html/*.html; do
   name="$(basename "$html" .html)"

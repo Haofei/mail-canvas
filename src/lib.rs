@@ -20,7 +20,7 @@ use data_url::DataUrl;
 use image::{ImageReader, Limits};
 use kuchiki::{NodeRef, traits::TendrilSink as _};
 use pdf_writer::{Content, Name, Pdf, Rect as PdfRect, Ref};
-use tiny_skia::{Paint, Pixmap, Rect as SkiaRect, Transform};
+use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect as SkiaRect, Transform};
 use url::Url;
 
 const MAX_RENDER_PIXELS_PER_AXIS: u32 = 16_384;
@@ -920,12 +920,15 @@ impl<'a> LayoutEngine<'a> {
     ) -> Result<Option<FlowBox>> {
         let explicit_width = style.resolve_width(containing_width);
         let max_outer_width = explicit_width
+            .map(|width| style.outer_width_for_declared(width))
             .unwrap_or(containing_width - style.margin.horizontal())
             .max(1.0);
-        let max_inner_width =
-            (max_outer_width - style.padding.horizontal() - style.border_width * 2.0).max(1.0);
+        let max_inner_width = style.inner_width_for_outer(max_outer_width);
         let preferred_inner_width = if explicit_width.is_some() {
-            max_inner_width
+            match style.box_sizing {
+                BoxSizing::BorderBox => max_inner_width,
+                BoxSizing::ContentBox => explicit_width.unwrap_or(max_inner_width).max(1.0),
+            }
         } else {
             self.preferred_content_width(node, &style, max_inner_width)?
                 .min(max_inner_width)
@@ -939,9 +942,11 @@ impl<'a> LayoutEngine<'a> {
         let (children, content_height) =
             self.layout_children(node, &style, inner_x, inner_y, preferred_inner_width, depth)?;
         let explicit_height = style.resolve_height(0.0).unwrap_or(0.0);
-        let rect_width =
-            (preferred_inner_width + style.padding.horizontal() + style.border_width * 2.0)
-                .max(1.0);
+        let rect_width = if explicit_width.is_some() {
+            max_outer_width
+        } else {
+            (preferred_inner_width + style.padding.horizontal() + style.border_width * 2.0).max(1.0)
+        };
         let rect_height = (content_height + style.padding.vertical() + style.border_width * 2.0)
             .max(explicit_height)
             .max(1.0);
@@ -968,15 +973,14 @@ impl<'a> LayoutEngine<'a> {
     ) -> Result<Option<FlowBox>> {
         let outer_width = style
             .resolve_width(containing_width)
+            .map(|width| style.outer_width_for_declared(width))
             .unwrap_or(containing_width - style.margin.horizontal())
             .max(1.0);
         let rect_x = x + style.margin.left;
         let rect_y = y + style.margin.top;
         let inner_x = rect_x + style.border_width + style.padding.left;
         let inner_y = rect_y + style.border_width + style.padding.top;
-        let inner_width =
-            (outer_width - style.padding.horizontal() - style.border_width.mul_add(2.0, 0.0))
-                .max(1.0);
+        let inner_width = style.inner_width_for_outer(outer_width);
 
         let (children, content_height) =
             self.layout_children(node, &style, inner_x, inner_y, inner_width, depth)?;
@@ -1007,14 +1011,14 @@ impl<'a> LayoutEngine<'a> {
     ) -> Result<Option<FlowBox>> {
         let table_width = style
             .resolve_width(containing_width)
+            .map(|width| style.outer_width_for_declared(width))
             .unwrap_or(containing_width - style.margin.horizontal())
             .max(1.0);
         let rect_x = x + style.margin.left;
         let rect_y = y + style.margin.top;
         let content_x = rect_x + style.border_width + style.padding.left;
         let content_y = rect_y + style.border_width + style.padding.top;
-        let content_width =
-            (table_width - style.padding.horizontal() - style.border_width * 2.0).max(1.0);
+        let content_width = style.inner_width_for_outer(table_width);
 
         let grid = build_table_grid(node);
         if grid.rows.is_empty() {
@@ -1137,7 +1141,8 @@ impl<'a> LayoutEngine<'a> {
             for cell in &row.cells {
                 let style = style_for_node(&cell.node, table_style);
                 if let Some(width) = style.width.and_then(|width| width.resolve(available)) {
-                    let per_col = ((width - spacing * cell.colspan.saturating_sub(1) as f32)
+                    let outer_width = style.outer_width_for_declared(width);
+                    let per_col = ((outer_width - spacing * cell.colspan.saturating_sub(1) as f32)
                         / cell.colspan as f32)
                         .max(1.0);
                     for col in cell.col..cell.col + cell.colspan {
@@ -1405,7 +1410,13 @@ struct LayoutPainter<'a> {
 impl LayoutPainter<'_> {
     fn paint(&mut self, layout: &LayoutBox) {
         if let Some(background) = layout.style.background {
-            fill_rect(self.pixmap, self.scale, layout.rect, background);
+            fill_style_rect(
+                self.pixmap,
+                self.scale,
+                layout.rect,
+                background,
+                layout.style.border_radius,
+            );
         }
         if layout.style.border_width > 0.0 {
             stroke_rect(
@@ -1531,7 +1542,9 @@ struct Style {
     text_transform: TextTransform,
     vertical_align: VerticalAlign,
     wrap: TextWrap,
+    box_sizing: BoxSizing,
     border_width: f32,
+    border_radius: f32,
     border_color: Rgba,
     border_collapse: BorderCollapse,
     cell_padding: f32,
@@ -1561,7 +1574,9 @@ impl Style {
             text_transform: TextTransform::None,
             vertical_align: VerticalAlign::Top,
             wrap: TextWrap::WordOrGlyph,
+            box_sizing: BoxSizing::BorderBox,
             border_width: 0.0,
+            border_radius: 0.0,
             border_color: Rgba::BLACK,
             border_collapse: BorderCollapse::Separate,
             cell_padding: 0.0,
@@ -1595,7 +1610,9 @@ impl Style {
             text_transform: parent.text_transform,
             vertical_align: VerticalAlign::Top,
             wrap: parent.wrap,
+            box_sizing: parent.box_sizing,
             border_width: 0.0,
+            border_radius: 0.0,
             border_color: parent.border_color,
             border_collapse: BorderCollapse::Separate,
             cell_padding: 0.0,
@@ -1733,7 +1750,13 @@ impl Style {
                     self.wrap = TextWrap::WordOrGlyph;
                 }
             }
+            "box-sizing" => {
+                if let Some(box_sizing) = parse_box_sizing(value) {
+                    self.box_sizing = box_sizing;
+                }
+            }
             "border" => apply_border(self, value),
+            "border-radius" => self.border_radius = parse_radius(value).unwrap_or(0.0).max(0.0),
             "border-width" => {
                 self.border_width = parse_edges(value)
                     .map(|edges| edges.top.max(edges.right).max(edges.bottom).max(edges.left))
@@ -1783,6 +1806,19 @@ impl Style {
             height = Some(height.unwrap_or(max_height).min(max_height));
         }
         height
+    }
+
+    fn outer_width_for_declared(&self, width: f32) -> f32 {
+        match self.box_sizing {
+            BoxSizing::BorderBox => width,
+            BoxSizing::ContentBox => {
+                width + self.padding.horizontal() + self.border_width.mul_add(2.0, 0.0)
+            }
+        }
+    }
+
+    fn inner_width_for_outer(&self, width: f32) -> f32 {
+        (width - self.padding.horizontal() - self.border_width.mul_add(2.0, 0.0)).max(1.0)
     }
 
     fn text_attrs(&self) -> Attrs<'_> {
@@ -1951,6 +1987,12 @@ impl TextWrap {
 enum BorderCollapse {
     Separate,
     Collapse,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BoxSizing {
+    BorderBox,
+    ContentBox,
 }
 
 #[derive(Debug, Clone)]
@@ -2161,6 +2203,10 @@ fn parse_edges_with_font(value: &str, font_size: f32) -> Option<Edges> {
     }
 }
 
+fn parse_radius(value: &str) -> Option<f32> {
+    value.split_whitespace().next().and_then(parse_px)
+}
+
 fn parse_color(value: &str) -> Option<Rgba> {
     let value = value.trim().to_ascii_lowercase();
     if value.is_empty() {
@@ -2284,6 +2330,14 @@ fn parse_vertical_align(value: &str) -> Option<VerticalAlign> {
     }
 }
 
+fn parse_box_sizing(value: &str) -> Option<BoxSizing> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "border-box" => Some(BoxSizing::BorderBox),
+        "content-box" => Some(BoxSizing::ContentBox),
+        _ => None,
+    }
+}
+
 fn parse_font_family(value: &str) -> Option<String> {
     let candidates: Vec<String> = value
         .split(',')
@@ -2333,9 +2387,15 @@ fn is_safe_system_font(value: &str) -> bool {
     matches!(
         value.to_ascii_lowercase().as_str(),
         "arial"
+            | "arial nova"
+            | "avenir"
+            | "avenir next"
+            | "avenir next lt pro"
             | "helvetica"
             | "helvetica neue"
+            | "nimbus sans"
             | "segoe ui"
+            | "corbel"
             | "georgia"
             | "times"
             | "times new roman"
@@ -2674,6 +2734,62 @@ fn normalize_text(text: &str) -> String {
     }
 
     out.trim().to_string()
+}
+
+fn fill_style_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, color: Rgba, radius: f32) {
+    if radius <= 0.0 {
+        fill_rect(pixmap, scale, rect, color);
+        return;
+    }
+    fill_rounded_rect(pixmap, scale, rect, color, radius);
+}
+
+fn fill_rounded_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, color: Rgba, radius: f32) {
+    if color.a == 0 || rect.width <= 0.0 || rect.height <= 0.0 {
+        return;
+    }
+    let x = rect.x * scale;
+    let y = rect.y * scale;
+    let width = rect.width * scale;
+    let height = rect.height * scale;
+    if !x.is_finite() || !y.is_finite() || !width.is_finite() || !height.is_finite() {
+        return;
+    }
+
+    let radius = (radius * scale).min(width / 2.0).min(height / 2.0).max(0.0);
+    if radius <= 0.0 {
+        fill_rect(pixmap, scale, rect, color);
+        return;
+    }
+
+    let x0 = x;
+    let y0 = y;
+    let x1 = x + width;
+    let y1 = y + height;
+    let mut path = PathBuilder::new();
+    path.move_to(x0 + radius, y0);
+    path.line_to(x1 - radius, y0);
+    path.quad_to(x1, y0, x1, y0 + radius);
+    path.line_to(x1, y1 - radius);
+    path.quad_to(x1, y1, x1 - radius, y1);
+    path.line_to(x0 + radius, y1);
+    path.quad_to(x0, y1, x0, y1 - radius);
+    path.line_to(x0, y0 + radius);
+    path.quad_to(x0, y0, x0 + radius, y0);
+    path.close();
+    let Some(path) = path.finish() else {
+        return;
+    };
+
+    let mut paint = Paint::default();
+    paint.set_color_rgba8(color.r, color.g, color.b, color.a);
+    pixmap.fill_path(
+        &path,
+        &paint,
+        FillRule::Winding,
+        Transform::identity(),
+        None,
+    );
 }
 
 fn apply_text_transform(text: &str, transform: TextTransform) -> String {
@@ -3060,6 +3176,8 @@ mod tests {
         assert_eq!(family, "Helvetica");
         let family = parse_font_family("ui-serif, Georgia, serif").unwrap();
         assert_eq!(family, "serif");
+        let family = parse_font_family("Avenir, Montserrat, Corbel, sans-serif").unwrap();
+        assert_eq!(family, "Avenir");
     }
 
     #[test]
@@ -3079,6 +3197,13 @@ mod tests {
         let mut style = Style::initial();
         style.apply_declaration("border", "0");
         assert_eq!(style.border_width, 0.0);
+    }
+
+    #[test]
+    fn parses_border_radius() {
+        let mut style = Style::initial();
+        style.apply_declaration("border-radius", "12px");
+        assert_eq!(style.border_radius, 12.0);
     }
 
     #[test]
@@ -3139,6 +3264,21 @@ mod tests {
         let text =
             find_layout(&layout, |child| matches!(child.kind, LayoutKind::Text(_))).expect("text");
         assert_eq!(text.style.text_align, TextAlign::Left);
+    }
+
+    #[test]
+    fn content_box_table_cell_width_keeps_padding_outside_content() {
+        let layout = layout_for_test(
+            r#"<table width="100"><tr><td style="width:32px;padding-left:12px;box-sizing:content-box;white-space:nowrap">4/5</td></tr></table>"#,
+            100,
+        );
+        let cell =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Cell)).expect("cell");
+        let text =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Text(_))).expect("text");
+        assert!(cell.rect.width >= 44.0);
+        assert!(text.rect.width >= 32.0);
+        assert_eq!(text.style.wrap, TextWrap::None);
     }
 
     #[test]

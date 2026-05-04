@@ -8,126 +8,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import pixelmatch from 'pixelmatch';
 import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
+import { TEMPLATES } from './templates.mjs';
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_WORK_DIR = '/tmp/email-render-playwright-compare';
 const DEFAULT_WIDTH = 600;
 const DEFAULT_TIMEOUT_MS = 15000;
-
-const TEMPLATES = [
-  [
-    'leemunroe-inlined',
-    'https://raw.githubusercontent.com/leemunroe/responsive-html-email-template/master/email-inlined.html',
-  ],
-  [
-    'mailgun-action',
-    'https://raw.githubusercontent.com/mailgun/transactional-email-templates/master/templates/inlined/action.html',
-  ],
-  [
-    'mailgun-alert',
-    'https://raw.githubusercontent.com/mailgun/transactional-email-templates/master/templates/inlined/alert.html',
-  ],
-  [
-    'mailgun-billing',
-    'https://raw.githubusercontent.com/mailgun/transactional-email-templates/master/templates/inlined/billing.html',
-  ],
-  [
-    'waypoint-saas-otp',
-    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-one-time-passcode-otp.html',
-  ],
-  [
-    'waypoint-saas-receipt',
-    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-subscription-receipt.html',
-  ],
-  [
-    'waypoint-ecommerce-delivery',
-    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-delivery-notification.html',
-  ],
-  [
-    'waypoint-marketplace-qr',
-    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/marketplace-qr-tickets.html',
-  ],
-  [
-    'waypoint-banking-payout',
-    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/banking-payout.html',
-  ],
-  [
-    'waypoint-ecommerce-promo-code',
-    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-promo-code.html',
-  ],
-  [
-    'waypoint-ecommerce-welcome',
-    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-welcome.html',
-  ],
-  [
-    'waypoint-saas-reset-password',
-    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-reset-password.html',
-  ],
-  [
-    'waypoint-saas-payment-declined',
-    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-payment-declined.html',
-  ],
-  [
-    'waypoint-social-new-comment',
-    'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/social-new-comment.html',
-  ],
-  [
-    'mailpace-welcome',
-    'https://raw.githubusercontent.com/mailpace/templates/main/dist/welcome.html',
-  ],
-  [
-    'mailpace-confirmation',
-    'https://raw.githubusercontent.com/mailpace/templates/main/dist/confirmation.html',
-  ],
-  [
-    'mailpace-password-reset',
-    'https://raw.githubusercontent.com/mailpace/templates/main/dist/password_reset.html',
-  ],
-  [
-    'mailpace-receipt',
-    'https://raw.githubusercontent.com/mailpace/templates/main/dist/receipt.html',
-  ],
-  [
-    'mailpace-security-alert',
-    'https://raw.githubusercontent.com/mailpace/templates/main/dist/security_alert.html',
-  ],
-  [
-    'mailpace-account-deleted',
-    'https://raw.githubusercontent.com/mailpace/templates/main/dist/account_deleted.html',
-  ],
-  [
-    'postmark-welcome',
-    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/welcome/content.html',
-  ],
-  [
-    'postmark-password-reset',
-    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/password-reset/content.html',
-  ],
-  [
-    'postmark-receipt',
-    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/receipt/content.html',
-  ],
-  [
-    'postmark-invoice',
-    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/invoice/content.html',
-  ],
-  [
-    'postmark-comment-notification',
-    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/comment-notification/content.html',
-  ],
-  [
-    'postmark-dunning',
-    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/dunning/content.html',
-  ],
-  [
-    'postmark-user-invitation',
-    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/user-invitation/content.html',
-  ],
-  [
-    'postmark-trial-expiring',
-    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/trial-expiring/content.html',
-  ],
-];
 
 function parseArgs(argv) {
   const args = {
