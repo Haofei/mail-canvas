@@ -6807,6 +6807,28 @@ mod tests {
     }
 
     #[test]
+    fn body_color_inherits_to_paragraph_text() {
+        let html = build_document(
+            "<p>Hello</p>",
+            Some("body { color: rgba(0,0,0,.4); }"),
+            None,
+            200,
+        );
+        let html = inline_css(&html, 200).unwrap();
+        let document = kuchiki::parse_html().one(html);
+        let mut font_system = FontSystem::new();
+        let mut engine = LayoutEngine::new(
+            &mut font_system,
+            resource_policy_for_test(),
+            Vec::new(),
+            Vec::new(),
+        );
+        let layout = engine.layout_document(&document, 200).unwrap();
+        let text = find_text_layout(&layout).expect("text");
+        assert_eq!(text.style.color, Rgba::with_alpha(0, 0, 0, 102));
+    }
+
+    #[test]
     fn applies_text_transform_to_text_nodes() {
         let layout = layout_for_test(r#"<p style="text-transform: uppercase">Confirm</p>"#, 200);
         let text = find_layout(
