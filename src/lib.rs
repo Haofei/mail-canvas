@@ -27,6 +27,8 @@ const MAX_RENDER_PIXELS_PER_AXIS: u32 = 16_384;
 const MAX_CONSOLE_MESSAGES: usize = 50;
 const MAX_CONSOLE_MESSAGE_LEN: usize = 2048;
 const MAX_LAYOUT_DEPTH: usize = 64;
+const MAX_WEB_FONT_IMPORTS: usize = 16;
+const MAX_WEB_FONTS: usize = 32;
 const DEFAULT_MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 const DEFAULT_MAX_DECODED_PIXELS: u64 = 16_000_000;
 const HARD_BREAK: char = '\u{000B}';
@@ -101,6 +103,19 @@ pub struct RenderedPdf {
 pub struct ConsoleMessage {
     pub level: &'static str,
     pub message: String,
+}
+
+fn push_console_message(messages: &mut Vec<ConsoleMessage>, level: &'static str, message: &str) {
+    if messages.len() >= MAX_CONSOLE_MESSAGES {
+        return;
+    }
+
+    let mut message = message.to_string();
+    if message.len() > MAX_CONSOLE_MESSAGE_LEN {
+        message.truncate(MAX_CONSOLE_MESSAGE_LEN);
+        message.push_str("... (truncated)");
+    }
+    messages.push(ConsoleMessage { level, message });
 }
 
 pub trait EmailRenderer {
@@ -260,16 +275,26 @@ impl EmailRenderer for RustEmailRenderer {
     fn render_png(&mut self, request: RenderRequest) -> Result<RenderedImage> {
         validate_request(&request)?;
 
-        let available_font_families = font_database_families(self.font_system.db());
-        let html = inline_css(&request.html, request.width)?;
-        let document = kuchiki::parse_html().one(html);
-        let mut engine = LayoutEngine::new(
-            &mut self.font_system,
-            ResourcePolicy::from_request(&request, document_base_url(&document)),
-            available_font_families,
+        let render_html = strip_hidden_conditional_comments(&request.html);
+        let source_document = kuchiki::parse_html().one(render_html.clone());
+        let resources = ResourcePolicy::from_request(&request, document_base_url(&source_document));
+        let mut warnings = Vec::new();
+        load_web_fonts_from_html(
+            &render_html,
+            &resources,
+            self.font_system.db_mut(),
+            &mut warnings,
         );
+
+        let available_font_families = font_database_families(self.font_system.db());
+        let html = inline_css(&render_html, request.width)?;
+        let document = kuchiki::parse_html().one(html);
+        let mut engine =
+            LayoutEngine::new(&mut self.font_system, resources, available_font_families);
         let mut layout = engine.layout_document(&document, request.width)?;
-        let warnings = std::mem::take(&mut engine.warnings);
+        for message in std::mem::take(&mut engine.warnings) {
+            push_console_message(&mut warnings, message.level, &message.message);
+        }
         drop(engine);
 
         let css_height = clamp_css_height(
@@ -390,7 +415,8 @@ pub fn build_document(
 }
 
 fn inline_css(html: &str, viewport_width: u32) -> Result<String> {
-    let html = inject_active_media_styles(html, viewport_width);
+    let html = strip_hidden_conditional_comments(html);
+    let html = inject_active_media_styles(&html, viewport_width);
     CSSInliner::options()
         .load_remote_stylesheets(false)
         .keep_style_tags(false)
@@ -400,6 +426,35 @@ fn inline_css(html: &str, viewport_width: u32) -> Result<String> {
         .build()
         .inline(&html)
         .context("failed to inline CSS")
+}
+
+fn strip_hidden_conditional_comments(html: &str) -> String {
+    let lower = html.to_ascii_lowercase();
+    let mut out = String::with_capacity(html.len());
+    let mut offset = 0usize;
+
+    while let Some(start_rel) = lower[offset..].find("<!--[if") {
+        let start = offset + start_rel;
+        out.push_str(&html[offset..start]);
+
+        let Some(end_rel) = lower[start..].find("<![endif]-->") else {
+            out.push_str(&html[start..]);
+            return out;
+        };
+        let end = start + end_rel;
+        let opener = &lower[start..end.min(start + 128)];
+        if opener.contains("><!-->") {
+            let marker_len = "<!--[if".len();
+            out.push_str(&html[start..start + marker_len]);
+            offset = start + marker_len;
+            continue;
+        }
+
+        offset = end + "<![endif]-->".len();
+    }
+
+    out.push_str(&html[offset..]);
+    out
 }
 
 fn push_unique_case_insensitive(values: &mut Vec<String>, value: String) {
@@ -449,6 +504,471 @@ fn style_blocks(html: &str) -> Vec<&str> {
     }
 
     blocks
+}
+
+fn load_web_fonts_from_html(
+    html: &str,
+    policy: &ResourcePolicy,
+    db: &mut fontdb::Database,
+    warnings: &mut Vec<ConsoleMessage>,
+) {
+    let mut css_blocks: Vec<String> = style_blocks(html)
+        .into_iter()
+        .map(ToString::to_string)
+        .collect();
+    let mut imported_urls = Vec::new();
+    let mut index = 0usize;
+
+    while index < css_blocks.len() && imported_urls.len() < MAX_WEB_FONT_IMPORTS {
+        for import_url in css_import_urls(&css_blocks[index]) {
+            if imported_urls
+                .iter()
+                .any(|loaded: &String| loaded.eq_ignore_ascii_case(&import_url))
+            {
+                continue;
+            }
+            imported_urls.push(import_url.clone());
+            match load_resource_bytes(&import_url, policy)
+                .and_then(|bytes| String::from_utf8(bytes).context("stylesheet is not UTF-8"))
+            {
+                Ok(css) => css_blocks.push(css),
+                Err(error) => push_console_message(
+                    warnings,
+                    "warn",
+                    &format!("failed to load stylesheet {import_url}: {error}"),
+                ),
+            }
+            if imported_urls.len() >= MAX_WEB_FONT_IMPORTS {
+                break;
+            }
+        }
+        index += 1;
+    }
+
+    let mut loaded_font_urls = Vec::new();
+    let mut loaded_fonts = 0usize;
+    for css in css_blocks {
+        for face in font_face_blocks(&css) {
+            if loaded_fonts >= MAX_WEB_FONTS {
+                push_console_message(
+                    warnings,
+                    "warn",
+                    "maximum web font count reached; skipped remaining @font-face rules",
+                );
+                return;
+            }
+
+            let declarations = css_declarations(face);
+            if !font_face_covers_basic_latin(&declarations) {
+                continue;
+            }
+            let family = declaration_value(&declarations, "font-family")
+                .map(unquote_css_value)
+                .unwrap_or_else(|| "unknown".to_string());
+            let Some(src) = declaration_value(&declarations, "src") else {
+                continue;
+            };
+            let Some(candidate) = choose_font_source(src) else {
+                continue;
+            };
+            if loaded_font_urls
+                .iter()
+                .any(|loaded: &String| loaded.eq_ignore_ascii_case(&candidate.url))
+            {
+                continue;
+            }
+
+            match load_resource_bytes(&candidate.url, policy)
+                .and_then(|bytes| decode_font_resource(&bytes, &candidate))
+            {
+                Ok(font_data) => {
+                    let before = db.faces().count();
+                    db.load_font_data(font_data);
+                    if db.faces().count() > before {
+                        loaded_font_urls.push(candidate.url);
+                        loaded_fonts += 1;
+                    } else {
+                        push_console_message(
+                            warnings,
+                            "warn",
+                            &format!("web font {family} did not contain a loadable face"),
+                        );
+                    }
+                }
+                Err(error) => push_console_message(
+                    warnings,
+                    "warn",
+                    &format!(
+                        "failed to load web font {family} from {}: {error}",
+                        candidate.url
+                    ),
+                ),
+            }
+        }
+    }
+}
+
+fn css_import_urls(css: &str) -> Vec<String> {
+    let lower = css.to_ascii_lowercase();
+    let mut urls = Vec::new();
+    let mut offset = 0usize;
+
+    while offset < lower.len() {
+        let Some(import_rel) = lower[offset..].find("@import") else {
+            break;
+        };
+        let import_start = offset + import_rel;
+        let statement_start = import_start + "@import".len();
+        let statement_end = css[statement_start..]
+            .find(';')
+            .map_or(css.len(), |rel| statement_start + rel);
+        let statement = &css[statement_start..statement_end];
+        if let Some(url) = first_css_url(statement).or_else(|| first_quoted_css_string(statement)) {
+            urls.push(url);
+        }
+        offset = statement_end.saturating_add(1);
+    }
+
+    urls
+}
+
+fn font_face_blocks(css: &str) -> Vec<&str> {
+    let lower = css.to_ascii_lowercase();
+    let mut faces = Vec::new();
+    let mut offset = 0usize;
+
+    while let Some(face_rel) = lower[offset..].find("@font-face") {
+        let face_start = offset + face_rel;
+        let Some(open_rel) = css[face_start..].find('{') else {
+            break;
+        };
+        let open = face_start + open_rel;
+        let Some(close) = find_matching_brace(css, open) else {
+            break;
+        };
+        faces.push(&css[open + 1..close]);
+        offset = close + 1;
+    }
+
+    faces
+}
+
+fn css_declarations(block: &str) -> Vec<(String, String)> {
+    split_css_top_level(block, ';')
+        .into_iter()
+        .filter_map(|declaration| {
+            let (name, value) = declaration.split_once(':')?;
+            Some((
+                name.trim().to_ascii_lowercase(),
+                strip_css_important(value.trim()).trim().to_string(),
+            ))
+        })
+        .collect()
+}
+
+fn declaration_value<'a>(declarations: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    declarations
+        .iter()
+        .find(|(declaration_name, _)| declaration_name == name)
+        .map(|(_, value)| value.as_str())
+}
+
+fn font_face_covers_basic_latin(declarations: &[(String, String)]) -> bool {
+    let Some(range) = declaration_value(declarations, "unicode-range") else {
+        return true;
+    };
+    unicode_range_contains(range, 0x41) || unicode_range_contains(range, 0x61)
+}
+
+fn unicode_range_contains(range_list: &str, codepoint: u32) -> bool {
+    range_list
+        .split(',')
+        .any(|range| single_unicode_range_contains(range.trim(), codepoint))
+}
+
+fn single_unicode_range_contains(range: &str, codepoint: u32) -> bool {
+    let Some(raw) = range
+        .strip_prefix("U+")
+        .or_else(|| range.strip_prefix("u+"))
+    else {
+        return false;
+    };
+
+    if raw.contains('?') {
+        let start = u32::from_str_radix(&raw.replace('?', "0"), 16).ok();
+        let end = u32::from_str_radix(&raw.replace('?', "F"), 16).ok();
+        return matches!((start, end), (Some(start), Some(end)) if start <= codepoint && codepoint <= end);
+    }
+
+    if let Some((start, end)) = raw.split_once('-') {
+        let start = u32::from_str_radix(start.trim(), 16).ok();
+        let end = u32::from_str_radix(end.trim(), 16).ok();
+        return matches!((start, end), (Some(start), Some(end)) if start <= codepoint && codepoint <= end);
+    }
+
+    u32::from_str_radix(raw.trim(), 16).is_ok_and(|value| value == codepoint)
+}
+
+#[derive(Debug, Clone)]
+struct FontSourceCandidate {
+    url: String,
+    format: Option<String>,
+}
+
+fn choose_font_source(src: &str) -> Option<FontSourceCandidate> {
+    font_source_candidates(src)
+        .into_iter()
+        .find(font_source_supported)
+}
+
+fn font_source_candidates(src: &str) -> Vec<FontSourceCandidate> {
+    let lower = src.to_ascii_lowercase();
+    let mut candidates = Vec::new();
+    let mut offset = 0usize;
+
+    while offset < lower.len() {
+        let Some(url_rel) = lower[offset..].find("url(") else {
+            break;
+        };
+        let url_start = offset + url_rel;
+        let Some((url, end)) = css_function_value(src, url_start) else {
+            offset = url_start + "url(".len();
+            continue;
+        };
+        let segment_end = next_css_segment_end(src, end);
+        let format = css_format_hint(&src[end..segment_end]);
+        candidates.push(FontSourceCandidate { url, format });
+        offset = segment_end.saturating_add(1);
+    }
+
+    candidates
+}
+
+fn font_source_supported(candidate: &FontSourceCandidate) -> bool {
+    if let Some(format) = &candidate.format {
+        let format = format.to_ascii_lowercase();
+        if format.contains("woff2")
+            || format.contains("woff")
+            || format.contains("truetype")
+            || format.contains("opentype")
+        {
+            return true;
+        }
+    }
+
+    let path = candidate
+        .url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(candidate.url.as_str())
+        .to_ascii_lowercase();
+    matches!(
+        Path::new(&path)
+            .extension()
+            .and_then(|extension| extension.to_str()),
+        Some("woff2" | "woff" | "ttf" | "otf" | "ttc" | "otc")
+    )
+}
+
+fn decode_font_resource(bytes: &[u8], candidate: &FontSourceCandidate) -> Result<Vec<u8>> {
+    if bytes.starts_with(b"wOF2") {
+        return wuff::decompress_woff2(bytes)
+            .map_err(|error| anyhow!("failed to decode WOFF2 font: {error}"));
+    }
+    if bytes.starts_with(b"wOFF") {
+        return wuff::decompress_woff1(bytes)
+            .map_err(|error| anyhow!("failed to decode WOFF font: {error}"));
+    }
+    if font_bytes_look_raw(bytes) {
+        return Ok(bytes.to_vec());
+    }
+
+    match candidate.format.as_deref().map(str::to_ascii_lowercase) {
+        Some(format) if format.contains("woff2") => wuff::decompress_woff2(bytes)
+            .map_err(|error| anyhow!("failed to decode WOFF2 font: {error}")),
+        Some(format) if format.contains("woff") => wuff::decompress_woff1(bytes)
+            .map_err(|error| anyhow!("failed to decode WOFF font: {error}")),
+        _ => bail!("unsupported font data"),
+    }
+}
+
+fn font_bytes_look_raw(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0x00, 0x01, 0x00, 0x00])
+        || bytes.starts_with(b"OTTO")
+        || bytes.starts_with(b"ttcf")
+        || bytes.starts_with(b"true")
+}
+
+fn css_format_hint(segment: &str) -> Option<String> {
+    let lower = segment.to_ascii_lowercase();
+    let format_start = lower.find("format(")?;
+    css_function_value(segment, format_start).map(|(value, _)| unquote_css_value(&value))
+}
+
+fn first_css_url(value: &str) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    let url_start = lower.find("url(")?;
+    css_function_value(value, url_start).map(|(url, _)| url)
+}
+
+fn first_quoted_css_string(value: &str) -> Option<String> {
+    let trimmed = value.trim_start();
+    let quote = trimmed.as_bytes().first().copied()?;
+    if quote != b'\'' && quote != b'"' {
+        return None;
+    }
+
+    let mut index = 1usize;
+    let bytes = trimmed.as_bytes();
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => index += 2,
+            byte if byte == quote => return Some(trimmed[1..index].trim().to_string()),
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+fn css_function_value(source: &str, function_start: usize) -> Option<(String, usize)> {
+    let open = source[function_start..].find('(')? + function_start;
+    let bytes = source.as_bytes();
+    let mut index = open + 1;
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+        index += 1;
+    }
+
+    let quote = match bytes.get(index).copied() {
+        Some(b'\'') | Some(b'"') => {
+            let quote = bytes[index];
+            index += 1;
+            Some(quote)
+        }
+        _ => None,
+    };
+    let value_start = index;
+
+    if let Some(quote) = quote {
+        while index < bytes.len() {
+            match bytes[index] {
+                b'\\' => index += 2,
+                byte if byte == quote => {
+                    let value = source[value_start..index].trim().to_string();
+                    index += 1;
+                    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+                        index += 1;
+                    }
+                    if bytes.get(index) == Some(&b')') {
+                        return Some((value, index + 1));
+                    }
+                    return None;
+                }
+                _ => index += 1,
+            }
+        }
+        return None;
+    }
+
+    while index < bytes.len() && bytes[index] != b')' {
+        index += 1;
+    }
+    if bytes.get(index) == Some(&b')') {
+        return Some((source[value_start..index].trim().to_string(), index + 1));
+    }
+    None
+}
+
+fn split_css_top_level(source: &str, separator: char) -> Vec<&str> {
+    let bytes = source.as_bytes();
+    let separator = separator as u8;
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut index = 0usize;
+    let mut quote = None;
+    let mut paren_depth = 0usize;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if let Some(current_quote) = quote {
+            if byte == b'\\' {
+                index += 2;
+                continue;
+            }
+            if byte == current_quote {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+
+        match byte {
+            b'\'' | b'"' => quote = Some(byte),
+            b'(' => paren_depth += 1,
+            b')' => paren_depth = paren_depth.saturating_sub(1),
+            byte if byte == separator && paren_depth == 0 => {
+                parts.push(source[start..index].trim());
+                start = index + 1;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+
+    if start <= source.len() {
+        parts.push(source[start..].trim());
+    }
+    parts
+}
+
+fn next_css_segment_end(source: &str, start: usize) -> usize {
+    let bytes = source.as_bytes();
+    let mut index = start;
+    let mut quote = None;
+    let mut paren_depth = 0usize;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if let Some(current_quote) = quote {
+            if byte == b'\\' {
+                index += 2;
+                continue;
+            }
+            if byte == current_quote {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+        match byte {
+            b'\'' | b'"' => quote = Some(byte),
+            b'(' => paren_depth += 1,
+            b')' => paren_depth = paren_depth.saturating_sub(1),
+            b',' if paren_depth == 0 => return index,
+            _ => {}
+        }
+        index += 1;
+    }
+
+    source.len()
+}
+
+fn strip_css_important(value: &str) -> &str {
+    let trimmed = value.trim_end();
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.ends_with("!important") {
+        trimmed[..trimmed.len() - "!important".len()].trim_end()
+    } else {
+        value
+    }
+}
+
+fn unquote_css_value(value: &str) -> String {
+    value
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim()
+        .to_string()
 }
 
 fn append_active_media_css(css: &str, viewport_width: u32, out: &mut String) {
@@ -764,6 +1284,10 @@ fn load_remote_url(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
         .new_agent();
     let mut response = agent
         .get(url.as_str())
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        )
         .call()
         .with_context(|| format!("failed to fetch {url}"))?;
     let bytes = response
@@ -911,6 +1435,7 @@ impl<'a> LayoutEngine<'a> {
         let mut text = Vec::new();
         let parent_tag = element_tag(node);
         let mut ordered_list_index = 1usize;
+        let mut previous_margin_bottom = None;
 
         for child in node.children() {
             if let Some(text_node) = child.as_text() {
@@ -943,7 +1468,9 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
 
-            self.flush_text(&mut text, style, x, &mut cursor_y, width, &mut children)?;
+            if self.flush_text(&mut text, style, x, &mut cursor_y, width, &mut children)? {
+                previous_margin_bottom = None;
+            }
             let child_display = child_style.display;
             let list_marker = if tag == "li" {
                 match parent_tag.as_deref() {
@@ -971,10 +1498,22 @@ impl<'a> LayoutEngine<'a> {
             };
             if let Some(flow) = flow {
                 let mut flow = flow;
-                if is_inline_flow(child_display, &tag) {
+                if is_inline_flow(child_display) {
                     align_inline_flow(&mut flow.node, style.text_align, width);
                 }
-                cursor_y += flow.advance;
+                let margin_overlap = if can_collapse_sibling_margin(child_display) {
+                    previous_margin_bottom
+                        .map(|previous: f32| previous.min(flow.node.style.margin.top))
+                        .unwrap_or(0.0)
+                } else {
+                    0.0
+                };
+                if margin_overlap > 0.0 {
+                    translate_layout(&mut flow.node, 0.0, -margin_overlap);
+                }
+                cursor_y += flow.advance - margin_overlap;
+                previous_margin_bottom = can_collapse_sibling_margin(child_display)
+                    .then_some(flow.node.style.margin.bottom);
                 children.push(flow.node);
             }
         }
@@ -991,12 +1530,12 @@ impl<'a> LayoutEngine<'a> {
         cursor_y: &mut f32,
         width: f32,
         children: &mut Vec<LayoutBox>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let normalized = normalize_text_spans(text, style.text_transform);
         text.clear();
 
         if normalized.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
 
         let plain_text = spans_text(&normalized);
@@ -1013,7 +1552,7 @@ impl<'a> LayoutEngine<'a> {
             children: Vec::new(),
         });
         *cursor_y += height;
-        Ok(())
+        Ok(true)
     }
 
     fn layout_element_with_style(
@@ -1170,7 +1709,8 @@ impl<'a> LayoutEngine<'a> {
         } else {
             style.cell_spacing.max(0.0)
         };
-        let column_widths = self.resolve_table_column_widths(&grid, &style, content_width, spacing);
+        let column_widths =
+            self.resolve_table_column_widths(&grid, &style, content_width, spacing)?;
 
         for row in grid.rows {
             let row_style = self.style_for_node(&row.node, &style);
@@ -1261,12 +1801,11 @@ impl<'a> LayoutEngine<'a> {
         table_style: &Style,
         table_width: f32,
         spacing: f32,
-    ) -> Vec<f32> {
+    ) -> Result<Vec<f32>> {
         let count = grid.column_count.max(1);
         let available = (table_width - spacing * count.saturating_sub(1) as f32).max(count as f32);
         let mut widths = vec![None; count];
-        let mut fixed_total = 0.0;
-
+        let mut minimums = vec![0.0_f32; count];
         for (col, width) in grid.col_widths.iter().enumerate().take(count) {
             if let Some(width) = width.and_then(|width| width.resolve(available)) {
                 let width = width.max(1.0);
@@ -1287,13 +1826,40 @@ impl<'a> LayoutEngine<'a> {
                             widths[col] = Some(widths[col].unwrap_or(0.0).max(per_col));
                         }
                     }
+                } else if table_cell_is_spacer(&cell.node) {
+                    let preferred = (self
+                        .preferred_content_width(&cell.node, &style, available)?
+                        + style.padding.horizontal()
+                        + style.border.horizontal())
+                    .max(0.0);
+                    let per_col = ((preferred - spacing * cell.colspan.saturating_sub(1) as f32)
+                        / cell.colspan as f32)
+                        .max(0.0);
+                    for col in cell.col..cell.col + cell.colspan {
+                        if col < minimums.len() {
+                            minimums[col] = minimums[col].max(per_col);
+                        }
+                    }
                 }
             }
         }
 
-        for width in widths.iter().flatten() {
-            fixed_total += *width;
+        let mut fixed_total: f32 = widths.iter().flatten().sum();
+        let flexible_minimum: f32 = widths
+            .iter()
+            .zip(&minimums)
+            .filter_map(|(width, minimum)| width.is_none().then_some(*minimum))
+            .sum();
+
+        if fixed_total + flexible_minimum > available && fixed_total > 0.0 {
+            let target_fixed = (available - flexible_minimum).max(0.0);
+            let scale = target_fixed / fixed_total;
+            for width in widths.iter_mut().flatten() {
+                *width = (*width * scale).max(1.0);
+            }
         }
+
+        fixed_total = widths.iter().flatten().sum();
         let flexible = widths.iter().filter(|width| width.is_none()).count();
         let flexible_width = if flexible > 0 {
             ((available - fixed_total).max(flexible as f32)) / flexible as f32
@@ -1301,10 +1867,15 @@ impl<'a> LayoutEngine<'a> {
             0.0
         };
 
-        widths
+        Ok(widths
             .into_iter()
-            .map(|width| width.unwrap_or(flexible_width).max(1.0))
-            .collect()
+            .zip(minimums)
+            .map(|(width, minimum)| {
+                width
+                    .unwrap_or_else(|| flexible_width.max(minimum))
+                    .max(1.0)
+            })
+            .collect())
     }
 
     fn layout_image(
@@ -1325,8 +1896,9 @@ impl<'a> LayoutEngine<'a> {
                 None
             }
         });
-        let natural_width = image.as_ref().map_or(320.0, |image| image.width as f32);
-        let natural_height = image.as_ref().map_or(32.0, |image| image.height as f32);
+        let natural_width = image.as_ref().map_or(0.0, |image| image.width as f32);
+        let natural_height = image.as_ref().map_or(0.0, |image| image.height as f32);
+        let min_size = if image.is_some() { 1.0 } else { 0.0 };
         let width = style
             .resolve_width(containing_width)
             .or_else(|| {
@@ -1335,7 +1907,7 @@ impl<'a> LayoutEngine<'a> {
                 })
             })
             .unwrap_or(natural_width.min(containing_width))
-            .max(1.0);
+            .max(min_size);
         let height = style
             .resolve_height(width)
             .or_else(|| {
@@ -1349,7 +1921,7 @@ impl<'a> LayoutEngine<'a> {
                     natural_height
                 }
             })
-            .max(1.0);
+            .max(min_size);
 
         FlowBox {
             advance: style.margin.top + height + style.margin.bottom,
@@ -1574,23 +2146,14 @@ impl<'a> LayoutEngine<'a> {
             .unwrap_or_else(|| {
                 attr(node, "src")
                     .and_then(|src| load_image(&src, &self.resources).ok())
-                    .map_or(320.0, |image| image.width as f32)
+                    .map_or(0.0, |image| image.width as f32)
                     .min(containing_width)
             })
-            .max(1.0)
+            .max(0.0)
     }
 
     fn push_warning(&mut self, level: &'static str, message: &str) {
-        if self.warnings.len() >= MAX_CONSOLE_MESSAGES {
-            return;
-        }
-
-        let mut message = message.to_string();
-        if message.len() > MAX_CONSOLE_MESSAGE_LEN {
-            message.truncate(MAX_CONSOLE_MESSAGE_LEN);
-            message.push_str("... (truncated)");
-        }
-        self.warnings.push(ConsoleMessage { level, message });
+        push_console_message(&mut self.warnings, level, message);
     }
 }
 
@@ -2005,8 +2568,16 @@ impl Style {
                     self.font_family = Some(font_family);
                 }
             }
-            "font-weight" => self.font_weight = parse_font_weight(value),
-            "font-style" => self.font_style = parse_font_style(value),
+            "font-weight" => {
+                if !is_inherit_keyword(value) {
+                    self.font_weight = parse_font_weight(value);
+                }
+            }
+            "font-style" => {
+                if !is_inherit_keyword(value) {
+                    self.font_style = parse_font_style(value);
+                }
+            }
             "line-height" => {
                 if let Some((line_height, factor)) =
                     parse_line_height_declaration(value, self.font_size)
@@ -2188,6 +2759,13 @@ fn strip_important(value: &str) -> &str {
         return value[..stripped.len()].trim();
     }
     value
+}
+
+fn is_inherit_keyword(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "inherit" | "unset"
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2437,14 +3015,21 @@ fn style_for_node_with_fonts(
         for important in [false, true] {
             for (name, value, is_important) in &declarations {
                 if *is_important == important {
-                    if name == "font-family" {
-                        if let Some(font_family) =
-                            parse_font_family_with_available(value, available_font_families)
-                        {
-                            style.font_family = Some(font_family);
+                    match name.as_str() {
+                        "font-family" => {
+                            if let Some(font_family) =
+                                parse_font_family_with_available(value, available_font_families)
+                            {
+                                style.font_family = Some(font_family);
+                            }
                         }
-                    } else {
-                        style.apply_declaration(name, value);
+                        "font-weight" if is_inherit_keyword(value) => {
+                            style.font_weight = parent.font_weight;
+                        }
+                        "font-style" if is_inherit_keyword(value) => {
+                            style.font_style = parent.font_style;
+                        }
+                        _ => style.apply_declaration(name, value),
                     }
                 }
             }
@@ -3085,8 +3670,12 @@ fn translate_layout(layout: &mut LayoutBox, dx: f32, dy: f32) {
     }
 }
 
-fn is_inline_flow(display: Display, tag: &str) -> bool {
-    tag == "img" || matches!(display, Display::Inline | Display::InlineBlock)
+fn is_inline_flow(display: Display) -> bool {
+    matches!(display, Display::Inline | Display::InlineBlock)
+}
+
+fn can_collapse_sibling_margin(display: Display) -> bool {
+    matches!(display, Display::Block | Display::Table)
 }
 
 fn align_inline_flow(layout: &mut LayoutBox, align: TextAlign, containing_width: f32) {
@@ -3134,6 +3723,14 @@ fn text_content(node: &NodeRef) -> String {
         append_text(&mut out, &text_content(&child));
     }
     out
+}
+
+fn table_cell_is_spacer(node: &NodeRef) -> bool {
+    let text = text_content(node);
+    text.chars().any(|ch| ch == '\u{00a0}')
+        && text
+            .chars()
+            .all(|ch| ch == '\u{00a0}' || is_collapsible_whitespace(ch))
 }
 
 fn inline_can_flatten(node: &NodeRef, style: &Style) -> bool {
@@ -3244,13 +3841,15 @@ fn normalize_text_spans(spans: &[TextSpan], text_transform: TextTransform) -> Ve
                 }
                 segment = String::new();
                 pending_space = false;
-            } else if ch.is_whitespace() {
+            } else if is_collapsible_whitespace(ch) {
                 pending_space = true;
             } else {
+                let at_line_start_after_break =
+                    segment.is_empty() && rich_text_ends_with_newline(&out);
                 if pending_space
                     && (!out.is_empty() || !segment.is_empty())
                     && !segment.ends_with('\n')
-                    && !rich_text_ends_with_newline(&out)
+                    && !at_line_start_after_break
                 {
                     segment.push(' ');
                 }
@@ -3285,7 +3884,7 @@ fn trim_leading_span_space(spans: &mut Vec<TextSpan>) {
     while let Some(first) = spans.first_mut() {
         let trimmed = first
             .text
-            .trim_start_matches(|ch: char| ch != '\n' && ch.is_whitespace())
+            .trim_start_matches(|ch: char| ch != '\n' && is_collapsible_whitespace(ch))
             .to_string();
         first.text = trimmed;
         if first.text.is_empty() {
@@ -3300,7 +3899,7 @@ fn trim_trailing_span_space(spans: &mut Vec<TextSpan>) {
     while let Some(last) = spans.last_mut() {
         let trimmed = last
             .text
-            .trim_end_matches(|ch: char| ch != '\n' && ch.is_whitespace())
+            .trim_end_matches(|ch: char| ch != '\n' && is_collapsible_whitespace(ch))
             .to_string();
         last.text = trimmed;
         if last.text.is_empty() {
@@ -3313,6 +3912,10 @@ fn trim_trailing_span_space(spans: &mut Vec<TextSpan>) {
 
 fn rich_text_ends_with_newline(spans: &[TextSpan]) -> bool {
     spans.last().is_some_and(|span| span.text.ends_with('\n'))
+}
+
+fn is_collapsible_whitespace(ch: char) -> bool {
+    ch != '\u{00a0}' && ch.is_whitespace()
 }
 
 fn spans_text(spans: &[TextSpan]) -> String {
@@ -3825,6 +4428,25 @@ mod tests {
     }
 
     #[test]
+    fn inliner_ignores_hidden_mso_conditional_styles() {
+        let html = build_document(
+            r#"<style>.x { color: red; }</style><!--[if mso]><style>.x { color: blue; }</style><![endif]--><p class="x">Hello</p>"#,
+            None,
+            None,
+            600,
+        );
+        let inlined = inline_css(&html, 600).unwrap();
+        assert!(inlined.contains("color: red"));
+        assert!(!inlined.contains("color: blue"));
+    }
+
+    #[test]
+    fn keeps_downlevel_revealed_conditional_content() {
+        let html = "<!--[if !mso]><!--><style>.x { color: red; }</style><!--<![endif]-->";
+        assert!(strip_hidden_conditional_comments(html).contains(".x { color: red; }"));
+    }
+
+    #[test]
     fn applies_active_max_width_media_before_inlining() {
         let html = build_document(
             r#"<div class="x" style="padding: 24px">Hello</div>"#,
@@ -3898,6 +4520,26 @@ mod tests {
     }
 
     #[test]
+    fn inherited_font_weight_keeps_parent_weight() {
+        let mut parent = Style::initial();
+        parent.font_weight = FontWeight::BOLD;
+        let mut child = Style::from_parent_for_tag(&parent, "h2");
+        child.apply_declaration("font-weight", "inherit");
+        assert_eq!(child.font_weight, FontWeight::BOLD);
+
+        let layout = layout_for_test(
+            r#"<div style="font-weight: normal"><h1 style="font-weight: inherit; margin: 0">Title</h1></div>"#,
+            300,
+        );
+        let title = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "Title"),
+        )
+        .expect("title text");
+        assert_eq!(title.style.font_weight, FontWeight::NORMAL);
+    }
+
+    #[test]
     fn selects_safe_fallback_font_from_web_font_stack() {
         let family = parse_font_family(r#""Nunito Sans", Helvetica, Arial, sans-serif"#).unwrap();
         assert_eq!(family, "Helvetica");
@@ -3916,6 +4558,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(family, "Nunito Sans");
+    }
+
+    #[test]
+    fn skips_non_latin_web_font_unicode_ranges() {
+        let cyrillic = vec![(
+            "unicode-range".to_string(),
+            "U+0460-052F, U+1C80-1C8A".to_string(),
+        )];
+        let latin = vec![("unicode-range".to_string(), "U+0000-00FF".to_string())];
+        assert!(!font_face_covers_basic_latin(&cyrillic));
+        assert!(font_face_covers_basic_latin(&latin));
     }
 
     #[test]
@@ -3998,6 +4651,21 @@ mod tests {
     }
 
     #[test]
+    fn preserves_spaces_after_br_with_leading_source_space() {
+        let text = format!("Thanks,{HARD_BREAK} [Sender Name] and the [Product Name] team");
+        assert_eq!(
+            normalize_text(&text),
+            "Thanks,\n[Sender Name] and the [Product Name] team"
+        );
+    }
+
+    #[test]
+    fn preserves_non_breaking_space_for_table_spacers() {
+        assert_eq!(normalize_text("\u{00a0}"), "\u{00a0}");
+        assert_eq!(normalize_text("A\u{00a0} B"), "A\u{00a0} B");
+    }
+
+    #[test]
     fn lays_out_table_cells() {
         let layout = layout_for_test(
             r#"<table width="600" cellpadding="10"><tr><td width="200">A</td><td>B</td></tr></table>"#,
@@ -4009,6 +4677,37 @@ mod tests {
         assert_eq!(table.children[0].children.len(), 2);
         assert!((table.children[0].children[0].rect.width - 200.0).abs() < 0.1);
         assert!((table.children[0].children[1].rect.width - 400.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn table_spacer_cells_keep_non_breaking_space_width() {
+        let layout = layout_for_test(
+            r#"<table width="600"><tr><td>&nbsp;</td><td width="600">Center</td><td>&nbsp;</td></tr></table>"#,
+            600,
+        );
+        let table =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+        let cells = &table.children[0].children;
+        assert!(cells[0].rect.width > 1.0);
+        assert!(cells[1].rect.width < 600.0);
+        assert!(cells[2].rect.width > 1.0);
+    }
+
+    #[test]
+    fn adjacent_block_vertical_margins_collapse() {
+        let layout = layout_for_test(
+            r#"<p style="margin:0 0 20px">A</p><table style="margin:30px 0" width="100"><tr><td>B</td></tr></table>"#,
+            300,
+        );
+        let paragraph = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "A"),
+        )
+        .expect("paragraph text");
+        let table =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+        let gap = table.rect.y - (paragraph.rect.y + paragraph.rect.height);
+        assert!((gap - 30.0).abs() < 0.1);
     }
 
     #[test]
@@ -4088,6 +4787,42 @@ mod tests {
         let table =
             find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
         assert!((table.rect.x - 50.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn block_images_do_not_follow_parent_text_align() {
+        let layout = layout_for_test(
+            r#"<div style="text-align:center"><img width="50" height="20" alt=""></div>"#,
+            200,
+        );
+        let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
+            .expect("image");
+        assert!(image.rect.x < 1.0);
+    }
+
+    #[test]
+    fn missing_images_with_empty_alt_have_zero_default_size() {
+        let layout = layout_for_test(r#"<img src="missing.png" alt="">"#, 200);
+        let image = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::Image(None))
+        })
+        .expect("image");
+        assert!(image.rect.width < 0.1);
+        assert!(image.rect.height < 0.1);
+    }
+
+    #[test]
+    fn missing_images_keep_explicit_dimensions() {
+        let layout = layout_for_test(
+            r#"<img src="missing.png" width="50" height="20" alt="">"#,
+            200,
+        );
+        let image = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::Image(None))
+        })
+        .expect("image");
+        assert!((image.rect.width - 50.0).abs() < 0.1);
+        assert!((image.rect.height - 20.0).abs() < 0.1);
     }
 
     #[test]

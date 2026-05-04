@@ -161,7 +161,7 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
   const preparedPath = path.join(dirs.prepared, `${template.name}.html`);
 
   const sourceHtml = await readFile(template.htmlPath, 'utf8');
-  const baseUrl = pathToFileURL(path.dirname(template.htmlPath) + path.sep).href;
+  const baseUrl = new URL('.', template.url).href;
   await writeFile(preparedPath, buildBrowserDocument(sourceHtml, baseUrl, args.width));
 
   await browserScreenshot(browser, preparedPath, browserPath, args.width, args.timeoutMs);
@@ -175,9 +175,12 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     String(args.width),
     '--timeout-ms',
     String(args.timeoutMs),
+    '--base-url',
+    baseUrl,
   ];
   if (args.allowRemote) {
     renderArgs.push('--allow-remote');
+    renderArgs.push('--allow-http');
   }
   const render = spawnSync(renderer, renderArgs, {
     cwd: ROOT_DIR,

@@ -17,6 +17,7 @@ pdf-writer = "0.14.0"
 tiny-skia = "0.11.4"
 ureq = { version = "3.3.0", default-features = false, features = ["rustls"] }
 url = "2"
+wuff = "0.2.5"
 
 [lints.clippy]
 cast_possible_truncation = "warn"
