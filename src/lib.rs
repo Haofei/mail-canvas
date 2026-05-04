@@ -1077,7 +1077,7 @@ impl<'a> LayoutEngine<'a> {
         let rect_y = y + style.margin.top;
         let inner_x = rect_x + style.border.left + style.padding.left;
         let inner_y = rect_y + style.border.top + style.padding.top;
-        let (children, content_height) =
+        let (mut children, content_height) =
             self.layout_children(node, &style, inner_x, inner_y, preferred_inner_width, depth)?;
         let explicit_height = style.resolve_height(0.0).unwrap_or(0.0);
         let rect_width = if explicit_width.is_some() {
@@ -1089,6 +1089,13 @@ impl<'a> LayoutEngine<'a> {
         let rect_height = (content_height + style.padding.vertical() + style.border.vertical())
             .max(explicit_height)
             .max(1.0);
+        self.append_absolute_children(
+            node,
+            &style,
+            Rect::new(rect_x, rect_y, rect_width, rect_height),
+            &mut children,
+            depth,
+        )?;
 
         Ok(Some(FlowBox {
             advance: style.margin.top + rect_height + style.margin.bottom,
@@ -6124,6 +6131,22 @@ mod tests {
 
         assert!((badge.rect.x - 20.0).abs() < 0.1);
         assert!((badge.rect.y - 10.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn inline_block_absolute_children_are_positioned_against_parent() {
+        let layout = layout_for_test(
+            r#"<span style="display:inline-block;position:relative;width:80px;height:20px">
+                Label<span style="position:absolute;left:0;bottom:-10px;width:80px;height:2px;background:#111"></span>
+            </span>"#,
+            200,
+        );
+        let underline = find_layout(&layout, |child| {
+            child.style.background == Some(Rgba::rgb(0x11, 0x11, 0x11))
+        })
+        .expect("absolute underline");
+        assert!((underline.rect.x - 0.0).abs() < 0.1);
+        assert!(underline.rect.y > 20.0);
     }
 
     #[test]
