@@ -6,6 +6,7 @@ OUT_DIR="${BLINK_REFERENCE_DIR:-blink-reference}"
 
 FETCH_DIRS=(
   "third_party/blink/renderer/core/css"
+  "third_party/blink/renderer/core/html"
   "third_party/blink/renderer/core/style"
   "third_party/blink/renderer/core/layout"
   "third_party/blink/renderer/core/paint"

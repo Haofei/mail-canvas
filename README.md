@@ -104,9 +104,9 @@ this repository. To download the pinned reference subset locally:
 scripts/fetch_blink_reference.sh
 ```
 
-The script writes selected Blink CSS, style, layout, paint, and font directories
-under `blink-reference/`, which is intentionally ignored by Git. The current
-pinned Chromium revision is:
+The script writes selected Blink CSS, HTML, style, layout, paint, and font
+directories under `blink-reference/`, which is intentionally ignored by Git.
+The current pinned Chromium revision is:
 
 ```text
 3994650ae3f2d575a583898776d1eafd38b90ed5

@@ -1351,9 +1351,7 @@ impl<'a> LayoutEngine<'a> {
                 if cell_style.display == Display::None {
                     continue;
                 }
-                if cell_style.padding.is_zero() && style.cell_padding > 0.0 {
-                    cell_style.padding = Edges::all(style.cell_padding);
-                }
+                cell_style.apply_table_cell_padding(style.cell_padding);
 
                 let cell_x = content_x + column_offset(&column_widths, cell.col, spacing);
                 let cell_width = spanned_width(&column_widths, cell.col, cell.colspan, spacing);
@@ -1560,9 +1558,7 @@ impl<'a> LayoutEngine<'a> {
                 if cell_style.display == Display::None {
                     continue;
                 }
-                if cell_style.padding.is_zero() && table_style.cell_padding > 0.0 {
-                    cell_style.padding = Edges::all(table_style.cell_padding);
-                }
+                cell_style.apply_table_cell_padding(table_style.cell_padding);
 
                 let preferred = if let Some(width) =
                     cell_style.width.and_then(|width| width.resolve(available))
@@ -1610,16 +1606,48 @@ impl<'a> LayoutEngine<'a> {
             }
         }
 
+        if table_style.table_layout_fixed {
+            for row in &grid.rows {
+                let row_style = self.style_for_node(&row.node, table_style);
+                if row_style.display == Display::None {
+                    continue;
+                }
+                for cell in &row.cells {
+                    let mut style = self.style_for_node(&cell.node, &row_style);
+                    if style.display == Display::None {
+                        continue;
+                    }
+                    style.apply_table_cell_padding(table_style.cell_padding);
+                    if let Some(width) = style.width.and_then(|width| width.resolve(available)) {
+                        let outer_width = style.outer_width_for_declared(width);
+                        let per_col = ((outer_width
+                            - spacing * cell.colspan.saturating_sub(1) as f32)
+                            / cell.colspan as f32)
+                            .max(1.0);
+                        for col in cell.col..cell.col + cell.colspan {
+                            if col < widths.len() {
+                                widths[col] = Some(widths[col].unwrap_or(0.0).max(per_col));
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+
+            return Ok(distribute_fixed_table_column_widths(widths, available));
+        }
+
         for row in &grid.rows {
             let row_style = self.style_for_node(&row.node, table_style);
             if row_style.display == Display::None {
                 continue;
             }
             for cell in &row.cells {
-                let style = self.style_for_node(&cell.node, &row_style);
+                let mut style = self.style_for_node(&cell.node, &row_style);
                 if style.display == Display::None {
                     continue;
                 }
+                style.apply_table_cell_padding(table_style.cell_padding);
                 if let Some(width) = style.width.and_then(|width| width.resolve(available)) {
                     let outer_width = style.outer_width_for_declared(width);
                     let per_col = ((outer_width - spacing * cell.colspan.saturating_sub(1) as f32)
@@ -2344,6 +2372,7 @@ struct Style {
     margin_top_em: Option<f32>,
     margin_bottom_em: Option<f32>,
     padding: Edges,
+    padding_explicit: EdgeFlags,
     background: Option<Rgba>,
     background_image: Option<ImageData>,
     background_image_src: Option<String>,
@@ -2389,6 +2418,7 @@ struct Style {
     border_color: Rgba,
     border_style: BorderLineStyle,
     border_collapse: BorderCollapse,
+    table_layout_fixed: bool,
     cell_padding: f32,
     cell_spacing: f32,
 }
@@ -2411,6 +2441,7 @@ impl Style {
             margin_top_em: None,
             margin_bottom_em: None,
             padding: Edges::ZERO,
+            padding_explicit: EdgeFlags::NONE,
             background: None,
             background_image: None,
             background_image_src: None,
@@ -2456,6 +2487,7 @@ impl Style {
             border_color: Rgba::BLACK,
             border_style: BorderLineStyle::Solid,
             border_collapse: BorderCollapse::Separate,
+            table_layout_fixed: false,
             cell_padding: 0.0,
             cell_spacing: 0.0,
         }
@@ -2478,6 +2510,7 @@ impl Style {
             margin_top_em: None,
             margin_bottom_em: None,
             padding: Edges::ZERO,
+            padding_explicit: EdgeFlags::NONE,
             background: None,
             background_image: None,
             background_image_src: None,
@@ -2531,6 +2564,7 @@ impl Style {
             border_color: parent.border_color,
             border_style: BorderLineStyle::Solid,
             border_collapse: BorderCollapse::Separate,
+            table_layout_fixed: false,
             cell_padding: 0.0,
             cell_spacing: 0.0,
         };
@@ -2667,19 +2701,24 @@ impl Style {
             "padding" => {
                 if let Some(edges) = parse_edges_with_font(value, self.font_size) {
                     self.padding = edges;
+                    self.padding_explicit = EdgeFlags::ALL;
                 }
             }
             "padding-top" => {
                 self.padding.top = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+                self.padding_explicit.top = true;
             }
             "padding-right" => {
                 self.padding.right = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+                self.padding_explicit.right = true;
             }
             "padding-bottom" => {
                 self.padding.bottom = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+                self.padding_explicit.bottom = true;
             }
             "padding-left" => {
                 self.padding.left = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+                self.padding_explicit.left = true;
             }
             "background" => {
                 if let Some(color) = parse_color(value) {
@@ -2917,6 +2956,9 @@ impl Style {
                     self.border_collapse = BorderCollapse::Collapse;
                 }
             }
+            "table-layout" => {
+                self.table_layout_fixed = value.trim().eq_ignore_ascii_case("fixed");
+            }
             "border-spacing" => self.cell_spacing = parse_px(value).unwrap_or(0.0),
             _ => {}
         }
@@ -2965,6 +3007,24 @@ impl Style {
 
     fn inner_width_for_outer(&self, width: f32) -> f32 {
         (width - self.padding.horizontal() - self.border.horizontal()).max(1.0)
+    }
+
+    fn apply_table_cell_padding(&mut self, padding: f32) {
+        if padding <= 0.0 {
+            return;
+        }
+        if !self.padding_explicit.top {
+            self.padding.top = padding;
+        }
+        if !self.padding_explicit.right {
+            self.padding.right = padding;
+        }
+        if !self.padding_explicit.bottom {
+            self.padding.bottom = padding;
+        }
+        if !self.padding_explicit.left {
+            self.padding.left = padding;
+        }
     }
 
     fn horizontal_offset(&self, containing_width: f32, outer_width: f32) -> f32 {
@@ -3165,6 +3225,30 @@ impl Edges {
     fn is_zero(self) -> bool {
         self.top == 0.0 && self.right == 0.0 && self.bottom == 0.0 && self.left == 0.0
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EdgeFlags {
+    top: bool,
+    right: bool,
+    bottom: bool,
+    left: bool,
+}
+
+impl EdgeFlags {
+    const NONE: Self = Self {
+        top: false,
+        right: false,
+        bottom: false,
+        left: false,
+    };
+
+    const ALL: Self = Self {
+        top: true,
+        right: true,
+        bottom: true,
+        left: true,
+    };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4474,6 +4558,31 @@ fn spanned_width(widths: &[f32], col: usize, colspan: usize, spacing: f32) -> f3
         .copied()
         .sum::<f32>()
         + spacing * span.saturating_sub(1) as f32
+}
+
+fn distribute_fixed_table_column_widths(widths: Vec<Option<f32>>, available: f32) -> Vec<f32> {
+    let count = widths.len().max(1);
+    let fixed_total: f32 = widths.iter().flatten().sum();
+    let auto_count = widths.iter().filter(|width| width.is_none()).count();
+
+    if auto_count > 0 {
+        let auto_width = ((available - fixed_total).max(auto_count as f32)) / auto_count as f32;
+        return widths
+            .into_iter()
+            .map(|width| width.unwrap_or(auto_width).max(1.0))
+            .collect();
+    }
+
+    if fixed_total > 0.0 {
+        let scale = available / fixed_total;
+        return widths
+            .into_iter()
+            .map(|width| width.unwrap_or(0.0) * scale)
+            .map(|width| width.max(1.0))
+            .collect();
+    }
+
+    vec![(available / count as f32).max(1.0); count]
 }
 
 fn translate_layout_children(layout: &mut LayoutBox, dx: f32, dy: f32) {
@@ -6093,6 +6202,13 @@ mod tests {
     }
 
     #[test]
+    fn parses_fixed_table_layout_style_model() {
+        let mut style = Style::initial();
+        style.apply_declaration("table-layout", "fixed");
+        assert!(style.table_layout_fixed);
+    }
+
+    #[test]
     fn absolute_positioned_children_do_not_advance_block_flow() {
         let layout = layout_for_test(
             r#"<div style="width:100px">
@@ -6293,8 +6409,52 @@ mod tests {
             find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
         assert_eq!(table.children.len(), 1);
         assert_eq!(table.children[0].children.len(), 2);
-        assert!((table.children[0].children[0].rect.width - 200.0).abs() < 0.1);
-        assert!((table.children[0].children[1].rect.width - 400.0).abs() < 0.1);
+        assert!((table.children[0].children[0].rect.width - 220.0).abs() < 0.1);
+        assert!((table.children[0].children[1].rect.width - 380.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn table_cells_use_cellpadding_attribute() {
+        let layout = layout_for_test(
+            r#"<table width="100" cellpadding="1"><tr><td><img width="20" height="10" alt=""></td></tr></table>"#,
+            100,
+        );
+        let cell =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Cell)).expect("cell");
+        let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
+            .expect("image");
+
+        assert!((image.rect.x - (cell.rect.x + 1.0)).abs() < 0.1);
+        assert!((image.rect.y - (cell.rect.y + 1.0)).abs() < 0.1);
+    }
+
+    #[test]
+    fn table_cell_css_padding_overrides_cellpadding_attribute() {
+        let layout = layout_for_test(
+            r#"<table width="100" cellpadding="1"><tr><td style="padding:0"><img width="20" height="10" alt=""></td></tr></table>"#,
+            100,
+        );
+        let cell =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Cell)).expect("cell");
+        let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
+            .expect("image");
+
+        assert!((image.rect.x - cell.rect.x).abs() < 0.1);
+        assert!((image.rect.y - cell.rect.y).abs() < 0.1);
+    }
+
+    #[test]
+    fn fixed_table_layout_uses_first_row_widths() {
+        let layout = layout_for_test(
+            r#"<table width="300" style="table-layout:fixed"><tr><td>A</td><td>B</td></tr><tr><td width="250">C</td><td>D</td></tr></table>"#,
+            300,
+        );
+        let table =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+        let first_row = &table.children[0];
+
+        assert!((first_row.children[0].rect.width - 150.0).abs() < 0.1);
+        assert!((first_row.children[1].rect.width - 150.0).abs() < 0.1);
     }
 
     #[test]

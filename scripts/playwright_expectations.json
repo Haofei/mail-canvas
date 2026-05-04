@@ -54,19 +54,19 @@
       "maxNonMediaNonTextDiffPercent": 4.6
     },
     "colorlib-template-1": {
-      "maxDiffPercent": 19.2,
-      "maxNonMediaDiffPercent": 12.4,
-      "maxNonMediaNonTextDiffPercent": 7.6
+      "maxDiffPercent": 18.5,
+      "maxNonMediaDiffPercent": 11.7,
+      "maxNonMediaNonTextDiffPercent": 6.7
     },
     "colorlib-template-3": {
-      "maxDiffPercent": 8.9,
-      "maxNonMediaDiffPercent": 8.1,
-      "maxNonMediaNonTextDiffPercent": 4.5
+      "maxDiffPercent": 7.6,
+      "maxNonMediaDiffPercent": 6,
+      "maxNonMediaNonTextDiffPercent": 1.9
     },
     "colorlib-template-4": {
-      "maxDiffPercent": 11.3,
-      "maxNonMediaDiffPercent": 9.2,
-      "maxNonMediaNonTextDiffPercent": 3.6
+      "maxDiffPercent": 11.1,
+      "maxNonMediaDiffPercent": 9,
+      "maxNonMediaNonTextDiffPercent": 3.2
     }
   }
 }
