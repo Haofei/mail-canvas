@@ -307,4 +307,52 @@ export const TEMPLATES = [
     'davidamunga-reset-password',
     'https://raw.githubusercontent.com/DavidAmunga/html-email-templates/master/reset-password.html',
   ],
+  [
+    'colorlib-template-1',
+    'https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/1/index.html',
+  ],
+  [
+    'colorlib-template-2',
+    'https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/2/index.html',
+  ],
+  [
+    'colorlib-template-3',
+    'https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/3/index.html',
+  ],
+  [
+    'colorlib-template-4',
+    'https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/4/index.html',
+  ],
+  [
+    'colorlib-template-5',
+    'https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/5/index.html',
+  ],
+  [
+    'emailoctopus-abacus-transactional',
+    'https://raw.githubusercontent.com/threeheartsdigital/emailoctopus-templates/master/abacus/transactional.html',
+  ],
+  [
+    'emailoctopus-karakol-transactional',
+    'https://raw.githubusercontent.com/threeheartsdigital/emailoctopus-templates/master/karakol/transactional.html',
+  ],
+  [
+    'emailoctopus-wayfair-transactional',
+    'https://raw.githubusercontent.com/threeheartsdigital/emailoctopus-templates/master/wayfair/transactional.html',
+  ],
+  [
+    'codedmails-welcome-aleos',
+    'https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/welcome-email-aleos.html',
+  ],
+  [
+    'codedmails-reset-dineos',
+    'https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/reset-email-dineos.html',
+  ],
+  [
+    'codedmails-receipt-faedra',
+    'https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/receipt-email-faedra.html',
+  ],
+  [
+    'codedmails-notification-ormes',
+    'https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/notification-email-ormes.html',
+  ],
 ];

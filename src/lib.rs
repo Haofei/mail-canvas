@@ -1534,7 +1534,10 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
 
-            let child_style = self.style_for_node(&child, style);
+            let mut child_style = self.style_for_node(&child, style);
+            if parent_tag.as_deref() == Some("li") && tag == "p" {
+                child_style.margin.top = 0.0;
+            }
             if child_style.display == Display::None {
                 continue;
             }
@@ -1602,6 +1605,7 @@ impl<'a> LayoutEngine<'a> {
                     continue;
                 }
                 align_table_child_to_parent_text(&mut flow.node, style, x, width);
+                align_image_child_to_legacy_align(&mut flow.node, style, x, width);
                 let margin_overlap = if can_collapse_sibling_margin(child_display) {
                     previous_margin_bottom
                         .map(|previous: f32| previous.min(flow.node.style.margin.top))
@@ -1834,6 +1838,9 @@ impl<'a> LayoutEngine<'a> {
 
         for row in grid.rows {
             let row_style = self.style_for_node(&row.node, &style);
+            if row_style.display == Display::None {
+                continue;
+            }
             if row.cells.is_empty() {
                 continue;
             }
@@ -1843,6 +1850,9 @@ impl<'a> LayoutEngine<'a> {
 
             for cell in row.cells {
                 let mut cell_style = self.style_for_node(&cell.node, &row_style);
+                if cell_style.display == Display::None {
+                    continue;
+                }
                 if cell_style.padding.is_zero() && style.cell_padding > 0.0 {
                     cell_style.padding = Edges::all(style.cell_padding);
                 }
@@ -1874,6 +1884,10 @@ impl<'a> LayoutEngine<'a> {
                     style: cell_style,
                     children,
                 });
+            }
+
+            if cell_boxes.is_empty() {
+                continue;
             }
 
             for cell in &mut cell_boxes {
@@ -1936,8 +1950,14 @@ impl<'a> LayoutEngine<'a> {
 
         for row in &grid.rows {
             let row_style = self.style_for_node(&row.node, table_style);
+            if row_style.display == Display::None {
+                continue;
+            }
             for cell in &row.cells {
                 let mut cell_style = self.style_for_node(&cell.node, &row_style);
+                if cell_style.display == Display::None {
+                    continue;
+                }
                 if cell_style.padding.is_zero() && table_style.cell_padding > 0.0 {
                     cell_style.padding = Edges::all(table_style.cell_padding);
                 }
@@ -1989,8 +2009,15 @@ impl<'a> LayoutEngine<'a> {
         }
 
         for row in &grid.rows {
+            let row_style = self.style_for_node(&row.node, table_style);
+            if row_style.display == Display::None {
+                continue;
+            }
             for cell in &row.cells {
-                let style = self.style_for_node(&cell.node, table_style);
+                let style = self.style_for_node(&cell.node, &row_style);
+                if style.display == Display::None {
+                    continue;
+                }
                 if let Some(width) = style.width.and_then(|width| width.resolve(available)) {
                     let outer_width = style.outer_width_for_declared(width);
                     let per_col = ((outer_width - spacing * cell.colspan.saturating_sub(1) as f32)
@@ -2074,35 +2101,58 @@ impl<'a> LayoutEngine<'a> {
         let natural_width = image.as_ref().map_or(0.0, |image| image.width as f32);
         let natural_height = image.as_ref().map_or(0.0, |image| image.height as f32);
         let min_size = if image.is_some() { 1.0 } else { 0.0 };
-        let width = style
-            .resolve_width(containing_width)
-            .or_else(|| {
+        let declared_width = style.resolve_width(containing_width).or_else(|| {
+            if style.width_auto {
+                None
+            } else {
                 attr(node, "width").and_then(|value| {
                     parse_length(&value).and_then(|length| length.resolve(containing_width))
+                })
+            }
+        });
+        let declared_height = style
+            .resolve_height(declared_width.unwrap_or(containing_width))
+            .or_else(|| {
+                if style.height_auto {
+                    None
+                } else {
+                    attr(node, "height").and_then(|value| {
+                        parse_length(&value).and_then(|length| {
+                            length.resolve(declared_width.unwrap_or(containing_width))
+                        })
+                    })
+                }
+            });
+        let mut width = declared_width
+            .or_else(|| {
+                declared_height.and_then(|height| {
+                    (natural_height > 0.0).then_some((height / natural_height) * natural_width)
                 })
             })
             .unwrap_or(natural_width.min(containing_width))
             .max(min_size);
-        let height = style
-            .resolve_height(width)
+        width = style.constrain_width(width, containing_width).max(min_size);
+        let height = declared_height
             .or_else(|| {
-                attr(node, "height")
-                    .and_then(|value| parse_length(&value).and_then(|length| length.resolve(width)))
-            })
-            .unwrap_or_else(|| {
                 if natural_width > 0.0 {
-                    (width / natural_width) * natural_height
+                    Some((width / natural_width) * natural_height)
                 } else {
-                    natural_height
+                    None
                 }
             })
+            .unwrap_or(natural_height)
             .max(min_size);
 
         FlowBox {
             advance: style.margin.top + height + style.margin.bottom,
             node: LayoutBox {
                 kind: LayoutKind::Image(image),
-                rect: Rect::new(x + style.margin.left, y + style.margin.top, width, height),
+                rect: Rect::new(
+                    x + style.horizontal_offset(containing_width, width),
+                    y + style.margin.top,
+                    width,
+                    height,
+                ),
                 style,
                 children: Vec::new(),
             },
@@ -2356,7 +2406,7 @@ impl LayoutPainter<'_> {
             );
         }
         if let Some(background_image) = &layout.style.background_image {
-            self.paint_background_image(layout.rect, background_image);
+            self.paint_background_image(layout.rect, &layout.style, background_image);
         }
         if layout.style.border.max_width() > 0.0 {
             stroke_style_border(
@@ -2373,7 +2423,7 @@ impl LayoutPainter<'_> {
         match &layout.kind {
             LayoutKind::Text(text) => self.paint_text(layout.rect, &layout.style, text),
             LayoutKind::RichText(spans) => self.paint_rich_text(layout.rect, &layout.style, spans),
-            LayoutKind::Image(Some(image)) => self.paint_image(layout.rect, image),
+            LayoutKind::Image(Some(image)) => self.paint_image(layout.rect, &layout.style, image),
             LayoutKind::Image(None) => self.paint_image_placeholder(layout.rect),
             LayoutKind::Block | LayoutKind::Table | LayoutKind::Row | LayoutKind::Cell => {}
         }
@@ -2457,12 +2507,20 @@ impl LayoutPainter<'_> {
         );
     }
 
-    fn paint_image(&mut self, rect: Rect, image: &ImageData) {
-        draw_image(self.pixmap, self.scale, rect, image);
+    fn paint_image(&mut self, rect: Rect, style: &Style, image: &ImageData) {
+        draw_image(self.pixmap, self.scale, rect, image, style.border_radius);
     }
 
-    fn paint_background_image(&mut self, rect: Rect, image: &ImageData) {
-        draw_background_image(self.pixmap, self.scale, rect, image);
+    fn paint_background_image(&mut self, rect: Rect, style: &Style, image: &ImageData) {
+        draw_background_image(
+            self.pixmap,
+            self.scale,
+            rect,
+            image,
+            style.background_repeat,
+            style.background_size,
+            style.background_position,
+        );
     }
 }
 
@@ -2507,9 +2565,11 @@ struct FlowBox {
 struct Style {
     display: Display,
     width: Option<Length>,
+    width_auto: bool,
     min_width: Option<Length>,
     max_width: Option<Length>,
     height: Option<Length>,
+    height_auto: bool,
     min_height: Option<Length>,
     max_height: Option<Length>,
     margin: Edges,
@@ -2519,6 +2579,9 @@ struct Style {
     background: Option<Rgba>,
     background_image: Option<ImageData>,
     background_image_src: Option<String>,
+    background_repeat: BackgroundRepeat,
+    background_size: BackgroundSize,
+    background_position: BackgroundPosition,
     color: Rgba,
     font_family: Option<String>,
     font_weight: FontWeight,
@@ -2529,6 +2592,7 @@ struct Style {
     line_height_factor: Option<f32>,
     letter_spacing: f32,
     text_align: TextAlign,
+    align_from_attribute: bool,
     text_transform: TextTransform,
     vertical_align: VerticalAlign,
     wrap: TextWrap,
@@ -2547,9 +2611,11 @@ impl Style {
         Self {
             display: Display::Block,
             width: None,
+            width_auto: false,
             min_width: None,
             max_width: None,
             height: None,
+            height_auto: false,
             min_height: None,
             max_height: None,
             margin: Edges::ZERO,
@@ -2559,6 +2625,9 @@ impl Style {
             background: None,
             background_image: None,
             background_image_src: None,
+            background_repeat: BackgroundRepeat::Repeat,
+            background_size: BackgroundSize::Auto,
+            background_position: BackgroundPosition::default(),
             color: Rgba::BLACK,
             font_family: None,
             font_weight: FontWeight::NORMAL,
@@ -2569,10 +2638,11 @@ impl Style {
             line_height_factor: Some(1.4),
             letter_spacing: 0.0,
             text_align: TextAlign::Left,
+            align_from_attribute: false,
             text_transform: TextTransform::None,
             vertical_align: VerticalAlign::Top,
             wrap: TextWrap::WordOrGlyph,
-            box_sizing: BoxSizing::BorderBox,
+            box_sizing: BoxSizing::ContentBox,
             border: Edges::ZERO,
             border_radius: 0.0,
             border_color: Rgba::BLACK,
@@ -2587,9 +2657,11 @@ impl Style {
         let mut style = Self {
             display: default_display(tag),
             width: None,
+            width_auto: false,
             min_width: None,
             max_width: None,
             height: None,
+            height_auto: false,
             min_height: None,
             max_height: None,
             margin: Edges::ZERO,
@@ -2599,6 +2671,9 @@ impl Style {
             background: None,
             background_image: None,
             background_image_src: None,
+            background_repeat: BackgroundRepeat::Repeat,
+            background_size: BackgroundSize::Auto,
+            background_position: BackgroundPosition::default(),
             color: parent.color,
             font_family: parent.font_family.clone(),
             font_weight: parent.font_weight,
@@ -2612,6 +2687,11 @@ impl Style {
                 TextAlign::Left
             } else {
                 parent.text_align
+            },
+            align_from_attribute: if tag == "table" {
+                false
+            } else {
+                parent.align_from_attribute
             },
             text_transform: parent.text_transform,
             vertical_align: VerticalAlign::Top,
@@ -2663,7 +2743,10 @@ impl Style {
                 style.margin.bottom = 2.33 * parent.font_size;
             }
             "small" => style.set_font_size(parent.font_size * 0.85),
-            "p" => style.margin.bottom = 16.0,
+            "p" => {
+                style.margin.top = parent.font_size;
+                style.margin.bottom = parent.font_size;
+            }
             "ul" | "ol" => {
                 style.margin.top = 16.0;
                 style.margin.bottom = 16.0;
@@ -2702,10 +2785,16 @@ impl Style {
                     self.display = display;
                 }
             }
-            "width" => self.width = parse_length(value),
+            "width" => {
+                self.width_auto = value.trim().eq_ignore_ascii_case("auto");
+                self.width = parse_length(value);
+            }
             "min-width" => self.min_width = parse_length(value),
             "max-width" => self.max_width = parse_length(value),
-            "height" => self.height = parse_length(value),
+            "height" => {
+                self.height_auto = value.trim().eq_ignore_ascii_case("auto");
+                self.height = parse_length(value);
+            }
             "min-height" => self.min_height = parse_length(value),
             "max-height" => self.max_height = parse_length(value),
             "margin" => {
@@ -2755,6 +2844,27 @@ impl Style {
                 if let Some(src) = parse_background_image(value) {
                     self.background_image_src = Some(src);
                     self.background_image = None;
+                } else if background_shorthand_removes_image(value) {
+                    self.background_image_src = None;
+                    self.background_image = None;
+                }
+                self.background_repeat = parse_background_repeat(value).unwrap_or_default();
+                self.background_size = parse_background_size_from_shorthand(value);
+                self.background_position = parse_background_position_from_shorthand(value);
+            }
+            "background-repeat" => {
+                if let Some(repeat) = parse_background_repeat(value) {
+                    self.background_repeat = repeat;
+                }
+            }
+            "background-size" => {
+                if let Some(size) = parse_background_size(value) {
+                    self.background_size = size;
+                }
+            }
+            "background-position" => {
+                if let Some(position) = parse_background_position(value) {
+                    self.background_position = position;
                 }
             }
             "background-color" => {
@@ -2810,6 +2920,7 @@ impl Style {
             "text-align" | "align" => {
                 if let Some(align) = parse_text_align(value) {
                     self.text_align = align;
+                    self.align_from_attribute = false;
                 }
             }
             "text-transform" => {
@@ -2896,19 +3007,23 @@ impl Style {
 
     fn resolve_width(&self, containing_width: f32) -> Option<f32> {
         let mut width = self.width.and_then(|width| width.resolve(containing_width));
+        width = width.map(|width| self.constrain_width(width, containing_width));
+        width
+    }
+
+    fn constrain_width(&self, width: f32, containing_width: f32) -> f32 {
+        let mut width = width;
         if let Some(min_width) = self
             .min_width
             .and_then(|width| width.resolve(containing_width))
         {
-            width = Some(width.unwrap_or(min_width).max(min_width));
+            width = width.max(min_width);
         }
         if let Some(max_width) = self
             .max_width
             .and_then(|width| width.resolve(containing_width))
         {
-            if let Some(current) = width {
-                width = Some(current.min(max_width));
-            }
+            width = width.min(max_width);
         }
         width
     }
@@ -3152,6 +3267,57 @@ enum BoxSizing {
     ContentBox,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BackgroundRepeat {
+    Repeat,
+    NoRepeat,
+}
+
+impl Default for BackgroundRepeat {
+    fn default() -> Self {
+        Self::Repeat
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BackgroundSize {
+    Auto,
+    Cover,
+    Contain,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BackgroundPosition {
+    x: PositionAxis,
+    y: PositionAxis,
+}
+
+impl Default for BackgroundPosition {
+    fn default() -> Self {
+        Self {
+            x: PositionAxis::Start,
+            y: PositionAxis::Start,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum PositionAxis {
+    Start,
+    Center,
+    End,
+}
+
+impl PositionAxis {
+    fn factor(self) -> f32 {
+        match self {
+            Self::Start => 0.0,
+            Self::Center => 0.5,
+            Self::End => 1.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ImageData {
     width: u32,
@@ -3223,7 +3389,11 @@ fn style_for_node_with_fonts(
             }
         } else if let Some(align) = parse_text_align(raw_align) {
             style.text_align = align;
+            style.align_from_attribute = true;
         }
+    }
+    if let Some(vertical_align) = attrs.get("valign").and_then(parse_vertical_align) {
+        style.vertical_align = vertical_align;
     }
     if tag == "table" {
         if let Some(cell_padding) = attrs.get("cellpadding").and_then(parse_px) {
@@ -3288,7 +3458,7 @@ fn default_display(tag: &str) -> Display {
     match tag {
         "html" | "body" | "div" | "p" | "section" | "article" | "header" | "footer" | "main"
         | "center" | "blockquote" | "ul" | "ol" | "li" | "h1" | "h2" | "h3" | "h4" | "h5"
-        | "h6" => Display::Block,
+        | "h6" | "hr" => Display::Block,
         "table" => Display::Table,
         "tr" => Display::TableRow,
         "td" | "th" => Display::TableCell,
@@ -3435,7 +3605,16 @@ fn parse_edges_with_font(value: &str, font_size: f32) -> Option<Edges> {
 }
 
 fn parse_radius(value: &str) -> Option<f32> {
-    value.split_whitespace().next().and_then(parse_px)
+    let token = value.split_whitespace().next()?.trim();
+    if let Some(percent) = token.strip_suffix('%') {
+        let percent = percent.trim().parse::<f32>().ok()?;
+        return (percent > 0.0).then_some(if percent >= 50.0 {
+            1_000_000.0
+        } else {
+            percent
+        });
+    }
+    parse_px(token)
 }
 
 fn parse_color(value: &str) -> Option<Rgba> {
@@ -3444,7 +3623,9 @@ fn parse_color(value: &str) -> Option<Rgba> {
         return None;
     }
     if let Some(hex) = value.strip_prefix('#') {
-        return parse_hex_color(hex);
+        if let Some(color) = parse_hex_color(hex) {
+            return Some(color);
+        }
     }
     if value.starts_with("rgb(") || value.starts_with("rgba(") {
         return parse_rgb_function(&value);
@@ -3463,6 +3644,127 @@ fn parse_background_image(value: &str) -> Option<String> {
         return None;
     }
     first_css_url(value).map(|url| unquote_css_value(&url))
+}
+
+fn background_shorthand_removes_image(value: &str) -> bool {
+    let value = strip_important(value).trim();
+    value.eq_ignore_ascii_case("none") || !value.to_ascii_lowercase().contains("url(")
+}
+
+fn parse_background_repeat(value: &str) -> Option<BackgroundRepeat> {
+    let lower = strip_important(value).to_ascii_lowercase();
+    if lower.contains("no-repeat") {
+        Some(BackgroundRepeat::NoRepeat)
+    } else if lower.contains("repeat") {
+        Some(BackgroundRepeat::Repeat)
+    } else {
+        None
+    }
+}
+
+fn parse_background_size(value: &str) -> Option<BackgroundSize> {
+    let value = strip_important(value).trim().to_ascii_lowercase();
+    match value.split_whitespace().next()? {
+        "auto" => Some(BackgroundSize::Auto),
+        "cover" => Some(BackgroundSize::Cover),
+        "contain" => Some(BackgroundSize::Contain),
+        _ => None,
+    }
+}
+
+fn parse_background_size_from_shorthand(value: &str) -> BackgroundSize {
+    strip_important(value)
+        .split_once('/')
+        .and_then(|(_, size)| parse_background_size(size))
+        .unwrap_or(BackgroundSize::Auto)
+}
+
+fn parse_background_position_from_shorthand(value: &str) -> BackgroundPosition {
+    let position = strip_important(value)
+        .split_once('/')
+        .map_or(value, |(position, _)| position);
+    parse_background_position(position).unwrap_or_default()
+}
+
+fn parse_background_position(value: &str) -> Option<BackgroundPosition> {
+    let mut x = None;
+    let mut y = None;
+    let mut saw_keyword = false;
+
+    for keyword in background_position_keywords(value) {
+        saw_keyword = true;
+        match keyword {
+            PositionKeyword::Left => x = Some(PositionAxis::Start),
+            PositionKeyword::Right => x = Some(PositionAxis::End),
+            PositionKeyword::Top => y = Some(PositionAxis::Start),
+            PositionKeyword::Bottom => y = Some(PositionAxis::End),
+            PositionKeyword::Center => {
+                if x.is_none() {
+                    x = Some(PositionAxis::Center);
+                } else if y.is_none() {
+                    y = Some(PositionAxis::Center);
+                }
+            }
+        }
+    }
+
+    saw_keyword.then_some(BackgroundPosition {
+        x: x.unwrap_or(PositionAxis::Center),
+        y: y.unwrap_or(PositionAxis::Center),
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PositionKeyword {
+    Left,
+    Right,
+    Top,
+    Bottom,
+    Center,
+}
+
+fn background_position_keywords(value: &str) -> Vec<PositionKeyword> {
+    css_ident_tokens_without_functions(value)
+        .into_iter()
+        .filter_map(|token| match token.as_str() {
+            "left" => Some(PositionKeyword::Left),
+            "right" => Some(PositionKeyword::Right),
+            "top" => Some(PositionKeyword::Top),
+            "bottom" => Some(PositionKeyword::Bottom),
+            "center" => Some(PositionKeyword::Center),
+            _ => None,
+        })
+        .collect()
+}
+
+fn css_ident_tokens_without_functions(value: &str) -> Vec<String> {
+    let mut scrubbed = String::with_capacity(value.len());
+    let mut paren_depth = 0usize;
+    for ch in strip_important(value).chars() {
+        match ch {
+            '(' => {
+                paren_depth += 1;
+                scrubbed.push(' ');
+            }
+            ')' => {
+                paren_depth = paren_depth.saturating_sub(1);
+                scrubbed.push(' ');
+            }
+            _ if paren_depth > 0 => scrubbed.push(' '),
+            ',' | '/' => scrubbed.push(' '),
+            _ => scrubbed.push(ch),
+        }
+    }
+
+    scrubbed
+        .split_whitespace()
+        .map(|token| {
+            token
+                .trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '-')
+                .to_ascii_lowercase()
+        })
+        .filter(|token| !token.is_empty())
+        .collect()
 }
 
 fn parse_color_token(value: &str) -> Option<Rgba> {
@@ -4053,6 +4355,28 @@ fn align_table_child_to_parent_text(
     }
 }
 
+fn align_image_child_to_legacy_align(
+    child: &mut LayoutBox,
+    parent_style: &Style,
+    container_x: f32,
+    container_width: f32,
+) {
+    if !parent_style.align_from_attribute || !matches!(child.kind, LayoutKind::Image(_)) {
+        return;
+    }
+
+    let free = (container_width - child.rect.width).max(0.0);
+    let target_x = match parent_style.text_align {
+        TextAlign::Center => container_x + free / 2.0,
+        TextAlign::Right => container_x + free,
+        TextAlign::Left => return,
+    };
+    let dx = target_x - child.rect.x;
+    if dx.abs() > f32::EPSILON {
+        translate_layout(child, dx, 0.0);
+    }
+}
+
 fn can_collapse_sibling_margin(display: Display) -> bool {
     matches!(display, Display::Block | Display::Table)
 }
@@ -4606,21 +4930,43 @@ fn blend_text_rect(pixmap: &mut Pixmap, x: i32, y: i32, width: u32, height: u32,
     }
 }
 
-fn draw_image(pixmap: &mut Pixmap, scale: f32, rect: Rect, image: &ImageData) {
-    draw_image_clipped(pixmap, scale, rect, image, None);
+fn draw_image(pixmap: &mut Pixmap, scale: f32, rect: Rect, image: &ImageData, radius: f32) {
+    draw_image_clipped(pixmap, scale, rect, image, None, radius);
 }
 
-fn draw_background_image(pixmap: &mut Pixmap, scale: f32, rect: Rect, image: &ImageData) {
+fn draw_background_image(
+    pixmap: &mut Pixmap,
+    scale: f32,
+    rect: Rect,
+    image: &ImageData,
+    repeat: BackgroundRepeat,
+    size: BackgroundSize,
+    position: BackgroundPosition,
+) {
     if image.width == 0 || image.height == 0 || rect.width <= 0.0 || rect.height <= 0.0 {
         return;
     }
-    let tile_width = image.width as f32;
-    let tile_height = image.height as f32;
+    let (tile_width, tile_height) = background_tile_size(rect, image, size);
+    let tile_x = positioned_offset(rect.x, rect.width, tile_width, position.x);
+    let tile_y = positioned_offset(rect.y, rect.height, tile_height, position.y);
+
+    if repeat == BackgroundRepeat::NoRepeat || size != BackgroundSize::Auto {
+        draw_image_clipped(
+            pixmap,
+            scale,
+            Rect::new(tile_x, tile_y, tile_width, tile_height),
+            image,
+            Some(rect),
+            0.0,
+        );
+        return;
+    }
+
     let end_x = rect.x + rect.width;
     let end_y = rect.y + rect.height;
-    let mut tile_y = rect.y;
+    let mut tile_y = first_repeated_tile_position(tile_y, rect.y, tile_height);
     while tile_y < end_y {
-        let mut tile_x = rect.x;
+        let mut tile_x = first_repeated_tile_position(tile_x, rect.x, tile_width);
         while tile_x < end_x {
             draw_image_clipped(
                 pixmap,
@@ -4628,11 +4974,45 @@ fn draw_background_image(pixmap: &mut Pixmap, scale: f32, rect: Rect, image: &Im
                 Rect::new(tile_x, tile_y, tile_width, tile_height),
                 image,
                 Some(rect),
+                0.0,
             );
             tile_x += tile_width.max(1.0);
         }
         tile_y += tile_height.max(1.0);
     }
+}
+
+fn background_tile_size(rect: Rect, image: &ImageData, size: BackgroundSize) -> (f32, f32) {
+    let natural_width = image.width as f32;
+    let natural_height = image.height as f32;
+    match size {
+        BackgroundSize::Auto => (natural_width, natural_height),
+        BackgroundSize::Cover => {
+            let ratio = (rect.width / natural_width).max(rect.height / natural_height);
+            (natural_width * ratio, natural_height * ratio)
+        }
+        BackgroundSize::Contain => {
+            let ratio = (rect.width / natural_width).min(rect.height / natural_height);
+            (natural_width * ratio, natural_height * ratio)
+        }
+    }
+}
+
+fn positioned_offset(origin: f32, available: f32, size: f32, axis: PositionAxis) -> f32 {
+    origin + (available - size) * axis.factor()
+}
+
+fn first_repeated_tile_position(positioned: f32, clip_start: f32, tile_size: f32) -> f32 {
+    let tile_size = tile_size.max(1.0);
+    let mut position = positioned;
+    if position > clip_start {
+        let steps = ((position - clip_start) / tile_size).ceil();
+        position -= steps * tile_size;
+    }
+    while position + tile_size <= clip_start {
+        position += tile_size;
+    }
+    position
 }
 
 fn draw_image_clipped(
@@ -4641,6 +5021,7 @@ fn draw_image_clipped(
     rect: Rect,
     image: &ImageData,
     clip: Option<Rect>,
+    radius: f32,
 ) {
     if rect.width <= 0.0
         || rect.height <= 0.0
@@ -4683,14 +5064,56 @@ fn draw_image_clipped(
     }
 
     for py in start_y..end_y {
+        let css_y = (py as f32 + 0.5) / scale;
         let src_y = ((py - y0) as f32 + 0.5) * image.height as f32 / target_height as f32 - 0.5;
         for px in start_x..end_x {
+            let css_x = (px as f32 + 0.5) / scale;
+            if !point_in_rounded_rect(css_x, css_y, rect, radius) {
+                continue;
+            }
             let src_x = ((px - x0) as f32 + 0.5) * image.width as f32 / target_width as f32 - 0.5;
             let [r, g, b, a] = sample_image_bilinear(image, src_x, src_y);
             let dst_index = ((py as u32 * pixmap_width as u32 + px as u32) * 4) as usize;
             composite_pixel(&mut data[dst_index..dst_index + 4], r, g, b, a);
         }
     }
+}
+
+fn point_in_rounded_rect(x: f32, y: f32, rect: Rect, radius: f32) -> bool {
+    if radius <= 0.0 || rect.width <= 0.0 || rect.height <= 0.0 {
+        return true;
+    }
+    let radius = radius.min(rect.width / 2.0).min(rect.height / 2.0).max(0.0);
+    if radius <= 0.0 {
+        return true;
+    }
+
+    let left = rect.x;
+    let top = rect.y;
+    let right = rect.x + rect.width;
+    let bottom = rect.y + rect.height;
+    if x < left || x > right || y < top || y > bottom {
+        return false;
+    }
+
+    let corner_x = if x < left + radius {
+        left + radius
+    } else if x > right - radius {
+        right - radius
+    } else {
+        return true;
+    };
+    let corner_y = if y < top + radius {
+        top + radius
+    } else if y > bottom - radius {
+        bottom - radius
+    } else {
+        return true;
+    };
+
+    let dx = x - corner_x;
+    let dy = y - corner_y;
+    dx * dx + dy * dy <= radius * radius
 }
 
 fn sample_image_bilinear(image: &ImageData, x: f32, y: f32) -> [u8; 4] {
@@ -5141,6 +5564,20 @@ mod tests {
         let mut style = Style::initial();
         style.apply_declaration("border-radius", "12px");
         assert_eq!(style.border_radius, 12.0);
+        style.apply_declaration("border-radius", "50%");
+        assert!(style.border_radius > 10_000.0);
+        assert!(point_in_rounded_rect(
+            50.0,
+            1.0,
+            Rect::new(0.0, 0.0, 100.0, 100.0),
+            style.border_radius
+        ));
+        assert!(!point_in_rounded_rect(
+            1.0,
+            1.0,
+            Rect::new(0.0, 0.0, 100.0, 100.0),
+            style.border_radius
+        ));
     }
 
     #[test]
@@ -5156,6 +5593,38 @@ mod tests {
         assert_eq!(
             style.background_image_src.as_deref(),
             Some("assets/top.jpg")
+        );
+    }
+
+    #[test]
+    fn parses_background_cover_position_and_repeat() {
+        let mut style = Style::initial();
+        style.apply_declaration(
+            "background",
+            "#2a3448 url(hero.jpg) no-repeat center top / cover",
+        );
+
+        assert_eq!(style.background, Some(Rgba::rgb(0x2a, 0x34, 0x48)));
+        assert_eq!(style.background_image_src.as_deref(), Some("hero.jpg"));
+        assert_eq!(style.background_repeat, BackgroundRepeat::NoRepeat);
+        assert_eq!(style.background_size, BackgroundSize::Cover);
+        assert_eq!(
+            style.background_position,
+            BackgroundPosition {
+                x: PositionAxis::Center,
+                y: PositionAxis::Start,
+            }
+        );
+
+        style.apply_declaration("background-size", "contain");
+        style.apply_declaration("background-position", "right bottom");
+        assert_eq!(style.background_size, BackgroundSize::Contain);
+        assert_eq!(
+            style.background_position,
+            BackgroundPosition {
+                x: PositionAxis::End,
+                y: PositionAxis::End,
+            }
         );
     }
 
@@ -5204,6 +5673,19 @@ mod tests {
         assert_eq!(table.children[0].children.len(), 2);
         assert!((table.children[0].children[0].rect.width - 200.0).abs() < 0.1);
         assert!((table.children[0].children[1].rect.width - 400.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn display_none_table_rows_do_not_occupy_height() {
+        let layout = layout_for_test(
+            r#"<table><tr style="display:none"><td height="35">&nbsp;</td></tr><tr><td height="20">&nbsp;</td></tr></table>"#,
+            200,
+        );
+        let table =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+
+        assert!(table.rect.height < 30.0);
+        assert_eq!(table.children.len(), 1);
     }
 
     #[test]
@@ -5390,6 +5872,31 @@ mod tests {
     }
 
     #[test]
+    fn hr_is_laid_out_as_block_separator() {
+        let layout = layout_for_test(r#"<div><hr><p style="margin:0">After</p></div>"#, 200);
+        let rule = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::Block) && child.style.border.top > 0.0
+        })
+        .expect("hr");
+        let text =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Text(_))).expect("text");
+
+        assert!(rule.rect.height >= 1.0);
+        assert!(text.rect.y > rule.rect.y + rule.rect.height);
+    }
+
+    #[test]
+    fn legacy_align_attribute_centers_block_images() {
+        let layout = layout_for_test(
+            r#"<div align="center"><img width="50" height="20" alt=""></div>"#,
+            200,
+        );
+        let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
+            .expect("image");
+        assert!((image.rect.x - 75.0).abs() < 0.1);
+    }
+
+    #[test]
     fn inline_anchor_width_does_not_constrain_wrapped_image() {
         let layout = layout_for_test(
             r#"<div><a style="width:50%"><img style="width:100%" width="640" height="20" alt=""></a></div>"#,
@@ -5423,6 +5930,82 @@ mod tests {
         .expect("image");
         assert!((image.rect.width - 50.0).abs() < 0.1);
         assert!((image.rect.height - 20.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn css_image_height_auto_overrides_html_height_attribute() {
+        let layout = layout_for_test(
+            r##"<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="100" height="40" style="width:50px;height:auto" alt="">"##,
+            200,
+        );
+        let image = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::Image(Some(_)))
+        })
+        .expect("image");
+
+        assert!((image.rect.width - 50.0).abs() < 0.1);
+        assert!((image.rect.height - 50.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn image_width_auto_uses_declared_height_and_aspect_ratio() {
+        let layout = layout_for_test(
+            r##"<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" height="20" alt="">"##,
+            200,
+        );
+        let image = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::Image(Some(_)))
+        })
+        .expect("image");
+
+        assert!((image.rect.width - 20.0).abs() < 0.1);
+        assert!((image.rect.height - 20.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn image_max_width_clamps_css_width_and_preserves_auto_height() {
+        let layout = layout_for_test(
+            r##"<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="400" height="400" style="max-width:50%;height:auto" alt="">"##,
+            200,
+        );
+        let image = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::Image(Some(_)))
+        })
+        .expect("image");
+
+        assert!((image.rect.width - 100.0).abs() < 0.1);
+        assert!((image.rect.height - 100.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn image_auto_horizontal_margins_center_fixed_width_images() {
+        let layout = layout_for_test(
+            r##"<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="40" height="20" style="margin:auto" alt="">"##,
+            200,
+        );
+        let image = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::Image(Some(_)))
+        })
+        .expect("image");
+
+        assert!((image.rect.x - 80.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn paragraph_top_margin_collapses_inside_list_items() {
+        let layout = layout_for_test(r#"<ol><li><p>First item</p></li></ol>"#, 200);
+        let marker = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "1."),
+        )
+        .expect("marker");
+        let text = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "First item"),
+        )
+        .expect("text");
+
+        assert!((marker.rect.y - text.rect.y).abs() < 1.0);
     }
 
     #[test]
