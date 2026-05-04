@@ -2,9 +2,14 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::{Context as _, Result};
-use clap::Parser;
+use anyhow::{Context as _, Result, bail};
+use clap::{Parser, ValueEnum};
 use email_render::{EmailRenderer, RenderRequest, RustEmailRenderer, build_document_from_files};
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum PdfMode {
+    Raster,
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "email-render")]
@@ -22,6 +27,14 @@ struct Args {
     #[arg(short, long)]
     output: PathBuf,
 
+    /// Optional raster PDF output path.
+    #[arg(long)]
+    pdf_output: Option<PathBuf>,
+
+    /// PDF output mode.
+    #[arg(long, value_enum, default_value_t = PdfMode::Raster)]
+    pdf_mode: PdfMode,
+
     /// CSS viewport width.
     #[arg(long, default_value_t = 600)]
     width: u32,
@@ -34,6 +47,10 @@ struct Args {
     #[arg(long, default_value_t = 1)]
     min_height: u32,
 
+    /// Maximum final CSS output height.
+    #[arg(long)]
+    max_height: Option<u32>,
+
     /// Device pixel scale. Use 2.0 for retina output.
     #[arg(long, default_value_t = 1.0)]
     scale: f32,
@@ -42,6 +59,10 @@ struct Args {
     #[arg(long, default_value_t = 30)]
     timeout: u64,
 
+    /// Resource timeout in milliseconds. Overrides --timeout.
+    #[arg(long)]
+    timeout_ms: Option<u64>,
+
     /// Reserved compatibility option; the pure Rust renderer does not wait for scripts.
     #[arg(long, default_value_t = 100)]
     settle_ms: u64,
@@ -49,10 +70,35 @@ struct Args {
     /// Base URL for resolving relative assets. Defaults to the HTML file directory.
     #[arg(long)]
     base_url: Option<String>,
+
+    /// Allow remote http(s) image resources.
+    #[arg(long)]
+    allow_remote: bool,
+
+    /// Allow non-HTTPS remote resources when --allow-remote is set.
+    #[arg(long)]
+    allow_http: bool,
+
+    /// Maximum encoded image resource size in bytes.
+    #[arg(long, default_value_t = 10 * 1024 * 1024)]
+    max_image_bytes: usize,
+
+    /// Maximum decoded image size in pixels.
+    #[arg(long, default_value_t = 16_000_000)]
+    max_decoded_pixels: u64,
+
+    /// Font files to load instead of scanning system fonts.
+    #[arg(long = "font-file")]
+    font_files: Vec<PathBuf>,
+
+    /// Directories containing font files to load instead of scanning system fonts.
+    #[arg(long = "font-dir")]
+    font_dirs: Vec<PathBuf>,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    let font_paths = collect_font_paths(&args.font_files, &args.font_dirs)?;
 
     let document = build_document_from_files(
         &args.html,
@@ -66,13 +112,26 @@ fn main() -> Result<()> {
         viewport_height: args.viewport_height,
         min_height: args.min_height,
         scale: args.scale,
-        timeout: Duration::from_secs(args.timeout),
+        timeout: args
+            .timeout_ms
+            .map(Duration::from_millis)
+            .unwrap_or_else(|| Duration::from_secs(args.timeout)),
         settle: Duration::from_millis(args.settle_ms),
+        base_url: document.base_url,
+        max_height: args.max_height,
+        allow_remote: args.allow_remote,
+        https_only: !args.allow_http,
+        max_image_bytes: args.max_image_bytes,
+        max_decoded_pixels: args.max_decoded_pixels,
     };
 
-    let mut renderer =
-        RustEmailRenderer::new(request.width, request.viewport_height, request.scale)?;
-    let image = renderer.render_png(request)?;
+    let mut renderer = RustEmailRenderer::with_fonts(
+        request.width,
+        request.viewport_height,
+        request.scale,
+        font_paths,
+    )?;
+    let image = renderer.render_png(request.clone())?;
 
     if let Some(parent) = args.output.parent() {
         fs::create_dir_all(parent)
@@ -95,5 +154,57 @@ fn main() -> Result<()> {
         eprintln!("console.{}: {}", message.level, message.message);
     }
 
+    if let Some(pdf_output) = args.pdf_output {
+        let pdf = match args.pdf_mode {
+            PdfMode::Raster => renderer.render_pdf(request)?,
+        };
+        if let Some(parent) = pdf_output.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+        fs::write(&pdf_output, &pdf.pdf)
+            .with_context(|| format!("failed to write {}", pdf_output.display()))?;
+        eprintln!(
+            "rendered raster PDF {}x{} px ({})",
+            pdf.pixel_width,
+            pdf.pixel_height,
+            pdf_output.display()
+        );
+        for message in pdf.console_messages {
+            eprintln!("console.{}: {}", message.level, message.message);
+        }
+    }
+
     Ok(())
+}
+
+fn collect_font_paths(font_files: &[PathBuf], font_dirs: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    let mut paths = font_files.to_vec();
+    for dir in font_dirs {
+        let entries =
+            fs::read_dir(dir).with_context(|| format!("failed to read {}", dir.display()))?;
+        for entry in entries {
+            let entry = entry.with_context(|| format!("failed to read {}", dir.display()))?;
+            let path = entry.path();
+            if path.is_file() && is_font_file(&path) {
+                paths.push(path);
+            }
+        }
+    }
+    if paths.is_empty() && (!font_files.is_empty() || !font_dirs.is_empty()) {
+        bail!("no font files found in supplied --font-file/--font-dir paths");
+    }
+    Ok(paths)
+}
+
+fn is_font_file(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "ttf" | "otf" | "ttc" | "otc"
+            )
+        })
+        .unwrap_or(false)
 }

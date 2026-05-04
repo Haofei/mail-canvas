@@ -10,7 +10,7 @@ if [[ ! -x "$RENDERER" ]]; then
 fi
 
 rm -rf "$WORK_DIR"
-mkdir -p "$WORK_DIR/html" "$WORK_DIR/png"
+mkdir -p "$WORK_DIR/html" "$WORK_DIR/png" "$WORK_DIR/pdf"
 
 download() {
   local name="$1"
@@ -38,9 +38,13 @@ download "waypoint-marketplace-qr" \
 for html in "$WORK_DIR"/html/*.html; do
   name="$(basename "$html" .html)"
   log="$WORK_DIR/$name.log"
-  "$RENDERER" --html "$html" --output "$WORK_DIR/png/$name.png" --width 600 >"$log" 2>&1
+  "$RENDERER" \
+    --html "$html" \
+    --output "$WORK_DIR/png/$name.png" \
+    --pdf-output "$WORK_DIR/pdf/$name.pdf" \
+    --width 600 >"$log" 2>&1
   printf '%s\t' "$name"
   sed -n '1p' "$log"
 done
 
-printf 'outputs: %s/png\n' "$WORK_DIR"
+printf 'outputs: %s/{png,pdf}\n' "$WORK_DIR"

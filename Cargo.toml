@@ -9,12 +9,14 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 cosmic-text = "0.17.0"
 css-inline = { version = "0.20.2", default-features = false }
+data-url = "0.3.2"
+fontdb = "0.23.0"
+image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 kuchiki = "0.8.1"
+pdf-writer = "0.14.0"
 tiny-skia = "0.11.4"
+ureq = { version = "3.3.0", default-features = false, features = ["rustls"] }
 url = "2"
-
-[dev-dependencies]
-image = { version = "0.25", default-features = false, features = ["png"] }
 
 [lints.clippy]
 cast_possible_truncation = "warn"

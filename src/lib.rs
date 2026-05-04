@@ -1,14 +1,25 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+
 use std::fs;
-use std::path::Path;
+use std::io::Cursor;
+use std::net::IpAddr;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use cosmic_text::{
-    Align as TextAlignMode, Attrs, Buffer, Color as TextColor, FontSystem, Metrics, Shaping,
-    SwashCache,
+    Align as TextAlignMode, Attrs, Buffer, Color as TextColor, Family as FontFamily, FontSystem,
+    Metrics, Shaping, Style as FontStyle, SwashCache, Weight as FontWeight, Wrap,
 };
 use css_inline::CSSInliner;
+use data_url::DataUrl;
+use image::{ImageReader, Limits};
 use kuchiki::{NodeRef, traits::TendrilSink as _};
+use pdf_writer::{Content, Name, Pdf, Rect as PdfRect, Ref};
 use tiny_skia::{Paint, Pixmap, Rect as SkiaRect, Transform};
 use url::Url;
 
@@ -16,10 +27,13 @@ const MAX_RENDER_PIXELS_PER_AXIS: u32 = 16_384;
 const MAX_CONSOLE_MESSAGES: usize = 50;
 const MAX_CONSOLE_MESSAGE_LEN: usize = 2048;
 const MAX_LAYOUT_DEPTH: usize = 64;
+const DEFAULT_MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+const DEFAULT_MAX_DECODED_PIXELS: u64 = 16_000_000;
 
 #[derive(Debug, Clone)]
 pub struct PreparedDocument {
     pub html: String,
+    pub base_url: Option<Url>,
 }
 
 #[derive(Debug, Clone)]
@@ -31,6 +45,32 @@ pub struct RenderRequest {
     pub scale: f32,
     pub timeout: Duration,
     pub settle: Duration,
+    pub base_url: Option<Url>,
+    pub max_height: Option<u32>,
+    pub allow_remote: bool,
+    pub https_only: bool,
+    pub max_image_bytes: usize,
+    pub max_decoded_pixels: u64,
+}
+
+impl RenderRequest {
+    pub fn defaults_for_html(html: String, width: u32, viewport_height: u32, scale: f32) -> Self {
+        Self {
+            html,
+            width,
+            viewport_height,
+            min_height: 1,
+            scale,
+            timeout: Duration::from_secs(30),
+            settle: Duration::ZERO,
+            base_url: None,
+            max_height: None,
+            allow_remote: false,
+            https_only: true,
+            max_image_bytes: DEFAULT_MAX_IMAGE_BYTES,
+            max_decoded_pixels: DEFAULT_MAX_DECODED_PIXELS,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +86,17 @@ pub struct RenderedImage {
 }
 
 #[derive(Debug, Clone)]
+pub struct RenderedPdf {
+    pub pdf: Vec<u8>,
+    pub css_width: u32,
+    pub css_height: u32,
+    pub pixel_width: u32,
+    pub pixel_height: u32,
+    pub scale: f32,
+    pub console_messages: Vec<ConsoleMessage>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ConsoleMessage {
     pub level: &'static str,
     pub message: String,
@@ -53,6 +104,7 @@ pub struct ConsoleMessage {
 
 pub trait EmailRenderer {
     fn render_png(&mut self, request: RenderRequest) -> Result<RenderedImage>;
+    fn render_pdf(&mut self, request: RenderRequest) -> Result<RenderedPdf>;
 }
 
 pub struct RustEmailRenderer {
@@ -62,15 +114,57 @@ pub struct RustEmailRenderer {
 
 impl RustEmailRenderer {
     pub fn new(width: u32, viewport_height: u32, scale: f32) -> Result<Self> {
+        Self::with_fonts(width, viewport_height, scale, [])
+    }
+
+    pub fn with_fonts(
+        width: u32,
+        viewport_height: u32,
+        scale: f32,
+        font_paths: impl IntoIterator<Item = PathBuf>,
+    ) -> Result<Self> {
         validate_scale(scale)?;
         let _ = scaled_dimension(width, scale, "width")?;
         let _ = scaled_dimension(viewport_height.max(1), scale, "viewport-height")?;
+        let font_paths: Vec<PathBuf> = font_paths.into_iter().collect();
+        let font_system = if font_paths.is_empty() {
+            FontSystem::new()
+        } else {
+            FontSystem::new_with_locale_and_db_and_fallback(
+                "en-US".to_string(),
+                font_database_from_paths(&font_paths)?,
+                cosmic_text::PlatformFallback,
+            )
+        };
 
         Ok(Self {
-            font_system: FontSystem::new(),
+            font_system,
             swash_cache: SwashCache::new(),
         })
     }
+}
+
+fn font_database_from_paths(paths: &[PathBuf]) -> Result<fontdb::Database> {
+    let mut db = fontdb::Database::new();
+    for path in paths {
+        if !path.is_file() {
+            bail!("font path is not a file: {}", path.display());
+        }
+        db.load_font_source(fontdb::Source::File(path.clone()));
+    }
+    if db.is_empty() {
+        bail!("no valid font faces found in supplied font files");
+    }
+    let default_family = db
+        .faces()
+        .flat_map(|face| face.families.iter().map(|(family, _)| family.clone()))
+        .next();
+    if let Some(default_family) = default_family {
+        db.set_sans_serif_family(default_family.clone());
+        db.set_serif_family(default_family.clone());
+        db.set_monospace_family(default_family);
+    }
+    Ok(db)
 }
 
 pub type ServoEmailRenderer = RustEmailRenderer;
@@ -81,7 +175,10 @@ impl EmailRenderer for RustEmailRenderer {
 
         let html = inline_css(&request.html)?;
         let document = kuchiki::parse_html().one(html);
-        let mut engine = LayoutEngine::new(&mut self.font_system);
+        let mut engine = LayoutEngine::new(
+            &mut self.font_system,
+            ResourcePolicy::from_request(&request, document_base_url(&document)),
+        );
         let mut layout = engine.layout_document(&document, request.width)?;
         let warnings = std::mem::take(&mut engine.warnings);
         drop(engine);
@@ -89,6 +186,7 @@ impl EmailRenderer for RustEmailRenderer {
         let css_height = clamp_css_height(
             ceil_to_u32(layout.rect.height)?,
             request.min_height,
+            request.max_height,
             request.scale,
         )?;
         layout.rect.height = css_height as f32;
@@ -124,6 +222,20 @@ impl EmailRenderer for RustEmailRenderer {
             scale: request.scale,
             content_css_width: ceil_to_u32(layout.rect.width)?,
             console_messages: warnings,
+        })
+    }
+
+    fn render_pdf(&mut self, request: RenderRequest) -> Result<RenderedPdf> {
+        let rendered = self.render_png(request)?;
+        let pdf = raster_pdf_from_png(&rendered)?;
+        Ok(RenderedPdf {
+            pdf,
+            css_width: rendered.css_width,
+            css_height: rendered.css_height,
+            pixel_width: rendered.pixel_width,
+            pixel_height: rendered.pixel_height,
+            scale: rendered.scale,
+            console_messages: rendered.console_messages,
         })
     }
 }
@@ -162,6 +274,7 @@ pub fn build_document_from_files(
 
     Ok(PreparedDocument {
         html: build_document(&html, css.as_deref(), base.as_ref(), width),
+        base_url: base,
     })
 }
 
@@ -259,15 +372,198 @@ fn escape_attr(value: &str) -> String {
         .replace('>', "&gt;")
 }
 
+#[derive(Debug, Clone)]
+struct ResourcePolicy {
+    base_url: Option<Url>,
+    allow_remote: bool,
+    https_only: bool,
+    timeout: Duration,
+    max_image_bytes: usize,
+    max_decoded_pixels: u64,
+}
+
+impl ResourcePolicy {
+    fn from_request(request: &RenderRequest, document_base_url: Option<Url>) -> Self {
+        Self {
+            base_url: request.base_url.clone().or(document_base_url),
+            allow_remote: request.allow_remote,
+            https_only: request.https_only,
+            timeout: if request.timeout.is_zero() {
+                Duration::from_secs(8)
+            } else {
+                request.timeout
+            },
+            max_image_bytes: request.max_image_bytes.max(1),
+            max_decoded_pixels: request.max_decoded_pixels.max(1),
+        }
+    }
+}
+
+fn document_base_url(document: &NodeRef) -> Option<Url> {
+    let base = find_first_tag(document, "base")?;
+    let href = attr(&base, "href")?;
+    Url::parse(&href).ok()
+}
+
+fn load_image(src: &str, policy: &ResourcePolicy) -> Result<ImageData> {
+    let bytes = load_resource_bytes(src, policy)?;
+    decode_image_bytes(&bytes, policy)
+}
+
+fn load_resource_bytes(src: &str, policy: &ResourcePolicy) -> Result<Vec<u8>> {
+    if src.trim_start().starts_with("data:") {
+        let data_url =
+            DataUrl::process(src).map_err(|error| anyhow!("invalid data URL: {error}"))?;
+        let (bytes, _) = data_url
+            .decode_to_vec()
+            .map_err(|error| anyhow!("invalid data URL body: {error:?}"))?;
+        ensure_resource_size(bytes.len(), policy.max_image_bytes)?;
+        return Ok(bytes);
+    }
+
+    let url = Url::parse(src)
+        .or_else(|_| {
+            policy
+                .base_url
+                .as_ref()
+                .ok_or(url::ParseError::RelativeUrlWithoutBase)
+                .and_then(|base| base.join(src))
+        })
+        .with_context(|| format!("failed to resolve resource URL {src}"))?;
+
+    match url.scheme() {
+        "file" => load_file_url(&url, policy),
+        "https" | "http" => load_remote_url(&url, policy),
+        scheme => bail!("unsupported resource URL scheme: {scheme}"),
+    }
+}
+
+fn load_file_url(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
+    let path = url
+        .to_file_path()
+        .map_err(|()| anyhow!("invalid file URL: {url}"))?;
+    if let Some(base) = &policy.base_url {
+        if base.scheme() == "file" {
+            if let Ok(root) = base.to_file_path() {
+                let root = root.canonicalize().unwrap_or(root);
+                let target = path.canonicalize().unwrap_or(path.clone());
+                if !target.starts_with(&root) {
+                    bail!(
+                        "file resource is outside the base directory: {}",
+                        target.display()
+                    );
+                }
+            }
+        }
+    }
+    let bytes = fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
+    ensure_resource_size(bytes.len(), policy.max_image_bytes)?;
+    Ok(bytes)
+}
+
+fn load_remote_url(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
+    if !policy.allow_remote {
+        bail!("remote resources are disabled");
+    }
+    if policy.https_only && url.scheme() != "https" {
+        bail!("non-HTTPS remote resource rejected");
+    }
+    reject_private_host(url)?;
+
+    let agent = ureq::Agent::config_builder()
+        .https_only(policy.https_only)
+        .max_redirects(3)
+        .timeout_global(Some(policy.timeout))
+        .build()
+        .new_agent();
+    let mut response = agent
+        .get(url.as_str())
+        .call()
+        .with_context(|| format!("failed to fetch {url}"))?;
+    let bytes = response
+        .body_mut()
+        .with_config()
+        .limit(policy.max_image_bytes as u64)
+        .read_to_vec()
+        .with_context(|| format!("failed to read response body from {url}"))?;
+    ensure_resource_size(bytes.len(), policy.max_image_bytes)?;
+    Ok(bytes)
+}
+
+fn reject_private_host(url: &Url) -> Result<()> {
+    let Some(host) = url.host_str() else {
+        bail!("remote resource missing host");
+    };
+    if host.eq_ignore_ascii_case("localhost") {
+        bail!("localhost resource rejected");
+    }
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        let rejected = match ip {
+            IpAddr::V4(ip) => {
+                ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified()
+            }
+            IpAddr::V6(ip) => {
+                ip.is_loopback()
+                    || ip.is_unspecified()
+                    || ip.is_unique_local()
+                    || ip.is_unicast_link_local()
+            }
+        };
+        if rejected {
+            bail!("private or local remote resource rejected");
+        }
+    }
+    Ok(())
+}
+
+fn ensure_resource_size(len: usize, max_len: usize) -> Result<()> {
+    if len > max_len {
+        bail!("resource is too large: {len} bytes > {max_len} bytes");
+    }
+    Ok(())
+}
+
+fn decode_image_bytes(bytes: &[u8], policy: &ResourcePolicy) -> Result<ImageData> {
+    ensure_resource_size(bytes.len(), policy.max_image_bytes)?;
+    let max_side = policy.max_decoded_pixels.min(u64::from(u32::MAX)) as u32;
+    let mut reader = ImageReader::new(Cursor::new(bytes));
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(max_side);
+    limits.max_image_height = Some(max_side);
+    limits.max_alloc = Some(policy.max_decoded_pixels.saturating_mul(4));
+    reader.limits(limits);
+    let image = reader
+        .with_guessed_format()
+        .context("failed to guess image format")?
+        .decode()
+        .context("failed to decode image")?;
+    let rgba = image.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    let pixels = u64::from(width).saturating_mul(u64::from(height));
+    if pixels > policy.max_decoded_pixels {
+        bail!(
+            "decoded image is too large: {pixels} pixels > {} pixels",
+            policy.max_decoded_pixels
+        );
+    }
+    Ok(ImageData {
+        width,
+        height,
+        rgba: rgba.into_raw(),
+    })
+}
+
 struct LayoutEngine<'a> {
     font_system: &'a mut FontSystem,
+    resources: ResourcePolicy,
     warnings: Vec<ConsoleMessage>,
 }
 
 impl<'a> LayoutEngine<'a> {
-    fn new(font_system: &'a mut FontSystem) -> Self {
+    fn new(font_system: &'a mut FontSystem, resources: ResourcePolicy) -> Self {
         Self {
             font_system,
+            resources,
             warnings: Vec::new(),
         }
     }
@@ -283,8 +579,7 @@ impl<'a> LayoutEngine<'a> {
 
         let viewport_width = width as f32;
         let layout_width = root_style
-            .width
-            .and_then(|length| length.resolve(viewport_width))
+            .resolve_width(viewport_width)
             .unwrap_or(viewport_width)
             .max(1.0);
         let (children, height) =
@@ -403,6 +698,9 @@ impl<'a> LayoutEngine<'a> {
         if tag == "img" {
             return Ok(Some(self.layout_image(node, style, x, y, containing_width)));
         }
+        if tag == "hr" {
+            return Ok(Some(self.layout_hr(style, x, y, containing_width)));
+        }
 
         match style.display {
             Display::None => Ok(None),
@@ -421,8 +719,7 @@ impl<'a> LayoutEngine<'a> {
         depth: usize,
     ) -> Result<Option<FlowBox>> {
         let outer_width = style
-            .width
-            .and_then(|width| width.resolve(containing_width))
+            .resolve_width(containing_width)
             .unwrap_or(containing_width - style.margin.horizontal())
             .max(1.0);
         let rect_x = x + style.margin.left;
@@ -435,10 +732,7 @@ impl<'a> LayoutEngine<'a> {
 
         let (children, content_height) =
             self.layout_children(node, &style, inner_x, inner_y, inner_width, depth)?;
-        let min_height = style
-            .height
-            .and_then(|height| height.resolve(0.0))
-            .unwrap_or(0.0);
+        let min_height = style.resolve_height(0.0).unwrap_or(0.0);
         let rect_height = (content_height + style.padding.vertical() + style.border_width * 2.0)
             .max(min_height)
             .max(0.0);
@@ -464,8 +758,7 @@ impl<'a> LayoutEngine<'a> {
         depth: usize,
     ) -> Result<Option<FlowBox>> {
         let table_width = style
-            .width
-            .and_then(|width| width.resolve(containing_width))
+            .resolve_width(containing_width)
             .unwrap_or(containing_width - style.margin.horizontal())
             .max(1.0);
         let rect_x = x + style.margin.left;
@@ -475,50 +768,51 @@ impl<'a> LayoutEngine<'a> {
         let content_width =
             (table_width - style.padding.horizontal() - style.border_width * 2.0).max(1.0);
 
-        let rows = collect_rows(node);
-        if rows.is_empty() {
+        let grid = build_table_grid(node);
+        if grid.rows.is_empty() {
             return self.layout_block(node, style, x, y, containing_width, depth);
         }
 
         let mut row_boxes = Vec::new();
         let mut row_y = content_y;
-        let spacing = style.cell_spacing.max(0.0);
+        let spacing = if style.border_collapse == BorderCollapse::Collapse {
+            0.0
+        } else {
+            style.cell_spacing.max(0.0)
+        };
+        let column_widths = self.resolve_table_column_widths(&grid, &style, content_width, spacing);
 
-        for row in rows {
-            let row_style = style_for_node(&row, &style);
-            let cells = collect_cells(&row);
-            if cells.is_empty() {
+        for row in grid.rows {
+            let row_style = style_for_node(&row.node, &style);
+            if row.cells.is_empty() {
                 continue;
             }
 
-            let widths = self.resolve_cell_widths(&cells, &row_style, content_width, spacing);
-            let mut cell_x = content_x;
-            let mut cell_boxes = Vec::with_capacity(cells.len());
+            let mut cell_boxes = Vec::with_capacity(row.cells.len());
             let mut row_height: f32 = 0.0;
 
-            for (cell, cell_width) in cells.into_iter().zip(widths) {
-                let mut cell_style = style_for_node(&cell, &row_style);
+            for cell in row.cells {
+                let mut cell_style = style_for_node(&cell.node, &row_style);
                 if cell_style.padding.is_zero() && style.cell_padding > 0.0 {
                     cell_style.padding = Edges::all(style.cell_padding);
                 }
 
+                let cell_x = content_x + column_offset(&column_widths, cell.col, spacing);
+                let cell_width = spanned_width(&column_widths, cell.col, cell.colspan, spacing);
                 let cell_inner_x = cell_x + cell_style.border_width + cell_style.padding.left;
                 let cell_inner_y = row_y + cell_style.border_width + cell_style.padding.top;
                 let cell_inner_width =
                     (cell_width - cell_style.padding.horizontal() - cell_style.border_width * 2.0)
                         .max(1.0);
                 let (children, content_height) = self.layout_children(
-                    &cell,
+                    &cell.node,
                     &cell_style,
                     cell_inner_x,
                     cell_inner_y,
                     cell_inner_width,
                     depth + 1,
                 )?;
-                let explicit_height = cell_style
-                    .height
-                    .and_then(|height| height.resolve(0.0))
-                    .unwrap_or(0.0);
+                let explicit_height = cell_style.resolve_height(0.0).unwrap_or(0.0);
                 let cell_height = (content_height
                     + cell_style.padding.vertical()
                     + cell_style.border_width * 2.0)
@@ -531,10 +825,18 @@ impl<'a> LayoutEngine<'a> {
                     style: cell_style,
                     children,
                 });
-                cell_x += cell_width + spacing;
             }
 
             for cell in &mut cell_boxes {
+                let delta = (row_height - cell.rect.height).max(0.0);
+                let offset_y = match cell.style.vertical_align {
+                    VerticalAlign::Top => 0.0,
+                    VerticalAlign::Middle => delta / 2.0,
+                    VerticalAlign::Bottom => delta,
+                };
+                if offset_y > 0.0 {
+                    translate_layout_children(cell, 0.0, offset_y);
+                }
                 cell.rect.height = row_height;
             }
 
@@ -548,10 +850,7 @@ impl<'a> LayoutEngine<'a> {
         }
 
         let content_height = (row_y - content_y - spacing).max(0.0);
-        let explicit_height = style
-            .height
-            .and_then(|height| height.resolve(0.0))
-            .unwrap_or(0.0);
+        let explicit_height = style.resolve_height(0.0).unwrap_or(0.0);
         let table_height = (content_height + style.padding.vertical() + style.border_width * 2.0)
             .max(explicit_height)
             .max(1.0);
@@ -567,31 +866,45 @@ impl<'a> LayoutEngine<'a> {
         }))
     }
 
-    fn resolve_cell_widths(
+    fn resolve_table_column_widths(
         &mut self,
-        cells: &[NodeRef],
-        parent_style: &Style,
-        row_width: f32,
+        grid: &TableGrid,
+        table_style: &Style,
+        table_width: f32,
         spacing: f32,
     ) -> Vec<f32> {
-        let count = cells.len().max(1);
-        let available = (row_width - spacing * count.saturating_sub(1) as f32).max(count as f32);
-        let mut widths = Vec::with_capacity(cells.len());
+        let count = grid.column_count.max(1);
+        let available = (table_width - spacing * count.saturating_sub(1) as f32).max(count as f32);
+        let mut widths = vec![None; count];
         let mut fixed_total = 0.0;
-        let mut flexible = 0usize;
 
-        for cell in cells {
-            let style = style_for_node(cell, parent_style);
-            if let Some(width) = style.width.and_then(|width| width.resolve(available)) {
+        for (col, width) in grid.col_widths.iter().enumerate().take(count) {
+            if let Some(width) = width.and_then(|width| width.resolve(available)) {
                 let width = width.max(1.0);
-                fixed_total += width;
-                widths.push(Some(width));
-            } else {
-                flexible += 1;
-                widths.push(None);
+                widths[col] = Some(width);
             }
         }
 
+        for row in &grid.rows {
+            for cell in &row.cells {
+                let style = style_for_node(&cell.node, table_style);
+                if let Some(width) = style.width.and_then(|width| width.resolve(available)) {
+                    let per_col = ((width - spacing * cell.colspan.saturating_sub(1) as f32)
+                        / cell.colspan as f32)
+                        .max(1.0);
+                    for col in cell.col..cell.col + cell.colspan {
+                        if col < widths.len() {
+                            widths[col] = Some(widths[col].unwrap_or(0.0).max(per_col));
+                        }
+                    }
+                }
+            }
+        }
+
+        for width in widths.iter().flatten() {
+            fixed_total += *width;
+        }
+        let flexible = widths.iter().filter(|width| width.is_none()).count();
         let flexible_width = if flexible > 0 {
             ((available - fixed_total).max(flexible as f32)) / flexible as f32
         } else {
@@ -612,28 +925,69 @@ impl<'a> LayoutEngine<'a> {
         y: f32,
         containing_width: f32,
     ) -> FlowBox {
+        let image = attr(node, "src").and_then(|src| match load_image(&src, &self.resources) {
+            Ok(image) => Some(image),
+            Err(error) => {
+                self.push_warning(
+                    "warn",
+                    &format!("failed to load image {src}: {error}; drew placeholder"),
+                );
+                None
+            }
+        });
+        let natural_width = image.as_ref().map_or(320.0, |image| image.width as f32);
+        let natural_height = image.as_ref().map_or(32.0, |image| image.height as f32);
         let width = style
-            .width
-            .and_then(|width| width.resolve(containing_width))
-            .unwrap_or(containing_width.min(320.0))
+            .resolve_width(containing_width)
+            .or_else(|| {
+                attr(node, "width").and_then(|value| {
+                    parse_length(&value).and_then(|length| length.resolve(containing_width))
+                })
+            })
+            .unwrap_or(natural_width.min(containing_width))
             .max(1.0);
         let height = style
-            .height
-            .and_then(|height| height.resolve(width))
-            .unwrap_or(32.0)
+            .resolve_height(width)
+            .or_else(|| {
+                attr(node, "height")
+                    .and_then(|value| parse_length(&value).and_then(|length| length.resolve(width)))
+            })
+            .unwrap_or_else(|| {
+                if natural_width > 0.0 {
+                    (width / natural_width) * natural_height
+                } else {
+                    natural_height
+                }
+            })
             .max(1.0);
 
-        if let Some(src) = attr(node, "src") {
-            self.push_warning(
-                "warn",
-                &format!("image loading is not implemented; drew placeholder for {src}"),
-            );
+        FlowBox {
+            advance: style.margin.top + height + style.margin.bottom,
+            node: LayoutBox {
+                kind: LayoutKind::Image(image),
+                rect: Rect::new(x + style.margin.left, y + style.margin.top, width, height),
+                style,
+                children: Vec::new(),
+            },
+        }
+    }
+
+    fn layout_hr(&mut self, mut style: Style, x: f32, y: f32, containing_width: f32) -> FlowBox {
+        let width = style
+            .resolve_width(containing_width)
+            .unwrap_or(containing_width);
+        let height = style
+            .resolve_height(0.0)
+            .unwrap_or_else(|| style.border_width.max(1.0))
+            .max(1.0);
+        if style.background.is_none() {
+            style.background = Some(style.border_color);
         }
 
         FlowBox {
             advance: style.margin.top + height + style.margin.bottom,
             node: LayoutBox {
-                kind: LayoutKind::Image,
+                kind: LayoutKind::Block,
                 rect: Rect::new(x + style.margin.left, y + style.margin.top, width, height),
                 style,
                 children: Vec::new(),
@@ -644,11 +998,12 @@ impl<'a> LayoutEngine<'a> {
     fn measure_text_height(&mut self, text: &str, width: f32, style: &Style) -> Result<f32> {
         let metrics = Metrics::new(style.font_size.max(1.0), style.line_height.max(1.0));
         let mut buffer = Buffer::new_empty(metrics);
+        buffer.set_wrap(self.font_system, style.wrap.to_cosmic());
         buffer.set_size(self.font_system, Some(width.max(1.0)), None);
         buffer.set_text(
             self.font_system,
             text,
-            &Attrs::new(),
+            &style.text_attrs(),
             Shaping::Advanced,
             Some(style.text_align.to_cosmic()),
         );
@@ -698,7 +1053,8 @@ impl LayoutPainter<'_> {
 
         match &layout.kind {
             LayoutKind::Text(text) => self.paint_text(layout.rect, &layout.style, text),
-            LayoutKind::Image => self.paint_image_placeholder(layout.rect),
+            LayoutKind::Image(Some(image)) => self.paint_image(layout.rect, image),
+            LayoutKind::Image(None) => self.paint_image_placeholder(layout.rect),
             LayoutKind::Block | LayoutKind::Table | LayoutKind::Row | LayoutKind::Cell => {}
         }
 
@@ -713,6 +1069,7 @@ impl LayoutPainter<'_> {
             (style.line_height * self.scale).max(1.0),
         );
         let mut buffer = Buffer::new_empty(metrics);
+        buffer.set_wrap(self.font_system, style.wrap.to_cosmic());
         buffer.set_size(
             self.font_system,
             Some((rect.width * self.scale).max(1.0)),
@@ -721,7 +1078,7 @@ impl LayoutPainter<'_> {
         buffer.set_text(
             self.font_system,
             text,
-            &Attrs::new(),
+            &style.text_attrs(),
             Shaping::Advanced,
             Some(style.text_align.to_cosmic()),
         );
@@ -756,6 +1113,10 @@ impl LayoutPainter<'_> {
             Rgba::rgb(0x9c, 0xa3, 0xaf),
         );
     }
+
+    fn paint_image(&mut self, rect: Rect, image: &ImageData) {
+        draw_image(self.pixmap, self.scale, rect, image);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -773,7 +1134,7 @@ enum LayoutKind {
     Row,
     Cell,
     Text(String),
-    Image,
+    Image(Option<ImageData>),
 }
 
 #[derive(Debug)]
@@ -786,16 +1147,26 @@ struct FlowBox {
 struct Style {
     display: Display,
     width: Option<Length>,
+    min_width: Option<Length>,
+    max_width: Option<Length>,
     height: Option<Length>,
+    min_height: Option<Length>,
+    max_height: Option<Length>,
     margin: Edges,
     padding: Edges,
     background: Option<Rgba>,
     color: Rgba,
+    font_family: Option<String>,
+    font_weight: FontWeight,
+    font_style: FontStyle,
     font_size: f32,
     line_height: f32,
     text_align: TextAlign,
+    vertical_align: VerticalAlign,
+    wrap: TextWrap,
     border_width: f32,
     border_color: Rgba,
+    border_collapse: BorderCollapse,
     cell_padding: f32,
     cell_spacing: f32,
 }
@@ -805,16 +1176,26 @@ impl Style {
         Self {
             display: Display::Block,
             width: None,
+            min_width: None,
+            max_width: None,
             height: None,
+            min_height: None,
+            max_height: None,
             margin: Edges::ZERO,
             padding: Edges::ZERO,
             background: None,
             color: Rgba::BLACK,
+            font_family: None,
+            font_weight: FontWeight::NORMAL,
+            font_style: FontStyle::Normal,
             font_size: 16.0,
             line_height: 22.4,
             text_align: TextAlign::Left,
+            vertical_align: VerticalAlign::Top,
+            wrap: TextWrap::WordOrGlyph,
             border_width: 0.0,
             border_color: Rgba::BLACK,
+            border_collapse: BorderCollapse::Separate,
             cell_padding: 0.0,
             cell_spacing: 0.0,
         }
@@ -824,16 +1205,26 @@ impl Style {
         let mut style = Self {
             display: default_display(tag),
             width: None,
+            min_width: None,
+            max_width: None,
             height: None,
+            min_height: None,
+            max_height: None,
             margin: Edges::ZERO,
             padding: Edges::ZERO,
             background: None,
             color: parent.color,
+            font_family: parent.font_family.clone(),
+            font_weight: parent.font_weight,
+            font_style: parent.font_style,
             font_size: parent.font_size,
             line_height: parent.line_height,
             text_align: parent.text_align,
+            vertical_align: VerticalAlign::Top,
+            wrap: parent.wrap,
             border_width: 0.0,
             border_color: parent.border_color,
+            border_collapse: BorderCollapse::Separate,
             cell_padding: 0.0,
             cell_spacing: 0.0,
         };
@@ -844,7 +1235,12 @@ impl Style {
             "h3" => style.set_font_size(20.0),
             "small" => style.set_font_size(parent.font_size * 0.85),
             "p" => style.margin.bottom = 16.0,
-            "th" => style.text_align = TextAlign::Center,
+            "strong" | "b" => style.font_weight = FontWeight::BOLD,
+            "em" | "i" => style.font_style = FontStyle::Italic,
+            "th" => {
+                style.text_align = TextAlign::Center;
+                style.font_weight = FontWeight::BOLD;
+            }
             _ => {}
         }
 
@@ -863,8 +1259,12 @@ impl Style {
                     self.display = display;
                 }
             }
-            "width" | "min-width" => self.width = parse_length(value),
-            "height" | "min-height" => self.height = parse_length(value),
+            "width" => self.width = parse_length(value),
+            "min-width" => self.min_width = parse_length(value),
+            "max-width" => self.max_width = parse_length(value),
+            "height" => self.height = parse_length(value),
+            "min-height" => self.min_height = parse_length(value),
+            "max-height" => self.max_height = parse_length(value),
             "margin" => {
                 if let Some(edges) = parse_edges(value) {
                     self.margin = edges;
@@ -898,6 +1298,9 @@ impl Style {
                     self.set_font_size(font_size);
                 }
             }
+            "font-family" => self.font_family = parse_font_family(value),
+            "font-weight" => self.font_weight = parse_font_weight(value),
+            "font-style" => self.font_style = parse_font_style(value),
             "line-height" => {
                 if let Some(line_height) = parse_line_height(value, self.font_size) {
                     self.line_height = line_height.max(1.0);
@@ -908,6 +1311,29 @@ impl Style {
                     self.text_align = align;
                 }
             }
+            "vertical-align" => {
+                if let Some(align) = parse_vertical_align(value) {
+                    self.vertical_align = align;
+                }
+            }
+            "white-space" => {
+                if value.trim().eq_ignore_ascii_case("nowrap") {
+                    self.wrap = TextWrap::None;
+                }
+            }
+            "word-break" => {
+                if value.trim().eq_ignore_ascii_case("break-all") {
+                    self.wrap = TextWrap::Glyph;
+                }
+            }
+            "overflow-wrap" | "word-wrap" => {
+                if matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "break-word" | "anywhere"
+                ) {
+                    self.wrap = TextWrap::WordOrGlyph;
+                }
+            }
             "border" => apply_border(self, value),
             "border-width" => self.border_width = parse_px(value).unwrap_or(0.0),
             "border-color" => {
@@ -915,9 +1341,53 @@ impl Style {
                     self.border_color = color;
                 }
             }
+            "border-collapse" => {
+                if value.trim().eq_ignore_ascii_case("collapse") {
+                    self.border_collapse = BorderCollapse::Collapse;
+                }
+            }
             "border-spacing" => self.cell_spacing = parse_px(value).unwrap_or(0.0),
             _ => {}
         }
+    }
+
+    fn resolve_width(&self, containing_width: f32) -> Option<f32> {
+        let mut width = self.width.and_then(|width| width.resolve(containing_width));
+        if let Some(min_width) = self
+            .min_width
+            .and_then(|width| width.resolve(containing_width))
+        {
+            width = Some(width.unwrap_or(min_width).max(min_width));
+        }
+        if let Some(max_width) = self
+            .max_width
+            .and_then(|width| width.resolve(containing_width))
+        {
+            width = Some(width.unwrap_or(max_width).min(max_width));
+        }
+        width
+    }
+
+    fn resolve_height(&self, basis: f32) -> Option<f32> {
+        let mut height = self.height.and_then(|height| height.resolve(basis));
+        if let Some(min_height) = self.min_height.and_then(|height| height.resolve(basis)) {
+            height = Some(height.unwrap_or(min_height).max(min_height));
+        }
+        if let Some(max_height) = self.max_height.and_then(|height| height.resolve(basis)) {
+            height = Some(height.unwrap_or(max_height).min(max_height));
+        }
+        height
+    }
+
+    fn text_attrs(&self) -> Attrs<'_> {
+        let family = self
+            .font_family
+            .as_deref()
+            .map_or(FontFamily::SansSerif, FontFamily::Name);
+        Attrs::new()
+            .family(family)
+            .weight(self.font_weight)
+            .style(self.font_style)
     }
 }
 
@@ -1001,7 +1471,7 @@ impl Rgba {
         Self { r, g, b, a: 255 }
     }
 
-    const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
+    const fn with_alpha(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
     }
 }
@@ -1021,6 +1491,43 @@ impl TextAlign {
             Self::Right => TextAlignMode::Right,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VerticalAlign {
+    Top,
+    Middle,
+    Bottom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TextWrap {
+    None,
+    WordOrGlyph,
+    Glyph,
+}
+
+impl TextWrap {
+    fn to_cosmic(self) -> Wrap {
+        match self {
+            Self::None => Wrap::None,
+            Self::WordOrGlyph => Wrap::WordOrGlyph,
+            Self::Glyph => Wrap::Glyph,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BorderCollapse {
+    Separate,
+    Collapse,
+}
+
+#[derive(Debug, Clone)]
+struct ImageData {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1201,7 +1708,7 @@ fn parse_color_token(value: &str) -> Option<Rgba> {
         "green" => Some(Rgba::rgb(0, 128, 0)),
         "blue" => Some(Rgba::rgb(0, 0, 255)),
         "gray" | "grey" => Some(Rgba::rgb(128, 128, 128)),
-        "transparent" => Some(Rgba::rgba(0, 0, 0, 0)),
+        "transparent" => Some(Rgba::with_alpha(0, 0, 0, 0)),
         _ => None,
     }
 }
@@ -1239,7 +1746,7 @@ fn parse_rgb_function(value: &str) -> Option<Rgba> {
         .and_then(|alpha| alpha.trim().parse::<f32>().ok())
         .map(|alpha| (alpha.clamp(0.0, 1.0) * 255.0).round() as u8)
         .unwrap_or(255);
-    Some(Rgba::rgba(r, g, b, a))
+    Some(Rgba::with_alpha(r, g, b, a))
 }
 
 fn parse_line_height(value: &str, font_size: f32) -> Option<f32> {
@@ -1263,6 +1770,45 @@ fn parse_text_align(value: &str) -> Option<TextAlign> {
         "center" | "middle" => Some(TextAlign::Center),
         "right" | "end" => Some(TextAlign::Right),
         _ => None,
+    }
+}
+
+fn parse_vertical_align(value: &str) -> Option<VerticalAlign> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "top" | "text-top" => Some(VerticalAlign::Top),
+        "middle" => Some(VerticalAlign::Middle),
+        "bottom" | "text-bottom" | "baseline" => Some(VerticalAlign::Bottom),
+        _ => None,
+    }
+}
+
+fn parse_font_family(value: &str) -> Option<String> {
+    let first = value.split(',').next()?.trim();
+    let family = first.trim_matches('"').trim_matches('\'').trim();
+    if family.is_empty() {
+        None
+    } else {
+        Some(family.to_string())
+    }
+}
+
+fn parse_font_weight(value: &str) -> FontWeight {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "bold" | "bolder" => FontWeight::BOLD,
+        "normal" | "lighter" => FontWeight::NORMAL,
+        raw => raw
+            .parse::<u16>()
+            .ok()
+            .map(FontWeight)
+            .unwrap_or(FontWeight::NORMAL),
+    }
+}
+
+fn parse_font_style(value: &str) -> FontStyle {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "italic" => FontStyle::Italic,
+        "oblique" => FontStyle::Oblique,
+        _ => FontStyle::Normal,
     }
 }
 
@@ -1330,6 +1876,133 @@ fn collect_cells(row: &NodeRef) -> Vec<NodeRef> {
     row.children()
         .filter(|child| matches!(element_tag(child).as_deref(), Some("td" | "th")))
         .collect()
+}
+
+#[derive(Debug)]
+struct TableGrid {
+    rows: Vec<TableRow>,
+    column_count: usize,
+    col_widths: Vec<Option<Length>>,
+}
+
+#[derive(Debug)]
+struct TableRow {
+    node: NodeRef,
+    cells: Vec<TableCell>,
+}
+
+#[derive(Debug)]
+struct TableCell {
+    node: NodeRef,
+    col: usize,
+    colspan: usize,
+}
+
+fn build_table_grid(table: &NodeRef) -> TableGrid {
+    let rows = collect_rows(table);
+    let mut active_rowspans: Vec<usize> = Vec::new();
+    let mut grid_rows = Vec::with_capacity(rows.len());
+    let mut column_count = 0usize;
+
+    for row in rows {
+        let mut col = 0usize;
+        let mut cells = Vec::new();
+
+        for cell in collect_cells(&row) {
+            while active_rowspans.get(col).copied().unwrap_or(0) > 0 {
+                col += 1;
+            }
+
+            let colspan = parse_span_attr(&cell, "colspan");
+            let rowspan = parse_span_attr(&cell, "rowspan");
+            if active_rowspans.len() < col + colspan {
+                active_rowspans.resize(col + colspan, 0);
+            }
+
+            cells.push(TableCell {
+                node: cell,
+                col,
+                colspan,
+            });
+
+            for occupied in &mut active_rowspans[col..col + colspan] {
+                *occupied = (*occupied).max(rowspan);
+            }
+            col += colspan;
+        }
+
+        for occupied in &mut active_rowspans {
+            *occupied = occupied.saturating_sub(1);
+        }
+
+        column_count = column_count.max(col).max(active_rowspans.len());
+        grid_rows.push(TableRow { node: row, cells });
+    }
+
+    let mut col_widths = collect_col_widths(table);
+    if col_widths.len() < column_count {
+        col_widths.resize(column_count, None);
+    }
+
+    TableGrid {
+        rows: grid_rows,
+        column_count,
+        col_widths,
+    }
+}
+
+fn collect_col_widths(table: &NodeRef) -> Vec<Option<Length>> {
+    let mut widths = Vec::new();
+    collect_col_widths_inner(table, &mut widths);
+    widths
+}
+
+fn collect_col_widths_inner(node: &NodeRef, widths: &mut Vec<Option<Length>>) {
+    for child in node.children() {
+        match element_tag(&child).as_deref() {
+            Some("col") => {
+                widths.push(attr(&child, "width").and_then(|value| parse_length(&value)))
+            }
+            Some("colgroup") => collect_col_widths_inner(&child, widths),
+            _ => {}
+        }
+    }
+}
+
+fn parse_span_attr(node: &NodeRef, attr_name: &str) -> usize {
+    attr(node, attr_name)
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(1)
+        .min(32)
+}
+
+fn column_offset(widths: &[f32], col: usize, spacing: f32) -> f32 {
+    widths.iter().take(col).copied().sum::<f32>() + spacing * col as f32
+}
+
+fn spanned_width(widths: &[f32], col: usize, colspan: usize, spacing: f32) -> f32 {
+    let end = (col + colspan).min(widths.len());
+    let span = end.saturating_sub(col).max(1);
+    widths[col.min(widths.len().saturating_sub(1))..end]
+        .iter()
+        .copied()
+        .sum::<f32>()
+        + spacing * span.saturating_sub(1) as f32
+}
+
+fn translate_layout_children(layout: &mut LayoutBox, dx: f32, dy: f32) {
+    for child in &mut layout.children {
+        translate_layout(child, dx, dy);
+    }
+}
+
+fn translate_layout(layout: &mut LayoutBox, dx: f32, dy: f32) {
+    layout.rect.x += dx;
+    layout.rect.y += dy;
+    for child in &mut layout.children {
+        translate_layout(child, dx, dy);
+    }
 }
 
 fn attr(node: &NodeRef, name: &str) -> Option<String> {
@@ -1469,6 +2142,56 @@ fn blend_text_rect(pixmap: &mut Pixmap, x: i32, y: i32, width: u32, height: u32,
     }
 }
 
+fn draw_image(pixmap: &mut Pixmap, scale: f32, rect: Rect, image: &ImageData) {
+    if rect.width <= 0.0
+        || rect.height <= 0.0
+        || image.width == 0
+        || image.height == 0
+        || image.rgba.is_empty()
+    {
+        return;
+    }
+
+    let x0 = (rect.x * scale).round() as i32;
+    let y0 = (rect.y * scale).round() as i32;
+    let target_width = (rect.width * scale).round().max(1.0) as i32;
+    let target_height = (rect.height * scale).round().max(1.0) as i32;
+    let x1 = x0.saturating_add(target_width);
+    let y1 = y0.saturating_add(target_height);
+
+    let pixmap_width = pixmap.width() as i32;
+    let pixmap_height = pixmap.height() as i32;
+    let data = pixmap.data_mut();
+
+    let start_x = x0.max(0);
+    let start_y = y0.max(0);
+    let end_x = x1.min(pixmap_width);
+    let end_y = y1.min(pixmap_height);
+    if start_x >= end_x || start_y >= end_y {
+        return;
+    }
+
+    for py in start_y..end_y {
+        let rel_y = (py - y0) as f32 / target_height as f32;
+        let src_y = (rel_y * image.height as f32).floor() as u32;
+        let src_y = src_y.min(image.height.saturating_sub(1));
+        for px in start_x..end_x {
+            let rel_x = (px - x0) as f32 / target_width as f32;
+            let src_x = (rel_x * image.width as f32).floor() as u32;
+            let src_x = src_x.min(image.width.saturating_sub(1));
+            let src_index = ((src_y * image.width + src_x) * 4) as usize;
+            let dst_index = ((py as u32 * pixmap_width as u32 + px as u32) * 4) as usize;
+            composite_pixel(
+                &mut data[dst_index..dst_index + 4],
+                image.rgba[src_index],
+                image.rgba[src_index + 1],
+                image.rgba[src_index + 2],
+                image.rgba[src_index + 3],
+            );
+        }
+    }
+}
+
 fn composite_pixel(dst: &mut [u8], r: u8, g: u8, b: u8, a: u8) {
     let inv_a = 255u16.saturating_sub(a as u16);
     let src_r = premultiply(r, a);
@@ -1483,6 +2206,48 @@ fn composite_pixel(dst: &mut [u8], r: u8, g: u8, b: u8, a: u8) {
 
 fn premultiply(channel: u8, alpha: u8) -> u8 {
     ((u16::from(channel) * u16::from(alpha) + 127) / 255) as u8
+}
+
+fn raster_pdf_from_png(rendered: &RenderedImage) -> Result<Vec<u8>> {
+    let width = rendered.pixel_width.max(1);
+    let height = rendered.pixel_height.max(1);
+    let rgb = image::load_from_memory(&rendered.png)
+        .context("failed to decode rendered PNG for PDF output")?
+        .to_rgb8();
+    let mut pdf = Pdf::new();
+    let catalog_id = Ref::new(1);
+    let page_tree_id = Ref::new(2);
+    let page_id = Ref::new(3);
+    let image_id = Ref::new(4);
+    let content_id = Ref::new(5);
+
+    pdf.catalog(catalog_id).pages(page_tree_id);
+    pdf.pages(page_tree_id).kids([page_id]).count(1);
+
+    {
+        let mut page = pdf.page(page_id);
+        page.parent(page_tree_id);
+        page.media_box(PdfRect::new(0.0, 0.0, width as f32, height as f32));
+        page.resources().x_objects().pair(Name(b"Im1"), image_id);
+        page.contents(content_id);
+    }
+
+    {
+        let mut image = pdf.image_xobject(image_id, rgb.as_raw());
+        image.width(width as i32);
+        image.height(height as i32);
+        image.color_space().device_rgb();
+        image.bits_per_component(8);
+    }
+
+    let mut content = Content::new();
+    content.save_state();
+    content.transform([width as f32, 0.0, 0.0, height as f32, 0.0, 0.0]);
+    content.x_object(Name(b"Im1"));
+    content.restore_state();
+    pdf.stream(content_id, &content.finish());
+
+    Ok(pdf.finish())
 }
 
 fn validate_request(request: &RenderRequest) -> Result<()> {
@@ -1518,8 +2283,20 @@ fn scaled_dimension(value: u32, scale: f32, label: &str) -> Result<u32> {
     Ok(scaled.ceil().max(1.0) as u32)
 }
 
-fn clamp_css_height(measured_height: u32, min_height: u32, scale: f32) -> Result<u32> {
+fn clamp_css_height(
+    measured_height: u32,
+    min_height: u32,
+    max_height: Option<u32>,
+    scale: f32,
+) -> Result<u32> {
     let requested = measured_height.max(min_height).max(1);
+    if let Some(max_height) = max_height {
+        if requested > max_height {
+            bail!(
+                "rendered content is too tall: {requested} CSS px > max-height {max_height} CSS px"
+            );
+        }
+    }
     let max_css_height = (f64::from(MAX_RENDER_PIXELS_PER_AXIS) / f64::from(scale)).floor();
     if f64::from(requested) > max_css_height {
         bail!(
@@ -1541,11 +2318,23 @@ fn ceil_to_u32(value: f32) -> Result<u32> {
 }
 
 #[cfg(test)]
+fn resource_policy_for_test() -> ResourcePolicy {
+    ResourcePolicy {
+        base_url: None,
+        allow_remote: false,
+        https_only: true,
+        timeout: Duration::from_secs(30),
+        max_image_bytes: DEFAULT_MAX_IMAGE_BYTES,
+        max_decoded_pixels: DEFAULT_MAX_DECODED_PIXELS,
+    }
+}
+
+#[cfg(test)]
 fn layout_for_test(html: &str, width: u32) -> LayoutBox {
     let html = inline_css(&build_document(html, None, None, width)).unwrap();
     let document = kuchiki::parse_html().one(html);
     let mut font_system = FontSystem::new();
-    let mut engine = LayoutEngine::new(&mut font_system);
+    let mut engine = LayoutEngine::new(&mut font_system, resource_policy_for_test());
     engine.layout_document(&document, width).unwrap()
 }
 
@@ -1602,6 +2391,20 @@ mod tests {
     }
 
     #[test]
+    fn lays_out_colspan_cells() {
+        let layout = layout_for_test(
+            r#"<table width="300"><tr><td colspan="2">A</td><td>B</td></tr><tr><td width="100">C</td><td width="50">D</td><td>E</td></tr></table>"#,
+            300,
+        );
+        let table =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+        assert_eq!(table.children.len(), 2);
+        assert_eq!(table.children[0].children.len(), 2);
+        assert!((table.children[0].children[0].rect.width - 150.0).abs() < 0.1);
+        assert!((table.children[0].children[1].rect.width - 150.0).abs() < 0.1);
+    }
+
+    #[test]
     fn renders_png_with_text_pixels() {
         let html = build_document(
             r##"<table width="320" cellpadding="12" bgcolor="#f3f4f6"><tr><td><h1>Hello</h1><p style="color:#2563eb">World</p></td></tr></table>"##,
@@ -1609,15 +2412,7 @@ mod tests {
             None,
             320,
         );
-        let request = RenderRequest {
-            html,
-            width: 320,
-            viewport_height: 240,
-            min_height: 1,
-            scale: 1.0,
-            timeout: Duration::from_secs(1),
-            settle: Duration::ZERO,
-        };
+        let request = RenderRequest::defaults_for_html(html, 320, 240, 1.0);
         let mut renderer = RustEmailRenderer::new(320, 240, 1.0).unwrap();
         let image = renderer.render_png(request).unwrap();
         let decoded = image::load_from_memory(&image.png).unwrap().to_rgba8();
@@ -1631,16 +2426,68 @@ mod tests {
     }
 
     #[test]
+    fn renders_data_url_images() {
+        let html = build_document(
+            r#"<img width="20" height="10" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" alt="">"#,
+            None,
+            None,
+            40,
+        );
+        let request = RenderRequest::defaults_for_html(html, 40, 40, 1.0);
+        let mut renderer = RustEmailRenderer::new(40, 40, 1.0).unwrap();
+        let image = renderer.render_png(request).unwrap();
+        assert!(image.console_messages.is_empty());
+        let decoded = image::load_from_memory(&image.png).unwrap().to_rgba8();
+        assert_ne!(decoded.get_pixel(5, 5).0, [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn remote_images_are_blocked_by_default() {
+        let html = build_document(
+            r#"<img width="20" height="10" src="https://example.com/pixel.png" alt="">"#,
+            None,
+            None,
+            40,
+        );
+        let request = RenderRequest::defaults_for_html(html, 40, 40, 1.0);
+        let mut renderer = RustEmailRenderer::new(40, 40, 1.0).unwrap();
+        let image = renderer.render_png(request).unwrap();
+        assert_eq!(image.console_messages.len(), 1);
+        assert!(
+            image.console_messages[0]
+                .message
+                .contains("remote resources are disabled")
+        );
+    }
+
+    #[test]
+    fn renders_raster_pdf() {
+        let html = build_document("<p>Hello PDF</p>", None, None, 160);
+        let request = RenderRequest::defaults_for_html(html, 160, 120, 1.0);
+        let mut renderer = RustEmailRenderer::new(160, 120, 1.0).unwrap();
+        let pdf = renderer.render_pdf(request).unwrap();
+        assert!(pdf.pdf.starts_with(b"%PDF-"));
+        assert!(pdf.pdf.len() > 100);
+    }
+
+    #[test]
+    fn rejects_content_over_max_height() {
+        let html = build_document(
+            r#"<div style="height: 120px; background: #000"></div>"#,
+            None,
+            None,
+            160,
+        );
+        let mut request = RenderRequest::defaults_for_html(html, 160, 120, 1.0);
+        request.max_height = Some(60);
+        let mut renderer = RustEmailRenderer::new(160, 120, 1.0).unwrap();
+        let error = renderer.render_png(request).unwrap_err();
+        assert!(error.to_string().contains("max-height"));
+    }
+
+    #[test]
     fn rejects_zero_width() {
-        let request = RenderRequest {
-            html: String::new(),
-            width: 0,
-            viewport_height: 800,
-            min_height: 1,
-            scale: 1.0,
-            timeout: Duration::from_secs(1),
-            settle: Duration::ZERO,
-        };
+        let request = RenderRequest::defaults_for_html(String::new(), 0, 800, 1.0);
         assert!(validate_request(&request).is_err());
     }
 
