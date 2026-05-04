@@ -79,6 +79,22 @@ set, viewport width, warning limits, and current maximum diff thresholds. The
 report still shows a 1% target so thresholds can be tightened as layout fidelity
 improves.
 
+To inspect Chromium's concrete layout behavior for a template before changing
+the Rust layout code, run:
+
+```sh
+npm run dump:chrome-layout -- \
+  --template colorlib-template-1 \
+  --selector '.email-section, .text-services, td, img' \
+  --y 2066 \
+  --out /tmp/colorlib-1-layout.json
+```
+
+The dump includes computed styles, DOM rects, text rects, and optional y-axis
+hit tests captured from Chromium with the same browser defaults used by the
+pixel comparison. Use it as the behavior oracle before checking the matching
+Blink layout module for algorithm details.
+
 ## Current Limits
 
 - PNG output is the primary target. PDF output is raster-only for now, so text is

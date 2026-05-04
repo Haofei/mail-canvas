@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "compare:playwright": "node scripts/playwright_compare.mjs",
+    "dump:chrome-layout": "node scripts/playwright_layout_dump.mjs",
     "test:playwright-regression": "node scripts/playwright_compare.mjs --expectations scripts/playwright_expectations.json --work-dir /tmp/email-render-playwright-regression --timeout-ms 30000"
   },
   "keywords": [],
