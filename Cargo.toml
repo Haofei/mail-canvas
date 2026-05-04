@@ -1,0 +1,23 @@
+[package]
+name = "email-render"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.86"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+cosmic-text = "0.17.0"
+css-inline = { version = "0.20.2", default-features = false }
+kuchiki = "0.8.1"
+tiny-skia = "0.11.4"
+url = "2"
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[lints.clippy]
+cast_possible_truncation = "warn"
+cast_precision_loss = "warn"
+cast_sign_loss = "warn"
+implicit_clone = "warn"
