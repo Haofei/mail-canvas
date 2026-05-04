@@ -15,6 +15,13 @@ use cosmic_text::{
 };
 use kuchiki::{NodeRef, traits::TendrilSink as _};
 use pdf_writer::{Content, Name, Pdf, Rect as PdfRect, Ref};
+use taffy::geometry::{Rect as TaffyRect, Size as TaffySize};
+use taffy::prelude::{
+    AlignItems as TaffyAlignItems, AvailableSpace, Dimension as TaffyDimension,
+    Display as TaffyDisplay, FlexDirection as TaffyFlexDirection, FlexWrap as TaffyFlexWrap,
+    JustifyContent as TaffyJustifyContent, NodeId as TaffyNodeId, Style as TaffyStyle, TaffyTree,
+};
+use taffy::style_helpers::{auto as taffy_auto, length as taffy_length, percent as taffy_percent};
 use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect as SkiaRect, Transform};
 use url::Url;
 
@@ -23,7 +30,7 @@ mod document;
 mod resource;
 
 use css::{
-    css_format_hint, css_function_value, first_css_url, first_quoted_css_string,
+    css_declarations, css_format_hint, css_function_value, first_css_url, first_quoted_css_string,
     font_face_declarations, inline_css, next_css_segment_end, strip_hidden_conditional_comments,
     style_blocks, unquote_css_value,
 };
@@ -753,6 +760,7 @@ impl<'a> LayoutEngine<'a> {
         let mut inline_row = Vec::new();
         let mut inline_row_width = 0.0;
         let mut inline_row_height = 0.0;
+        let mut floats = Vec::new();
 
         for child in node.children() {
             if let Some(text_node) = child.as_text() {
@@ -814,10 +822,24 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
 
-            if self.flush_text(&mut text, style, x, &mut cursor_y, width, &mut children)? {
+            let (text_x, text_width) = float_adjusted_line(x, width, cursor_y, &floats);
+            if self.flush_text(
+                &mut text,
+                style,
+                text_x,
+                &mut cursor_y,
+                text_width,
+                &mut children,
+            )? {
                 previous_margin_bottom = None;
             }
             let child_display = child_style.display;
+            let child_float_side = child_style.float_side;
+            let child_clear = child_style.clear;
+            if child_clear != Clear::None {
+                cursor_y = cursor_y.max(clear_float_y(&floats, child_clear));
+                previous_margin_bottom = None;
+            }
             let child_is_inline_flow = is_inline_flow(&tag, child_display);
             if !child_is_inline_flow
                 && flush_inline_row(
@@ -858,6 +880,31 @@ impl<'a> LayoutEngine<'a> {
             };
             if let Some(flow) = flow {
                 let mut flow = flow;
+                if child_float_side != FloatSide::None {
+                    let occupied_width =
+                        (flow.node.rect.width + flow.node.style.margin.horizontal()).max(1.0);
+                    let occupied_height = flow.advance.max(flow.node.rect.height).max(1.0);
+                    let float_y = float_placement_y(&floats, x, width, cursor_y, occupied_width);
+                    let (left_offset, right_offset) =
+                        float_offsets_at_y(x, width, float_y, &floats);
+                    let occupied_x = match child_float_side {
+                        FloatSide::Left => x + left_offset,
+                        FloatSide::Right => x + width - right_offset - occupied_width,
+                        FloatSide::None => x,
+                    };
+                    let target_x = occupied_x + flow.node.style.margin.left;
+                    let target_y = float_y + flow.node.style.margin.top;
+                    let dx = target_x - flow.node.rect.x;
+                    let dy = target_y - flow.node.rect.y;
+                    translate_layout(&mut flow.node, dx, dy);
+                    floats.push(PlacedFloat {
+                        side: child_float_side,
+                        rect: Rect::new(occupied_x, float_y, occupied_width, occupied_height),
+                    });
+                    previous_margin_bottom = None;
+                    children.push(flow.node);
+                    continue;
+                }
                 if child_is_inline_flow {
                     if inline_row_width > 0.0 {
                         translate_layout(&mut flow.node, inline_row_width, 0.0);
@@ -887,7 +934,15 @@ impl<'a> LayoutEngine<'a> {
             }
         }
 
-        self.flush_text(&mut text, style, x, &mut cursor_y, width, &mut children)?;
+        let (text_x, text_width) = float_adjusted_line(x, width, cursor_y, &floats);
+        self.flush_text(
+            &mut text,
+            style,
+            text_x,
+            &mut cursor_y,
+            text_width,
+            &mut children,
+        )?;
         flush_inline_row(
             &mut inline_row,
             &mut inline_row_width,
@@ -897,7 +952,11 @@ impl<'a> LayoutEngine<'a> {
             &mut cursor_y,
             &mut children,
         );
-        Ok((children, cursor_y - y))
+        let float_bottom = floats
+            .iter()
+            .map(|float| float.rect.y + float.rect.height)
+            .fold(cursor_y, f32::max);
+        Ok((children, float_bottom - y))
     }
 
     fn flush_text(
@@ -955,6 +1014,7 @@ impl<'a> LayoutEngine<'a> {
 
         match style.display {
             Display::None => Ok(None),
+            Display::Flex => self.layout_flex(node, style, x, y, containing_width, depth),
             Display::Table => self.layout_table(node, style, x, y, containing_width, depth),
             Display::Inline => {
                 let mut inline_style = style;
@@ -1050,6 +1110,139 @@ impl<'a> LayoutEngine<'a> {
         let rect_height = (content_height + style.padding.vertical() + style.border.vertical())
             .max(min_height)
             .max(0.0);
+
+        Ok(Some(FlowBox {
+            advance: style.margin.top + rect_height + style.margin.bottom,
+            node: LayoutBox {
+                kind: LayoutKind::Block,
+                rect: Rect::new(rect_x, rect_y, outer_width, rect_height),
+                style,
+                children,
+            },
+        }))
+    }
+
+    fn layout_flex(
+        &mut self,
+        node: &NodeRef,
+        style: Style,
+        x: f32,
+        y: f32,
+        containing_width: f32,
+        depth: usize,
+    ) -> Result<Option<FlowBox>> {
+        let outer_width = style
+            .resolve_width(containing_width)
+            .map(|width| style.outer_width_for_declared(width))
+            .unwrap_or(containing_width - style.margin.horizontal())
+            .max(1.0);
+        let rect_x = x + style.horizontal_offset(containing_width, outer_width);
+        let rect_y = y + style.margin.top;
+        let inner_x = rect_x + style.border.left + style.padding.left;
+        let inner_y = rect_y + style.border.top + style.padding.top;
+        let inner_width = style.inner_width_for_outer(outer_width);
+        let explicit_height = style.resolve_height(0.0);
+        let explicit_inner_height = explicit_height
+            .map(|height| (height - style.padding.vertical() - style.border.vertical()).max(0.0));
+
+        let mut taffy: TaffyTree<()> = TaffyTree::new();
+        taffy.disable_rounding();
+        let mut child_nodes: Vec<TaffyNodeId> = Vec::new();
+        let mut flex_items: Vec<(TaffyNodeId, LayoutBox)> = Vec::new();
+
+        for child in node.children() {
+            if let Some(text_node) = child.as_text() {
+                let text_value = text_node.borrow();
+                if text_value.chars().all(is_collapsible_whitespace) {
+                    continue;
+                }
+                let normalized = normalize_text_spans(
+                    &[TextSpan::new(text_value.to_string(), style.color)],
+                    style.text_transform,
+                );
+                let plain_text = spans_text(&normalized);
+                let item_width = self.measure_text_width(&plain_text, &style).max(1.0);
+                let item_height = self.measure_text_height(&plain_text, item_width, &style)?;
+                let kind = if normalized.iter().all(|span| span.color == style.color) {
+                    LayoutKind::Text(plain_text)
+                } else {
+                    LayoutKind::RichText(normalized)
+                };
+                let item = LayoutBox {
+                    kind,
+                    rect: Rect::new(0.0, 0.0, item_width, item_height),
+                    style: style.clone(),
+                    children: Vec::new(),
+                };
+                let node_id =
+                    taffy.new_leaf(taffy_leaf_style(&item.style, item_width, item_height))?;
+                child_nodes.push(node_id);
+                flex_items.push((node_id, item));
+                continue;
+            }
+
+            let Some(tag) = element_tag(&child) else {
+                continue;
+            };
+            if is_metadata_tag(&tag) {
+                continue;
+            }
+
+            let child_style = self.style_for_node(&child, &style);
+            if child_style.display == Display::None {
+                continue;
+            }
+            let Some(flow) = self.layout_element_with_style(
+                &child,
+                child_style,
+                0.0,
+                0.0,
+                inner_width,
+                depth + 1,
+            )?
+            else {
+                continue;
+            };
+
+            let mut item = flow.node;
+            let item_width = item.rect.width.max(1.0);
+            let item_height = item.rect.height.max(1.0);
+            let item_x = item.rect.x;
+            let item_y = item.rect.y;
+            translate_layout(&mut item, -item_x, -item_y);
+            let node_id = taffy.new_leaf(taffy_leaf_style(&item.style, item_width, item_height))?;
+            child_nodes.push(node_id);
+            flex_items.push((node_id, item));
+        }
+
+        let root = taffy.new_with_children(
+            taffy_flex_container_style(&style, inner_width, explicit_inner_height),
+            &child_nodes,
+        )?;
+        taffy.compute_layout(
+            root,
+            TaffySize {
+                width: AvailableSpace::Definite(inner_width),
+                height: AvailableSpace::MaxContent,
+            },
+        )?;
+        let root_layout = *taffy.layout(root)?;
+        let mut children = Vec::with_capacity(flex_items.len());
+        for (node_id, mut item) in flex_items {
+            let layout = *taffy.layout(node_id)?;
+            translate_layout(
+                &mut item,
+                inner_x + layout.location.x,
+                inner_y + layout.location.y,
+            );
+            children.push(item);
+        }
+
+        let min_height = explicit_height.unwrap_or(0.0);
+        let rect_height =
+            (root_layout.size.height + style.padding.vertical() + style.border.vertical())
+                .max(min_height)
+                .max(0.0);
 
         Ok(Some(FlowBox {
             advance: style.margin.top + rect_height + style.margin.bottom,
@@ -1651,6 +1844,170 @@ impl<'a> LayoutEngine<'a> {
     }
 }
 
+fn taffy_flex_container_style(
+    style: &Style,
+    inner_width: f32,
+    inner_height: Option<f32>,
+) -> TaffyStyle {
+    TaffyStyle {
+        display: TaffyDisplay::Flex,
+        size: TaffySize {
+            width: taffy_length(inner_width),
+            height: inner_height.map_or_else(taffy_auto, taffy_length),
+        },
+        flex_direction: taffy_flex_direction(style.flex_direction),
+        flex_wrap: taffy_flex_wrap(style.flex_wrap),
+        justify_content: Some(taffy_justify_content(style.justify_content)),
+        align_items: Some(taffy_align_items(style.align_items)),
+        gap: TaffySize {
+            width: taffy_length(style.column_gap),
+            height: taffy_length(style.row_gap),
+        },
+        ..Default::default()
+    }
+}
+
+fn float_adjusted_line(x: f32, width: f32, y: f32, floats: &[PlacedFloat]) -> (f32, f32) {
+    let (left_offset, right_offset) = float_offsets_at_y(x, width, y, floats);
+    let line_x = x + left_offset;
+    let line_width = (width - left_offset - right_offset).max(1.0);
+    (line_x, line_width)
+}
+
+fn float_offsets_at_y(x: f32, width: f32, y: f32, floats: &[PlacedFloat]) -> (f32, f32) {
+    let mut left_offset: f32 = 0.0;
+    let mut right_offset: f32 = 0.0;
+    for float in floats.iter().filter(|float| float_intersects_y(float, y)) {
+        match float.side {
+            FloatSide::Left => left_offset = left_offset.max(float.rect.x + float.rect.width - x),
+            FloatSide::Right => right_offset = right_offset.max(x + width - float.rect.x),
+            FloatSide::None => {}
+        }
+    }
+    (left_offset.min(width), right_offset.min(width))
+}
+
+fn float_placement_y(floats: &[PlacedFloat], x: f32, width: f32, y: f32, needed_width: f32) -> f32 {
+    let mut candidate_y = y;
+    loop {
+        let (left_offset, right_offset) = float_offsets_at_y(x, width, candidate_y, floats);
+        if width - left_offset - right_offset >= needed_width {
+            return candidate_y;
+        }
+        let Some(next_y) = floats
+            .iter()
+            .filter(|float| float_intersects_y(float, candidate_y))
+            .map(|float| float.rect.y + float.rect.height)
+            .min_by(|a, b| a.total_cmp(b))
+        else {
+            return candidate_y;
+        };
+        if next_y <= candidate_y {
+            return candidate_y;
+        }
+        candidate_y = next_y;
+    }
+}
+
+fn clear_float_y(floats: &[PlacedFloat], clear: Clear) -> f32 {
+    floats
+        .iter()
+        .filter(|float| match clear {
+            Clear::None => false,
+            Clear::Left => float.side == FloatSide::Left,
+            Clear::Right => float.side == FloatSide::Right,
+            Clear::Both => matches!(float.side, FloatSide::Left | FloatSide::Right),
+        })
+        .map(|float| float.rect.y + float.rect.height)
+        .fold(0.0, f32::max)
+}
+
+fn float_intersects_y(float: &PlacedFloat, y: f32) -> bool {
+    y >= float.rect.y && y < float.rect.y + float.rect.height
+}
+
+fn taffy_leaf_style(style: &Style, measured_width: f32, measured_height: f32) -> TaffyStyle {
+    TaffyStyle {
+        size: TaffySize {
+            width: taffy_length(measured_width),
+            height: taffy_length(measured_height),
+        },
+        min_size: TaffySize {
+            width: taffy_dimension(style.min_width),
+            height: taffy_dimension(style.min_height),
+        },
+        max_size: TaffySize {
+            width: taffy_dimension(style.max_width),
+            height: taffy_dimension(style.max_height),
+        },
+        margin: TaffyRect {
+            left: if style.margin_left_auto {
+                taffy_auto()
+            } else {
+                taffy_length(style.margin.left)
+            },
+            right: if style.margin_right_auto {
+                taffy_auto()
+            } else {
+                taffy_length(style.margin.right)
+            },
+            top: taffy_length(style.margin.top),
+            bottom: taffy_length(style.margin.bottom),
+        },
+        align_self: style.align_self.map(taffy_align_items),
+        flex_grow: style.flex_grow,
+        flex_shrink: style.flex_shrink,
+        flex_basis: taffy_dimension(style.flex_basis),
+        ..Default::default()
+    }
+}
+
+fn taffy_dimension(length: Option<Length>) -> TaffyDimension {
+    match length {
+        Some(Length::Px(value)) => taffy_length(value),
+        Some(Length::Percent(value)) => taffy_percent(value),
+        None => taffy_auto(),
+    }
+}
+
+fn taffy_flex_direction(direction: FlexDirection) -> TaffyFlexDirection {
+    match direction {
+        FlexDirection::Row => TaffyFlexDirection::Row,
+        FlexDirection::RowReverse => TaffyFlexDirection::RowReverse,
+        FlexDirection::Column => TaffyFlexDirection::Column,
+        FlexDirection::ColumnReverse => TaffyFlexDirection::ColumnReverse,
+    }
+}
+
+fn taffy_flex_wrap(wrap: FlexWrap) -> TaffyFlexWrap {
+    match wrap {
+        FlexWrap::NoWrap => TaffyFlexWrap::NoWrap,
+        FlexWrap::Wrap => TaffyFlexWrap::Wrap,
+        FlexWrap::WrapReverse => TaffyFlexWrap::WrapReverse,
+    }
+}
+
+fn taffy_justify_content(justify: JustifyContent) -> TaffyJustifyContent {
+    match justify {
+        JustifyContent::FlexStart => TaffyJustifyContent::FlexStart,
+        JustifyContent::FlexEnd => TaffyJustifyContent::FlexEnd,
+        JustifyContent::Center => TaffyJustifyContent::Center,
+        JustifyContent::SpaceBetween => TaffyJustifyContent::SpaceBetween,
+        JustifyContent::SpaceAround => TaffyJustifyContent::SpaceAround,
+        JustifyContent::SpaceEvenly => TaffyJustifyContent::SpaceEvenly,
+    }
+}
+
+fn taffy_align_items(align: AlignItems) -> TaffyAlignItems {
+    match align {
+        AlignItems::FlexStart => TaffyAlignItems::FlexStart,
+        AlignItems::FlexEnd => TaffyAlignItems::FlexEnd,
+        AlignItems::Center => TaffyAlignItems::Center,
+        AlignItems::Baseline => TaffyAlignItems::Baseline,
+        AlignItems::Stretch => TaffyAlignItems::Stretch,
+    }
+}
+
 struct LayoutPainter<'a> {
     pixmap: &'a mut Pixmap,
     font_system: &'a mut FontSystem,
@@ -1861,6 +2218,18 @@ struct Style {
     vertical_align: VerticalAlign,
     wrap: TextWrap,
     box_sizing: BoxSizing,
+    flex_direction: FlexDirection,
+    flex_wrap: FlexWrap,
+    justify_content: JustifyContent,
+    align_items: AlignItems,
+    align_self: Option<AlignItems>,
+    row_gap: f32,
+    column_gap: f32,
+    flex_grow: f32,
+    flex_shrink: f32,
+    flex_basis: Option<Length>,
+    float_side: FloatSide,
+    clear: Clear,
     border: Edges,
     border_radius: f32,
     border_color: Rgba,
@@ -1907,6 +2276,18 @@ impl Style {
             vertical_align: VerticalAlign::Top,
             wrap: TextWrap::WordOrGlyph,
             box_sizing: BoxSizing::ContentBox,
+            flex_direction: FlexDirection::Row,
+            flex_wrap: FlexWrap::NoWrap,
+            justify_content: JustifyContent::FlexStart,
+            align_items: AlignItems::Stretch,
+            align_self: None,
+            row_gap: 0.0,
+            column_gap: 0.0,
+            flex_grow: 0.0,
+            flex_shrink: 1.0,
+            flex_basis: None,
+            float_side: FloatSide::None,
+            clear: Clear::None,
             border: Edges::ZERO,
             border_radius: 0.0,
             border_color: Rgba::BLACK,
@@ -1961,6 +2342,18 @@ impl Style {
             vertical_align: VerticalAlign::Top,
             wrap: parent.wrap,
             box_sizing: parent.box_sizing,
+            flex_direction: FlexDirection::Row,
+            flex_wrap: FlexWrap::NoWrap,
+            justify_content: JustifyContent::FlexStart,
+            align_items: AlignItems::Stretch,
+            align_self: None,
+            row_gap: 0.0,
+            column_gap: 0.0,
+            flex_grow: 0.0,
+            flex_shrink: 1.0,
+            flex_basis: None,
+            float_side: FloatSide::None,
+            clear: Clear::None,
             border: Edges::ZERO,
             border_radius: 0.0,
             border_color: parent.border_color,
@@ -2220,6 +2613,58 @@ impl Style {
                     self.box_sizing = box_sizing;
                 }
             }
+            "flex-direction" => {
+                if let Some(direction) = parse_flex_direction(value) {
+                    self.flex_direction = direction;
+                }
+            }
+            "flex-wrap" => {
+                if let Some(wrap) = parse_flex_wrap(value) {
+                    self.flex_wrap = wrap;
+                }
+            }
+            "flex-flow" => apply_flex_flow(self, value),
+            "justify-content" => {
+                if let Some(justify) = parse_justify_content(value) {
+                    self.justify_content = justify;
+                }
+            }
+            "align-items" => {
+                if let Some(align) = parse_align_items(value) {
+                    self.align_items = align;
+                }
+            }
+            "align-self" => {
+                self.align_self = parse_align_items(value);
+            }
+            "gap" => {
+                if let Some((row_gap, column_gap)) = parse_gap(value, self.font_size) {
+                    self.row_gap = row_gap;
+                    self.column_gap = column_gap;
+                }
+            }
+            "row-gap" => {
+                self.row_gap = parse_css_length(value, self.font_size, false).unwrap_or(0.0);
+            }
+            "column-gap" => {
+                self.column_gap = parse_css_length(value, self.font_size, false).unwrap_or(0.0);
+            }
+            "flex" => apply_flex(self, value),
+            "flex-grow" => self.flex_grow = parse_flex_factor(value).unwrap_or(self.flex_grow),
+            "flex-shrink" => {
+                self.flex_shrink = parse_flex_factor(value).unwrap_or(self.flex_shrink)
+            }
+            "flex-basis" => self.flex_basis = parse_length(value),
+            "float" => {
+                if let Some(float_side) = parse_float_side(value) {
+                    self.float_side = float_side;
+                }
+            }
+            "clear" => {
+                if let Some(clear) = parse_clear(value) {
+                    self.clear = clear;
+                }
+            }
             "border" => apply_border(self, value),
             "border-radius" => self.border_radius = parse_radius(value).unwrap_or(0.0).max(0.0),
             "border-style" => {
@@ -2379,10 +2824,66 @@ enum Display {
     Block,
     Inline,
     InlineBlock,
+    Flex,
     Table,
     TableRow,
     TableCell,
     None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FlexDirection {
+    Row,
+    RowReverse,
+    Column,
+    ColumnReverse,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FlexWrap {
+    NoWrap,
+    Wrap,
+    WrapReverse,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JustifyContent {
+    FlexStart,
+    FlexEnd,
+    Center,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AlignItems {
+    FlexStart,
+    FlexEnd,
+    Center,
+    Baseline,
+    Stretch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FloatSide {
+    None,
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Clear {
+    None,
+    Left,
+    Right,
+    Both,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PlacedFloat {
+    side: FloatSide,
+    rect: Rect,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -2666,49 +3167,28 @@ fn style_for_node_with_fonts(
         }
     }
     if let Some(style_attr) = attrs.get("style") {
-        let mut declarations = Vec::new();
-        for declaration in style_attr.split(';') {
-            let Some((name, value)) = declaration.split_once(':') else {
-                continue;
-            };
-            declarations.push((
-                name.trim().to_ascii_lowercase(),
-                value.trim().to_string(),
-                declaration_is_important(value),
-            ));
-        }
-        for important in [false, true] {
-            for (name, value, is_important) in &declarations {
-                if *is_important == important {
-                    match name.as_str() {
-                        "font-family" => {
-                            if let Some(selection) = parse_font_family_selection(
-                                value,
-                                available_font_families,
-                                web_font_faces,
-                            ) {
-                                style.font_family = Some(selection.family);
-                                style.font_face_weight = selection.forced_weight;
-                            }
-                        }
-                        "font-weight" if is_inherit_keyword(value) => {
-                            style.font_weight = parent.font_weight;
-                        }
-                        "font-style" if is_inherit_keyword(value) => {
-                            style.font_style = parent.font_style;
-                        }
-                        _ => style.apply_declaration(name, value),
+        for (name, value) in css_declarations(style_attr) {
+            match name.as_str() {
+                "font-family" => {
+                    if let Some(selection) =
+                        parse_font_family_selection(&value, available_font_families, web_font_faces)
+                    {
+                        style.font_family = Some(selection.family);
+                        style.font_face_weight = selection.forced_weight;
                     }
                 }
+                "font-weight" if is_inherit_keyword(&value) => {
+                    style.font_weight = parent.font_weight;
+                }
+                "font-style" if is_inherit_keyword(&value) => {
+                    style.font_style = parent.font_style;
+                }
+                _ => style.apply_declaration(&name, &value),
             }
         }
     }
 
     style
-}
-
-fn declaration_is_important(value: &str) -> bool {
-    value.trim().to_ascii_lowercase().ends_with("!important")
 }
 
 fn default_display(tag: &str) -> Display {
@@ -2729,10 +3209,145 @@ fn parse_display(value: &str) -> Option<Display> {
         "block" => Some(Display::Block),
         "inline" => Some(Display::Inline),
         "inline-block" => Some(Display::InlineBlock),
+        "flex" | "inline-flex" => Some(Display::Flex),
         "table" => Some(Display::Table),
         "table-row" => Some(Display::TableRow),
         "table-cell" => Some(Display::TableCell),
         "none" => Some(Display::None),
+        _ => None,
+    }
+}
+
+fn parse_flex_direction(value: &str) -> Option<FlexDirection> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "row" => Some(FlexDirection::Row),
+        "row-reverse" => Some(FlexDirection::RowReverse),
+        "column" => Some(FlexDirection::Column),
+        "column-reverse" => Some(FlexDirection::ColumnReverse),
+        _ => None,
+    }
+}
+
+fn parse_flex_wrap(value: &str) -> Option<FlexWrap> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "nowrap" => Some(FlexWrap::NoWrap),
+        "wrap" => Some(FlexWrap::Wrap),
+        "wrap-reverse" => Some(FlexWrap::WrapReverse),
+        _ => None,
+    }
+}
+
+fn parse_justify_content(value: &str) -> Option<JustifyContent> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "start" | "flex-start" | "left" => Some(JustifyContent::FlexStart),
+        "end" | "flex-end" | "right" => Some(JustifyContent::FlexEnd),
+        "center" => Some(JustifyContent::Center),
+        "space-between" => Some(JustifyContent::SpaceBetween),
+        "space-around" => Some(JustifyContent::SpaceAround),
+        "space-evenly" => Some(JustifyContent::SpaceEvenly),
+        _ => None,
+    }
+}
+
+fn parse_align_items(value: &str) -> Option<AlignItems> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "start" | "flex-start" => Some(AlignItems::FlexStart),
+        "end" | "flex-end" => Some(AlignItems::FlexEnd),
+        "center" => Some(AlignItems::Center),
+        "baseline" => Some(AlignItems::Baseline),
+        "stretch" | "normal" => Some(AlignItems::Stretch),
+        _ => None,
+    }
+}
+
+fn parse_gap(value: &str, font_size: f32) -> Option<(f32, f32)> {
+    if value.trim().eq_ignore_ascii_case("normal") {
+        return Some((0.0, 0.0));
+    }
+    let mut parts = value.split_whitespace();
+    let row_gap = parse_css_length(parts.next()?, font_size, false)?;
+    let column_gap = parts
+        .next()
+        .and_then(|value| parse_css_length(value, font_size, false))
+        .unwrap_or(row_gap);
+    Some((row_gap.max(0.0), column_gap.max(0.0)))
+}
+
+fn apply_flex_flow(style: &mut Style, value: &str) {
+    for token in value.split_whitespace() {
+        if let Some(direction) = parse_flex_direction(token) {
+            style.flex_direction = direction;
+        } else if let Some(wrap) = parse_flex_wrap(token) {
+            style.flex_wrap = wrap;
+        }
+    }
+}
+
+fn apply_flex(style: &mut Style, value: &str) {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        style.flex_grow = 0.0;
+        style.flex_shrink = 0.0;
+        style.flex_basis = None;
+        return;
+    }
+    if value.eq_ignore_ascii_case("auto") {
+        style.flex_grow = 1.0;
+        style.flex_shrink = 1.0;
+        style.flex_basis = None;
+        return;
+    }
+    if value.eq_ignore_ascii_case("initial") {
+        style.flex_grow = 0.0;
+        style.flex_shrink = 1.0;
+        style.flex_basis = None;
+        return;
+    }
+
+    let mut numbers = Vec::new();
+    let mut basis = None;
+    for token in value.split_whitespace() {
+        if let Some(factor) = parse_flex_factor(token) {
+            numbers.push(factor);
+        } else if token.eq_ignore_ascii_case("auto") {
+            basis = None;
+        } else if let Some(length) = parse_length(token) {
+            basis = Some(length);
+        }
+    }
+
+    if let Some(grow) = numbers.first().copied() {
+        style.flex_grow = grow;
+        style.flex_shrink = numbers.get(1).copied().unwrap_or(1.0);
+        style.flex_basis = basis.or(Some(Length::Percent(0.0)));
+    } else if basis.is_some() {
+        style.flex_basis = basis;
+    }
+}
+
+fn parse_flex_factor(value: &str) -> Option<f32> {
+    value
+        .trim()
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite() && *value >= 0.0)
+}
+
+fn parse_float_side(value: &str) -> Option<FloatSide> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "none" => Some(FloatSide::None),
+        "left" => Some(FloatSide::Left),
+        "right" => Some(FloatSide::Right),
+        _ => None,
+    }
+}
+
+fn parse_clear(value: &str) -> Option<Clear> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "none" => Some(Clear::None),
+        "left" => Some(Clear::Left),
+        "right" => Some(Clear::Right),
+        "both" => Some(Clear::Both),
         _ => None,
     }
 }
@@ -3707,6 +4322,7 @@ fn inline_can_flatten(node: &NodeRef, style: &Style) -> bool {
             }
             Display::Block
             | Display::InlineBlock
+            | Display::Flex
             | Display::Table
             | Display::TableRow
             | Display::TableCell => return false,
@@ -4569,6 +5185,43 @@ fn layout_for_test(html: &str, width: u32) -> LayoutBox {
 mod tests {
     use super::*;
 
+    fn find_layout_with_display(layout: &LayoutBox, display: Display) -> Option<&LayoutBox> {
+        if layout.style.display == display {
+            return Some(layout);
+        }
+        layout
+            .children
+            .iter()
+            .find_map(|child| find_layout_with_display(child, display))
+    }
+
+    fn find_text_layout(layout: &LayoutBox) -> Option<&LayoutBox> {
+        if matches!(layout.kind, LayoutKind::Text(_) | LayoutKind::RichText(_)) {
+            return Some(layout);
+        }
+        layout.children.iter().find_map(find_text_layout)
+    }
+
+    fn find_layout_with_clear(layout: &LayoutBox, clear: Clear) -> Option<&LayoutBox> {
+        if layout.style.clear == clear {
+            return Some(layout);
+        }
+        layout
+            .children
+            .iter()
+            .find_map(|child| find_layout_with_clear(child, clear))
+    }
+
+    fn find_layout_with_float(layout: &LayoutBox, float_side: FloatSide) -> Option<&LayoutBox> {
+        if layout.style.float_side == float_side {
+            return Some(layout);
+        }
+        layout
+            .children
+            .iter()
+            .find_map(|child| find_layout_with_float(child, float_side))
+    }
+
     #[test]
     fn wraps_html_fragments() {
         let html = build_document("<p>Hello</p>", Some("p { color: red; }"), None, 600);
@@ -4851,6 +5504,153 @@ mod tests {
             style.background_image_src.as_deref(),
             Some("assets/top.jpg")
         );
+    }
+
+    #[test]
+    fn inline_style_uses_css_parser_for_function_values() {
+        let document = kuchiki::parse_html()
+            .one(r##"<div style='background-image: url("hero;v=1.jpg"); color: #ff0000'>A</div>"##);
+        let div = find_first_tag(&document, "div").expect("div");
+        let style = style_for_node(&div, &Style::initial());
+
+        assert_eq!(style.background_image_src.as_deref(), Some("hero;v=1.jpg"));
+        assert_eq!(style.color, Rgba::rgb(0xff, 0x00, 0x00));
+    }
+
+    #[test]
+    fn inline_style_important_declarations_win_after_parsing() {
+        let document = kuchiki::parse_html()
+            .one(r##"<div style="color: #111111 !important; color: #222222">A</div>"##);
+        let div = find_first_tag(&document, "div").expect("div");
+        let style = style_for_node(&div, &Style::initial());
+
+        assert_eq!(style.color, Rgba::rgb(0x11, 0x11, 0x11));
+    }
+
+    #[test]
+    fn parses_flex_container_style_model() {
+        let mut style = Style::initial();
+        style.apply_declaration("display", "flex");
+        style.apply_declaration("flex-flow", "column wrap");
+        style.apply_declaration("justify-content", "space-between");
+        style.apply_declaration("align-items", "center");
+        style.apply_declaration("gap", "12px 24px");
+
+        assert_eq!(style.display, Display::Flex);
+        assert_eq!(style.flex_direction, FlexDirection::Column);
+        assert_eq!(style.flex_wrap, FlexWrap::Wrap);
+        assert_eq!(style.justify_content, JustifyContent::SpaceBetween);
+        assert_eq!(style.align_items, AlignItems::Center);
+        assert_eq!(style.row_gap, 12.0);
+        assert_eq!(style.column_gap, 24.0);
+    }
+
+    #[test]
+    fn parses_flex_item_style_model() {
+        let mut style = Style::initial();
+        style.apply_declaration("flex", "2 0 40%");
+        style.apply_declaration("align-self", "flex-end");
+
+        assert_eq!(style.flex_grow, 2.0);
+        assert_eq!(style.flex_shrink, 0.0);
+        assert_eq!(style.flex_basis, Some(Length::Percent(0.4)));
+        assert_eq!(style.align_self, Some(AlignItems::FlexEnd));
+    }
+
+    #[test]
+    fn lays_out_flex_row_with_taffy_gap_and_alignment() {
+        let layout = layout_for_test(
+            r#"<div style="display:flex;width:120px;height:40px;gap:10px;align-items:center">
+                <div style="width:20px;height:10px;background:#111"></div>
+                <div style="width:30px;height:20px;background:#222"></div>
+            </div>"#,
+            200,
+        );
+
+        let flex = find_layout_with_display(&layout, Display::Flex).expect("flex layout");
+        assert_eq!(flex.style.display, Display::Flex);
+        assert!((flex.rect.width - 120.0).abs() < 0.1);
+        assert!((flex.rect.height - 40.0).abs() < 0.1);
+        assert!((flex.children[0].rect.x - flex.rect.x).abs() < 0.1);
+        assert!((flex.children[1].rect.x - (flex.rect.x + 30.0)).abs() < 0.1);
+        assert!((flex.children[0].rect.y - (flex.rect.y + 15.0)).abs() < 0.1);
+        assert!((flex.children[1].rect.y - (flex.rect.y + 10.0)).abs() < 0.1);
+    }
+
+    #[test]
+    fn lays_out_flex_column_with_taffy_direction() {
+        let layout = layout_for_test(
+            r#"<div style="display:flex;flex-direction:column;width:80px;gap:5px">
+                <div style="width:20px;height:10px"></div>
+                <div style="width:30px;height:15px"></div>
+            </div>"#,
+            200,
+        );
+
+        let flex = find_layout_with_display(&layout, Display::Flex).expect("flex layout");
+        assert!((flex.rect.height - 30.0).abs() < 0.1);
+        assert!((flex.children[0].rect.y - flex.rect.y).abs() < 0.1);
+        assert!((flex.children[1].rect.y - (flex.rect.y + 15.0)).abs() < 0.1);
+    }
+
+    #[test]
+    fn parses_float_and_clear_style_model() {
+        let mut style = Style::initial();
+        style.apply_declaration("float", "right");
+        style.apply_declaration("clear", "both");
+
+        assert_eq!(style.float_side, FloatSide::Right);
+        assert_eq!(style.clear, Clear::Both);
+    }
+
+    #[test]
+    fn float_left_reduces_following_text_line_width() {
+        let layout = layout_for_test(
+            r#"<div style="width:100px">
+                <div style="float:left;width:40px;height:20px;background:#111"></div>
+                text next to float
+            </div>"#,
+            200,
+        );
+
+        let float = find_layout_with_float(&layout, FloatSide::Left).expect("float");
+        let text = find_text_layout(&layout).expect("text");
+        assert!((float.rect.x - text.rect.x + 40.0).abs() < 0.1);
+        assert!((text.rect.width - 60.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn clear_left_moves_block_below_float() {
+        let layout = layout_for_test(
+            r#"<div style="width:100px">
+                <div style="float:left;width:40px;height:20px;background:#111"></div>
+                <p style="clear:left;margin:0;height:10px"></p>
+            </div>"#,
+            200,
+        );
+
+        let float = find_layout_with_float(&layout, FloatSide::Left).expect("float");
+        let cleared = find_layout_with_clear(&layout, Clear::Left).expect("clear");
+        assert!(cleared.rect.y >= float.rect.y + float.rect.height - 0.1);
+    }
+
+    #[test]
+    fn float_right_reduces_following_text_line_width_and_clear_both_moves_below() {
+        let layout = layout_for_test(
+            r#"<div style="width:100px">
+                <div style="float:right;width:40px;height:20px;background:#111"></div>
+                text next to float
+                <p style="clear:both;margin:0;height:10px"></p>
+            </div>"#,
+            200,
+        );
+
+        let float = find_layout_with_float(&layout, FloatSide::Right).expect("float");
+        let text = find_text_layout(&layout).expect("text");
+        let cleared = find_layout_with_clear(&layout, Clear::Both).expect("clear");
+        assert!((float.rect.x - (text.rect.x + 60.0)).abs() < 0.1);
+        assert!((text.rect.width - 60.0).abs() < 0.1);
+        assert!(cleared.rect.y >= float.rect.y + float.rect.height - 0.1);
     }
 
     #[test]
