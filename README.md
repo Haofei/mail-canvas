@@ -95,6 +95,34 @@ hit tests captured from Chromium with the same browser defaults used by the
 pixel comparison. Use it as the behavior oracle before checking the matching
 Blink layout module for algorithm details.
 
+## Blink Reference Workflow
+
+Blink source is useful as an algorithm reference, but it is not vendored into
+this repository. To download the pinned reference subset locally:
+
+```sh
+scripts/fetch_blink_reference.sh
+```
+
+The script writes selected Blink CSS, style, layout, paint, and font directories
+under `blink-reference/`, which is intentionally ignored by Git. The current
+pinned Chromium revision is:
+
+```text
+3994650ae3f2d575a583898776d1eafd38b90ed5
+```
+
+Use this workflow for fidelity work:
+
+1. Pick the highest-diff template from `npm run test:playwright-regression`.
+2. Capture Chromium boxes and computed styles with `npm run dump:chrome-layout`.
+3. Read the matching Blink module in `blink-reference/` to understand the
+   browser rule or algorithm.
+4. Reimplement the smallest email-relevant behavior in Rust; do not copy Blink
+   code.
+5. Add or update Rust tests and tighten Playwright thresholds only after the
+   comparison improves.
+
 ## Current Limits
 
 - PNG output is the primary target. PDF output is raster-only for now, so text is
