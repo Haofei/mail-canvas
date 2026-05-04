@@ -819,6 +819,7 @@ impl<'a> LayoutEngine<'a> {
 
             if child_style.display == Display::Inline
                 && tag != "img"
+                && !inline_style_has_own_box(&child_style)
                 && inline_can_flatten(&child, &child_style)
             {
                 append_color_spans(&child, &child_style, &mut text);
@@ -843,7 +844,7 @@ impl<'a> LayoutEngine<'a> {
                 cursor_y = cursor_y.max(clear_float_y(&floats, child_clear));
                 previous_margin_bottom = None;
             }
-            let child_is_inline_flow = is_inline_flow(&tag, child_display);
+            let child_is_inline_flow = is_inline_flow(&tag, &child_style);
             if !child_is_inline_flow
                 && flush_inline_row(
                     &mut inline_row,
@@ -1028,11 +1029,15 @@ impl<'a> LayoutEngine<'a> {
             Display::Flex => self.layout_flex(node, style, x, y, containing_width, depth),
             Display::Table => self.layout_table(node, style, x, y, containing_width, depth),
             Display::Inline => {
-                let mut inline_style = style;
-                inline_style.width = None;
-                inline_style.min_width = None;
-                inline_style.max_width = None;
-                self.layout_block(node, inline_style, x, y, containing_width, depth)
+                if inline_style_has_own_box(&style) {
+                    self.layout_inline_block(node, style, x, y, containing_width, depth)
+                } else {
+                    let mut inline_style = style;
+                    inline_style.width = None;
+                    inline_style.min_width = None;
+                    inline_style.max_width = None;
+                    self.layout_block(node, inline_style, x, y, containing_width, depth)
+                }
             }
             Display::InlineBlock => {
                 self.layout_inline_block(node, style, x, y, containing_width, depth)
@@ -1443,7 +1448,6 @@ impl<'a> LayoutEngine<'a> {
             let mut child_style = self.style_for_node(&child, parent_style);
             if child_style.display == Display::None
                 || !matches!(child_style.position, Position::Absolute | Position::Fixed)
-                || !absolute_style_has_own_paint(&child_style)
             {
                 continue;
             }
@@ -2052,10 +2056,6 @@ fn clear_float_y(floats: &[PlacedFloat], clear: Clear) -> f32 {
         })
         .map(|float| float.rect.y + float.rect.height)
         .fold(0.0, f32::max)
-}
-
-fn absolute_style_has_own_paint(style: &Style) -> bool {
-    style.background.is_some() || style.background_image.is_some() || style.border.max_width() > 0.0
 }
 
 fn float_intersects_y(float: &PlacedFloat, y: f32) -> bool {
@@ -4481,8 +4481,17 @@ fn translate_layout(layout: &mut LayoutBox, dx: f32, dy: f32) {
     }
 }
 
-fn is_inline_flow(tag: &str, display: Display) -> bool {
-    matches!(display, Display::InlineBlock) || (display == Display::Inline && tag == "img")
+fn is_inline_flow(tag: &str, style: &Style) -> bool {
+    matches!(style.display, Display::InlineBlock)
+        || (style.display == Display::Inline && (tag == "img" || inline_style_has_own_box(style)))
+}
+
+fn inline_style_has_own_box(style: &Style) -> bool {
+    style.background.is_some()
+        || style.background_image.is_some()
+        || !style.padding.is_zero()
+        || style.border.max_width() > 0.0
+        || style.border_radius > 0.0
 }
 
 fn flush_inline_row(
@@ -6017,6 +6026,25 @@ mod tests {
     }
 
     #[test]
+    fn paints_absolute_wrapper_children_without_own_background() {
+        let layout = layout_for_test(
+            r#"<div style="position:relative;height:80px">
+                <div style="position:absolute;left:20px;top:10px">
+                    <span style="padding:4px;background:#111;color:#fff">Play</span>
+                </div>
+            </div>"#,
+            200,
+        );
+        let badge = find_layout(&layout, |child| {
+            child.style.background == Some(Rgba::rgb(0x11, 0x11, 0x11))
+        })
+        .expect("absolute child background");
+
+        assert!((badge.rect.x - 20.0).abs() < 0.1);
+        assert!((badge.rect.y - 10.0).abs() < 0.1);
+    }
+
+    #[test]
     fn float_left_reduces_following_text_line_width() {
         let layout = layout_for_test(
             r#"<div style="width:100px">
@@ -6608,6 +6636,25 @@ mod tests {
         .expect("button");
         assert!(button.rect.width > 80.0);
         assert!(button.rect.height > 30.0);
+    }
+
+    #[test]
+    fn inline_anchor_with_button_box_keeps_background_and_padding() {
+        let layout = layout_for_test(
+            r#"<style>
+                .btn { padding:10px 15px; }
+                .btn.btn-primary { border-radius:30px; background:#f3a333; color:#fff; }
+            </style><p style="text-align:center"><a class="btn btn-primary">Get Your Order Here!</a></p>"#,
+            300,
+        );
+        let button = find_layout(&layout, |child| {
+            child.style.background == Some(Rgba::rgb(0xf3, 0xa3, 0x33))
+        })
+        .expect("inline button");
+
+        assert!(button.rect.width > 160.0);
+        assert!(button.rect.height > 35.0);
+        assert!(button.rect.x > 40.0);
     }
 
     #[test]
