@@ -1698,6 +1698,7 @@ struct Style {
     font_style: FontStyle,
     font_size: f32,
     line_height: f32,
+    line_height_factor: Option<f32>,
     letter_spacing: f32,
     text_align: TextAlign,
     text_transform: TextTransform,
@@ -1733,6 +1734,7 @@ impl Style {
             font_style: FontStyle::Normal,
             font_size: 16.0,
             line_height: 22.4,
+            line_height_factor: Some(1.4),
             letter_spacing: 0.0,
             text_align: TextAlign::Left,
             text_transform: TextTransform::None,
@@ -1768,6 +1770,7 @@ impl Style {
             font_style: parent.font_style,
             font_size: parent.font_size,
             line_height: parent.line_height,
+            line_height_factor: parent.line_height_factor,
             letter_spacing: parent.letter_spacing,
             text_align: if tag == "table" {
                 TextAlign::Left
@@ -1817,7 +1820,9 @@ impl Style {
 
     fn set_font_size(&mut self, font_size: f32) {
         self.font_size = font_size.max(1.0);
-        self.line_height = self.font_size * 1.4;
+        if let Some(factor) = self.line_height_factor {
+            self.line_height = self.font_size * factor;
+        }
     }
 
     fn apply_declaration(&mut self, name: &str, value: &str) {
@@ -1897,8 +1902,11 @@ impl Style {
             "font-weight" => self.font_weight = parse_font_weight(value),
             "font-style" => self.font_style = parse_font_style(value),
             "line-height" => {
-                if let Some(line_height) = parse_line_height(value, self.font_size) {
+                if let Some((line_height, factor)) =
+                    parse_line_height_declaration(value, self.font_size)
+                {
                     self.line_height = line_height.max(1.0);
+                    self.line_height_factor = factor;
                 }
             }
             "letter-spacing" => {
@@ -2554,10 +2562,10 @@ fn parse_rgb_function(value: &str) -> Option<Rgba> {
     Some(Rgba::with_alpha(r, g, b, a))
 }
 
-fn parse_line_height(value: &str, font_size: f32) -> Option<f32> {
+fn parse_line_height_declaration(value: &str, font_size: f32) -> Option<(f32, Option<f32>)> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("normal") {
-        return Some(font_size * 1.4);
+        return Some((font_size * 1.4, Some(1.4)));
     }
     if let Some(percent) = value.strip_suffix('%') {
         return percent
@@ -2565,16 +2573,16 @@ fn parse_line_height(value: &str, font_size: f32) -> Option<f32> {
             .parse::<f32>()
             .ok()
             .filter(|value| value.is_finite())
-            .map(|value| font_size * value / 100.0);
+            .map(|value| (font_size * value / 100.0, None));
     }
     if let Some(length) = parse_css_length(value, font_size, false) {
-        return Some(length);
+        return Some((length, None));
     }
     value
         .parse::<f32>()
         .ok()
         .filter(|value| value.is_finite())
-        .map(|scale| font_size * scale)
+        .map(|scale| (font_size * scale, Some(scale)))
 }
 
 fn parse_text_align(value: &str) -> Option<TextAlign> {
@@ -3047,7 +3055,8 @@ fn normalize_text(text: &str) -> String {
         }
     }
 
-    out.trim().to_string()
+    out.trim_matches(|ch: char| ch != '\n' && ch.is_whitespace())
+        .to_string()
 }
 
 fn fill_style_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, color: Rgba, radius: f32) {
@@ -3565,8 +3574,20 @@ mod tests {
 
     #[test]
     fn parses_unitless_line_height_as_font_multiplier() {
-        assert!((parse_line_height("1.625", 16.0).unwrap() - 26.0).abs() < 0.1);
-        assert!((parse_line_height("150%", 16.0).unwrap() - 24.0).abs() < 0.1);
+        assert!((parse_line_height_declaration("1.625", 16.0).unwrap().0 - 26.0).abs() < 0.1);
+        assert!((parse_line_height_declaration("150%", 16.0).unwrap().0 - 24.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn unitless_line_height_scales_when_font_size_changes() {
+        let mut style = Style::initial();
+        style.apply_declaration("line-height", "1.5");
+        style.apply_declaration("font-size", "24px");
+        assert!((style.line_height - 36.0).abs() < 0.1);
+
+        style.apply_declaration("line-height", "20px");
+        style.apply_declaration("font-size", "10px");
+        assert!((style.line_height - 20.0).abs() < 0.1);
     }
 
     #[test]
@@ -3663,6 +3684,7 @@ mod tests {
         assert_eq!(normalize_text("Viewed by\n  Someone"), "Viewed by Someone");
         let with_break = format!("Viewed by{HARD_BREAK}Someone");
         assert_eq!(normalize_text(&with_break), "Viewed by\nSomeone");
+        assert_eq!(normalize_text(&HARD_BREAK.to_string()), "\n");
     }
 
     #[test]
