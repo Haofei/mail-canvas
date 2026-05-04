@@ -637,15 +637,23 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
 
-            if child_style.display == Display::Inline && tag != "img" {
+            if child_style.display == Display::Inline
+                && tag != "img"
+                && inline_can_flatten(&child, &child_style)
+            {
                 append_text(&mut text, &text_content(&child));
                 continue;
             }
 
             self.flush_text(&mut text, style, x, &mut cursor_y, width, &mut children)?;
+            let child_display = child_style.display;
             if let Some(flow) =
                 self.layout_element_with_style(&child, child_style, x, cursor_y, width, depth + 1)?
             {
+                let mut flow = flow;
+                if is_inline_flow(child_display, &tag) {
+                    align_inline_flow(&mut flow.node, style.text_align, width);
+                }
                 cursor_y += flow.advance;
                 children.push(flow.node);
             }
@@ -705,8 +713,59 @@ impl<'a> LayoutEngine<'a> {
         match style.display {
             Display::None => Ok(None),
             Display::Table => self.layout_table(node, style, x, y, containing_width, depth),
+            Display::InlineBlock => {
+                self.layout_inline_block(node, style, x, y, containing_width, depth)
+            }
             _ => self.layout_block(node, style, x, y, containing_width, depth),
         }
+    }
+
+    fn layout_inline_block(
+        &mut self,
+        node: &NodeRef,
+        style: Style,
+        x: f32,
+        y: f32,
+        containing_width: f32,
+        depth: usize,
+    ) -> Result<Option<FlowBox>> {
+        let explicit_width = style.resolve_width(containing_width);
+        let max_outer_width = explicit_width
+            .unwrap_or(containing_width - style.margin.horizontal())
+            .max(1.0);
+        let max_inner_width =
+            (max_outer_width - style.padding.horizontal() - style.border_width * 2.0).max(1.0);
+        let preferred_inner_width = if explicit_width.is_some() {
+            max_inner_width
+        } else {
+            self.preferred_content_width(node, &style, max_inner_width)?
+                .min(max_inner_width)
+                .max(1.0)
+        };
+
+        let rect_x = x + style.margin.left;
+        let rect_y = y + style.margin.top;
+        let inner_x = rect_x + style.border_width + style.padding.left;
+        let inner_y = rect_y + style.border_width + style.padding.top;
+        let (children, content_height) =
+            self.layout_children(node, &style, inner_x, inner_y, preferred_inner_width, depth)?;
+        let explicit_height = style.resolve_height(0.0).unwrap_or(0.0);
+        let rect_width =
+            (preferred_inner_width + style.padding.horizontal() + style.border_width * 2.0)
+                .max(1.0);
+        let rect_height = (content_height + style.padding.vertical() + style.border_width * 2.0)
+            .max(explicit_height)
+            .max(1.0);
+
+        Ok(Some(FlowBox {
+            advance: style.margin.top + rect_height + style.margin.bottom,
+            node: LayoutBox {
+                kind: LayoutKind::Block,
+                rect: Rect::new(rect_x, rect_y, rect_width, rect_height),
+                style,
+                children,
+            },
+        }))
     }
 
     fn layout_block(
@@ -1013,6 +1072,115 @@ impl<'a> LayoutEngine<'a> {
             height = height.max(run.line_top + run.line_height);
         }
         Ok(height.max(style.line_height))
+    }
+
+    fn measure_text_width(&mut self, text: &str, style: &Style) -> f32 {
+        let metrics = Metrics::new(style.font_size.max(1.0), style.line_height.max(1.0));
+        let mut buffer = Buffer::new_empty(metrics);
+        buffer.set_wrap(self.font_system, Wrap::None);
+        buffer.set_size(self.font_system, None, None);
+        buffer.set_text(
+            self.font_system,
+            text,
+            &style.text_attrs(),
+            Shaping::Advanced,
+            Some(TextAlignMode::Left),
+        );
+
+        let mut width: f32 = 0.0;
+        for run in buffer.layout_runs() {
+            for glyph in run.glyphs {
+                width = width.max(glyph.x + glyph.w);
+            }
+        }
+        width
+    }
+
+    fn preferred_content_width(
+        &mut self,
+        node: &NodeRef,
+        style: &Style,
+        containing_width: f32,
+    ) -> Result<f32> {
+        let mut max_width: f32 = 0.0;
+        let mut inline_text = String::new();
+
+        for child in node.children() {
+            if let Some(text_node) = child.as_text() {
+                append_text(&mut inline_text, &text_node.borrow());
+                continue;
+            }
+
+            let Some(tag) = element_tag(&child) else {
+                continue;
+            };
+            if is_metadata_tag(&tag) {
+                continue;
+            }
+            if tag == "br" {
+                let text = normalize_text(&inline_text);
+                inline_text.clear();
+                if !text.is_empty() {
+                    max_width = max_width.max(self.measure_text_width(&text, style));
+                }
+                continue;
+            }
+
+            let child_style = style_for_node(&child, style);
+            if child_style.display == Display::None {
+                continue;
+            }
+
+            if child_style.display == Display::Inline
+                && tag != "img"
+                && inline_can_flatten(&child, &child_style)
+            {
+                append_text(&mut inline_text, &text_content(&child));
+                continue;
+            }
+
+            let text = normalize_text(&inline_text);
+            inline_text.clear();
+            if !text.is_empty() {
+                max_width = max_width.max(self.measure_text_width(&text, style));
+            }
+
+            let child_width = if tag == "img" {
+                self.preferred_image_width(&child, &child_style, containing_width)
+            } else if child_style.display == Display::InlineBlock {
+                self.preferred_content_width(&child, &child_style, containing_width)?
+                    + child_style.padding.horizontal()
+                    + child_style.border_width * 2.0
+            } else {
+                child_style
+                    .resolve_width(containing_width)
+                    .unwrap_or(containing_width)
+            };
+            max_width = max_width.max(child_width);
+        }
+
+        let text = normalize_text(&inline_text);
+        if !text.is_empty() {
+            max_width = max_width.max(self.measure_text_width(&text, style));
+        }
+        Ok(max_width.max(1.0))
+    }
+
+    fn preferred_image_width(&self, node: &NodeRef, style: &Style, containing_width: f32) -> f32 {
+        style
+            .resolve_width(containing_width)
+            .or_else(|| {
+                attr(node, "width").and_then(|value| {
+                    parse_length(&value).and_then(|length| length.resolve(containing_width))
+                })
+            })
+            .unwrap_or_else(|| {
+                attr(node, "src")
+                    .and_then(|src| load_image(&src, &self.resources).ok())
+                    .map_or(320.0, |image| image.width as f32)
+                    .min(containing_width)
+            })
+            .max(1.0)
     }
 
     fn push_warning(&mut self, level: &'static str, message: &str) {
@@ -1363,7 +1531,9 @@ impl Style {
             .max_width
             .and_then(|width| width.resolve(containing_width))
         {
-            width = Some(width.unwrap_or(max_width).min(max_width));
+            if let Some(current) = width {
+                width = Some(current.min(max_width));
+            }
         }
         width
     }
@@ -1395,6 +1565,7 @@ impl Style {
 enum Display {
     Block,
     Inline,
+    InlineBlock,
     Table,
     TableRow,
     TableCell,
@@ -1610,7 +1781,8 @@ fn default_display(tag: &str) -> Display {
 fn parse_display(value: &str) -> Option<Display> {
     match value.trim().to_ascii_lowercase().as_str() {
         "block" => Some(Display::Block),
-        "inline" | "inline-block" => Some(Display::Inline),
+        "inline" => Some(Display::Inline),
+        "inline-block" => Some(Display::InlineBlock),
         "table" => Some(Display::Table),
         "table-row" => Some(Display::TableRow),
         "table-cell" => Some(Display::TableCell),
@@ -2005,6 +2177,22 @@ fn translate_layout(layout: &mut LayoutBox, dx: f32, dy: f32) {
     }
 }
 
+fn is_inline_flow(display: Display, tag: &str) -> bool {
+    tag == "img" || matches!(display, Display::Inline | Display::InlineBlock)
+}
+
+fn align_inline_flow(layout: &mut LayoutBox, align: TextAlign, containing_width: f32) {
+    let free = (containing_width - layout.rect.width).max(0.0);
+    let dx = match align {
+        TextAlign::Left => 0.0,
+        TextAlign::Center => free / 2.0,
+        TextAlign::Right => free,
+    };
+    if dx > 0.0 {
+        translate_layout(layout, dx, 0.0);
+    }
+}
+
 fn attr(node: &NodeRef, name: &str) -> Option<String> {
     node.as_element().and_then(|element| {
         element
@@ -2038,6 +2226,40 @@ fn text_content(node: &NodeRef) -> String {
         append_text(&mut out, &text_content(&child));
     }
     out
+}
+
+fn inline_can_flatten(node: &NodeRef, style: &Style) -> bool {
+    for child in node.children() {
+        if child.as_text().is_some() {
+            continue;
+        }
+
+        let Some(tag) = element_tag(&child) else {
+            continue;
+        };
+        if is_metadata_tag(&tag) || tag == "br" {
+            continue;
+        }
+        if tag == "img" {
+            return false;
+        }
+
+        let child_style = style_for_node(&child, style);
+        match child_style.display {
+            Display::None => {}
+            Display::Inline => {
+                if !inline_can_flatten(&child, &child_style) {
+                    return false;
+                }
+            }
+            Display::Block
+            | Display::InlineBlock
+            | Display::Table
+            | Display::TableRow
+            | Display::TableCell => return false,
+        }
+    }
+    true
 }
 
 fn append_text(out: &mut String, text: &str) {
@@ -2075,12 +2297,21 @@ fn fill_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, color: Rgba) {
     if color.a == 0 || rect.width <= 0.0 || rect.height <= 0.0 {
         return;
     }
-    let Some(rect) = SkiaRect::from_xywh(
-        rect.x * scale,
-        rect.y * scale,
-        rect.width * scale,
-        rect.height * scale,
-    ) else {
+    let x = rect.x * scale;
+    let y = rect.y * scale;
+    let width = rect.width * scale;
+    let height = rect.height * scale;
+    if !x.is_finite() || !y.is_finite() || !width.is_finite() || !height.is_finite() {
+        return;
+    }
+    let x0 = x.max(0.0).floor();
+    let y0 = y.max(0.0).floor();
+    let x1 = (x + width).min(pixmap.width() as f32).ceil();
+    let y1 = (y + height).min(pixmap.height() as f32).ceil();
+    if x1 <= x0 || y1 <= y0 {
+        return;
+    }
+    let Some(rect) = SkiaRect::from_xywh(x0, y0, x1 - x0, y1 - y0) else {
         return;
     };
     let mut paint = Paint::default();
@@ -2402,6 +2633,35 @@ mod tests {
         assert_eq!(table.children[0].children.len(), 2);
         assert!((table.children[0].children[0].rect.width - 150.0).abs() < 0.1);
         assert!((table.children[0].children[1].rect.width - 150.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn lays_out_images_inside_inline_links() {
+        let layout = layout_for_test(
+            r##"<a href="#"><img width="20" height="10" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" alt="logo"></a>"##,
+            80,
+        );
+        let image = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::Image(Some(_)))
+        })
+        .expect("image");
+        assert!((image.rect.width - 20.0).abs() < 0.1);
+        assert!((image.rect.height - 10.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn centers_inline_block_flow_children() {
+        let layout = layout_for_test(
+            r#"<div style="text-align:center"><a style="display:inline-block;width:20px;height:10px;background:#000"></a></div>"#,
+            100,
+        );
+        let inline_block = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::Block)
+                && (child.rect.width - 20.0).abs() < 0.1
+                && child.style.background == Some(Rgba::BLACK)
+        })
+        .expect("inline block");
+        assert!((inline_block.rect.x - 40.0).abs() < 0.1);
     }
 
     #[test]

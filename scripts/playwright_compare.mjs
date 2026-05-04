@@ -47,6 +47,46 @@ const TEMPLATES = [
     'waypoint-marketplace-qr',
     'https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/marketplace-qr-tickets.html',
   ],
+  [
+    'mailpace-welcome',
+    'https://raw.githubusercontent.com/mailpace/templates/main/dist/welcome.html',
+  ],
+  [
+    'mailpace-confirmation',
+    'https://raw.githubusercontent.com/mailpace/templates/main/dist/confirmation.html',
+  ],
+  [
+    'mailpace-password-reset',
+    'https://raw.githubusercontent.com/mailpace/templates/main/dist/password_reset.html',
+  ],
+  [
+    'mailpace-receipt',
+    'https://raw.githubusercontent.com/mailpace/templates/main/dist/receipt.html',
+  ],
+  [
+    'mailpace-security-alert',
+    'https://raw.githubusercontent.com/mailpace/templates/main/dist/security_alert.html',
+  ],
+  [
+    'mailpace-account-deleted',
+    'https://raw.githubusercontent.com/mailpace/templates/main/dist/account_deleted.html',
+  ],
+  [
+    'postmark-welcome',
+    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/welcome/content.html',
+  ],
+  [
+    'postmark-password-reset',
+    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/password-reset/content.html',
+  ],
+  [
+    'postmark-receipt',
+    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/receipt/content.html',
+  ],
+  [
+    'postmark-invoice',
+    'https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/invoice/content.html',
+  ],
 ];
 
 function parseArgs(argv) {
@@ -276,8 +316,17 @@ async function browserScreenshot(browser, htmlPath, outPath, width, timeoutMs) {
           maxBottom = Math.max(maxBottom, rect.bottom);
         }
       }
-      return Math.max(1, Math.ceil(maxBottom || document.body.getBoundingClientRect().bottom));
+      return Math.max(
+        1,
+        Math.ceil(maxBottom || document.body.getBoundingClientRect().bottom),
+        document.documentElement.scrollHeight > window.innerHeight
+          ? document.documentElement.scrollHeight
+          : 0,
+        document.body.scrollHeight > window.innerHeight ? document.body.scrollHeight : 0,
+      );
     });
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(100);
     await page.screenshot({
       path: outPath,
       clip: { x: 0, y: 0, width, height },

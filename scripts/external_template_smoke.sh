@@ -34,6 +34,26 @@ download "waypoint-ecommerce-delivery" \
   "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-delivery-notification.html"
 download "waypoint-marketplace-qr" \
   "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/marketplace-qr-tickets.html"
+download "mailpace-welcome" \
+  "https://raw.githubusercontent.com/mailpace/templates/main/dist/welcome.html"
+download "mailpace-confirmation" \
+  "https://raw.githubusercontent.com/mailpace/templates/main/dist/confirmation.html"
+download "mailpace-password-reset" \
+  "https://raw.githubusercontent.com/mailpace/templates/main/dist/password_reset.html"
+download "mailpace-receipt" \
+  "https://raw.githubusercontent.com/mailpace/templates/main/dist/receipt.html"
+download "mailpace-security-alert" \
+  "https://raw.githubusercontent.com/mailpace/templates/main/dist/security_alert.html"
+download "mailpace-account-deleted" \
+  "https://raw.githubusercontent.com/mailpace/templates/main/dist/account_deleted.html"
+download "postmark-welcome" \
+  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/welcome/content.html"
+download "postmark-password-reset" \
+  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/password-reset/content.html"
+download "postmark-receipt" \
+  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/receipt/content.html"
+download "postmark-invoice" \
+  "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/invoice/content.html"
 
 for html in "$WORK_DIR"/html/*.html; do
   name="$(basename "$html" .html)"
@@ -42,7 +62,9 @@ for html in "$WORK_DIR"/html/*.html; do
     --html "$html" \
     --output "$WORK_DIR/png/$name.png" \
     --pdf-output "$WORK_DIR/pdf/$name.pdf" \
-    --width 600 >"$log" 2>&1
+    --width 600 \
+    --allow-remote \
+    --timeout-ms 15000 >"$log" 2>&1
   printf '%s\t' "$name"
   sed -n '1p' "$log"
 done

@@ -51,9 +51,9 @@ Important options:
 scripts/external_template_smoke.sh
 ```
 
-The smoke script downloads a small set of open-source transactional email
-templates, renders PNG and raster PDF outputs, and writes artifacts under
-`/tmp/email-render-external`.
+The smoke script downloads 18 open-source transactional email templates from
+Mailgun, Waypoint, MailPace, and Postmark/ActiveCampaign, renders PNG and raster
+PDF outputs, and writes artifacts under `/tmp/email-render-external`.
 
 ## Compare Against Playwright
 
@@ -63,7 +63,7 @@ npx playwright install chromium
 npm run compare:playwright
 ```
 
-The comparison script downloads the same template set, captures Chromium
+The comparison script downloads the same 18-template set, captures Chromium
 screenshots, renders the templates with the Rust renderer, and writes
 browser/rust/diff/side-by-side PNGs plus `report.md` under
 `/tmp/email-render-playwright-compare`.
