@@ -1364,10 +1364,10 @@ impl<'a> LayoutEngine<'a> {
                     depth + 1,
                 )?;
                 let explicit_height = cell_style.resolve_height(0.0).unwrap_or(0.0);
-                let cell_height =
+                let natural_cell_height =
                     (content_height + cell_style.padding.vertical() + cell_style.border.vertical())
-                        .max(explicit_height)
                         .max(1.0);
+                let cell_height = natural_cell_height.max(explicit_height).max(1.0);
                 row_height = row_height.max(cell_height);
                 cell_boxes.push((
                     cell.node.clone(),
@@ -1377,6 +1377,7 @@ impl<'a> LayoutEngine<'a> {
                         style: cell_style,
                         children,
                     },
+                    natural_cell_height,
                 ));
             }
 
@@ -1384,8 +1385,8 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
 
-            for (cell_node, cell) in &mut cell_boxes {
-                let delta = (row_height - cell.rect.height).max(0.0);
+            for (cell_node, cell, natural_cell_height) in &mut cell_boxes {
+                let delta = (row_height - *natural_cell_height).max(0.0);
                 let offset_y = match cell.style.vertical_align {
                     VerticalAlign::Top => 0.0,
                     VerticalAlign::Middle => delta / 2.0,
@@ -1408,7 +1409,7 @@ impl<'a> LayoutEngine<'a> {
                 kind: LayoutKind::Row,
                 rect: Rect::new(content_x, row_y, content_width, row_height),
                 style: row_style,
-                children: cell_boxes.into_iter().map(|(_, cell)| cell).collect(),
+                children: cell_boxes.into_iter().map(|(_, cell, _)| cell).collect(),
             });
             row_y += row_height + spacing;
         }
@@ -6271,6 +6272,19 @@ mod tests {
         assert_eq!(table.children[0].children.len(), 2);
         assert!((table.children[0].children[0].rect.width - 200.0).abs() < 0.1);
         assert!((table.children[0].children[1].rect.width - 400.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn table_cell_valign_middle_centers_content_in_explicit_height() {
+        let layout = layout_for_test(
+            r##"<table width="200"><tr><td height="100" valign="middle"><div style="height:20px;background:#111"></div></td></tr></table>"##,
+            200,
+        );
+        let child = find_layout(&layout, |child| {
+            child.style.background == Some(Rgba::rgb(0x11, 0x11, 0x11))
+        })
+        .expect("cell child");
+        assert!((child.rect.y - 40.0).abs() < 0.1);
     }
 
     #[test]
