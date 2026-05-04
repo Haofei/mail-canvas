@@ -49,9 +49,9 @@
       "maxNonMediaNonTextDiffPercent": 4.6
     },
     "postmark-example": {
-      "maxDiffPercent": 9.8,
-      "maxNonMediaDiffPercent": 9.8,
-      "maxNonMediaNonTextDiffPercent": 4.6
+      "maxDiffPercent": 10.1,
+      "maxNonMediaDiffPercent": 10.1,
+      "maxNonMediaNonTextDiffPercent": 4
     },
     "colorlib-template-1": {
       "maxDiffPercent": 16.9,

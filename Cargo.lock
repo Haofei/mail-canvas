@@ -493,6 +493,7 @@ dependencies = [
  "pdf-writer",
  "taffy",
  "tiny-skia",
+ "ttf-parser",
  "ureq",
  "url",
  "wuff",

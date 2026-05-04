@@ -1832,7 +1832,7 @@ impl<'a> LayoutEngine<'a> {
                     inner_x - marker_width,
                     inner_y,
                     (marker_width - 6.0).max(1.0),
-                    style.line_height,
+                    resolved_line_height_from_db(self.font_system.db(), &style),
                 ),
                 style: marker_style,
                 children: Vec::new(),
@@ -1840,11 +1840,11 @@ impl<'a> LayoutEngine<'a> {
         );
 
         let min_height = style.resolve_height(0.0).unwrap_or(0.0);
-        let rect_height = (content_height.max(style.line_height)
-            + style.padding.vertical()
-            + style.border.vertical())
-        .max(min_height)
-        .max(0.0);
+        let line_height = resolved_line_height_from_db(self.font_system.db(), &style);
+        let rect_height =
+            (content_height.max(line_height) + style.padding.vertical() + style.border.vertical())
+                .max(min_height)
+                .max(0.0);
 
         Ok(Some(FlowBox {
             advance: style.margin.top + rect_height + style.margin.bottom,
@@ -1881,7 +1881,8 @@ impl<'a> LayoutEngine<'a> {
     }
 
     fn measure_text_height(&mut self, text: &str, width: f32, style: &Style) -> Result<f32> {
-        let metrics = Metrics::new(style.font_size.max(1.0), style.line_height.max(1.0));
+        let line_height = resolved_line_height_from_db(self.font_system.db(), style);
+        let metrics = Metrics::new(style.font_size.max(1.0), line_height.max(1.0));
         let mut buffer = Buffer::new_empty(metrics);
         buffer.set_wrap(self.font_system, style.wrap.to_cosmic());
         buffer.set_size(self.font_system, Some(width.max(1.0)), None);
@@ -1897,11 +1898,12 @@ impl<'a> LayoutEngine<'a> {
         for run in buffer.layout_runs() {
             height = height.max(run.line_top + run.line_height);
         }
-        Ok(height.max(style.line_height))
+        Ok(height.max(line_height))
     }
 
     fn measure_text_width(&mut self, text: &str, style: &Style) -> f32 {
-        let metrics = Metrics::new(style.font_size.max(1.0), style.line_height.max(1.0));
+        let line_height = resolved_line_height_from_db(self.font_system.db(), style);
+        let metrics = Metrics::new(style.font_size.max(1.0), line_height.max(1.0));
         let mut buffer = Buffer::new_empty(metrics);
         buffer.set_wrap(self.font_system, Wrap::None);
         buffer.set_size(self.font_system, None, None);
@@ -2199,6 +2201,18 @@ struct LayoutPainter<'a> {
 
 impl LayoutPainter<'_> {
     fn paint(&mut self, layout: &LayoutBox) {
+        for shadow in layout.style.box_shadows.iter().rev() {
+            if !shadow.inset {
+                paint_box_shadow(
+                    self.pixmap,
+                    self.scale,
+                    layout.rect,
+                    layout.style.border_radius,
+                    with_opacity(shadow.color, layout.style.opacity),
+                    shadow,
+                );
+            }
+        }
         if let Some(background) = layout.style.background {
             fill_style_rect(
                 self.pixmap,
@@ -2266,9 +2280,10 @@ impl LayoutPainter<'_> {
         style: &Style,
         set_text: impl FnOnce(&mut Buffer, &mut FontSystem),
     ) {
+        let line_height = resolved_line_height_from_db(self.font_system.db(), style);
         let metrics = Metrics::new(
             (style.font_size * self.scale).max(1.0),
-            (style.line_height * self.scale).max(1.0),
+            (line_height * self.scale).max(1.0),
         );
         let mut buffer = Buffer::new_empty(metrics);
         buffer.set_wrap(self.font_system, style.wrap.to_cosmic());
@@ -2390,6 +2405,7 @@ struct Style {
     background_position: BackgroundPosition,
     opacity: f32,
     color: Rgba,
+    box_shadows: Vec<BoxShadow>,
     font_family: Option<String>,
     font_weight: FontWeight,
     font_face_weight: Option<FontWeight>,
@@ -2397,6 +2413,7 @@ struct Style {
     font_size: f32,
     line_height: f32,
     line_height_factor: Option<f32>,
+    line_height_normal: bool,
     letter_spacing: f32,
     text_align: TextAlign,
     align_from_attribute: bool,
@@ -2459,13 +2476,15 @@ impl Style {
             background_position: BackgroundPosition::default(),
             opacity: 1.0,
             color: Rgba::BLACK,
+            box_shadows: Vec::new(),
             font_family: None,
             font_weight: FontWeight::NORMAL,
             font_face_weight: None,
             font_style: FontStyle::Normal,
             font_size: 16.0,
-            line_height: 22.4,
-            line_height_factor: Some(1.4),
+            line_height: normal_line_height_fallback(16.0),
+            line_height_factor: None,
+            line_height_normal: true,
             letter_spacing: 0.0,
             text_align: TextAlign::Left,
             align_from_attribute: false,
@@ -2528,6 +2547,7 @@ impl Style {
             background_position: BackgroundPosition::default(),
             opacity: 1.0,
             color: parent.color,
+            box_shadows: Vec::new(),
             font_family: parent.font_family.clone(),
             font_weight: parent.font_weight,
             font_face_weight: parent.font_face_weight,
@@ -2535,6 +2555,7 @@ impl Style {
             font_size: parent.font_size,
             line_height: parent.line_height,
             line_height_factor: parent.line_height_factor,
+            line_height_normal: parent.line_height_normal,
             letter_spacing: parent.letter_spacing,
             text_align: if tag == "table" {
                 TextAlign::Left
@@ -2644,6 +2665,8 @@ impl Style {
         self.font_size = font_size.max(1.0);
         if let Some(factor) = self.line_height_factor {
             self.line_height = self.font_size * factor;
+        } else if self.line_height_normal {
+            self.line_height = normal_line_height_fallback(self.font_size);
         }
         if let Some(factor) = self.margin_top_em {
             self.margin.top = self.font_size * factor;
@@ -2780,6 +2803,11 @@ impl Style {
                     self.color = color;
                 }
             }
+            "box-shadow" => {
+                if let Some(shadows) = parse_box_shadow(value, self.font_size, self.color) {
+                    self.box_shadows = shadows;
+                }
+            }
             "font-size" => {
                 if let Some(font_size) = parse_font_size(value, self.font_size) {
                     self.set_font_size(font_size);
@@ -2802,11 +2830,10 @@ impl Style {
                 }
             }
             "line-height" => {
-                if let Some((line_height, factor)) =
-                    parse_line_height_declaration(value, self.font_size)
-                {
-                    self.line_height = line_height.max(1.0);
-                    self.line_height_factor = factor;
+                if let Some(line_height) = parse_line_height_declaration(value, self.font_size) {
+                    self.line_height = line_height.height.max(1.0);
+                    self.line_height_factor = line_height.factor;
+                    self.line_height_normal = line_height.normal;
                 }
             }
             "letter-spacing" => {
@@ -3077,6 +3104,59 @@ impl Style {
     }
 }
 
+fn resolved_line_height_from_db(db: &fontdb::Database, style: &Style) -> f32 {
+    if !style.line_height_normal {
+        return style.line_height.max(1.0);
+    }
+
+    blink_normal_line_height_from_db(db, style).unwrap_or_else(|| style.line_height.max(1.0))
+}
+
+fn blink_normal_line_height_from_db(db: &fontdb::Database, style: &Style) -> Option<f32> {
+    let family = fontdb_family_for_style(style);
+    let families = [family];
+    let query = fontdb::Query {
+        families: &families,
+        weight: style.font_face_weight.unwrap_or(style.font_weight),
+        stretch: fontdb::Stretch::Normal,
+        style: style.font_style,
+    };
+    let id = db.query(&query)?;
+    db.with_face_data(id, |font_data, face_index| {
+        blink_normal_line_height_from_face(font_data, face_index, style.font_size)
+    })
+    .flatten()
+}
+
+fn fontdb_family_for_style(style: &Style) -> fontdb::Family<'_> {
+    match style.font_family.as_deref() {
+        Some(family) if family.eq_ignore_ascii_case("serif") => fontdb::Family::Serif,
+        Some(family) if family.eq_ignore_ascii_case("monospace") => fontdb::Family::Monospace,
+        Some(family) if family.eq_ignore_ascii_case("sans-serif") => fontdb::Family::SansSerif,
+        Some(family) => fontdb::Family::Name(family),
+        None => fontdb::Family::SansSerif,
+    }
+}
+
+fn blink_normal_line_height_from_face(
+    font_data: &[u8],
+    face_index: u32,
+    font_size: f32,
+) -> Option<f32> {
+    let face = ttf_parser::Face::parse(font_data, face_index).ok()?;
+    let units_per_em = f32::from(face.units_per_em());
+    if units_per_em <= 0.0 {
+        return None;
+    }
+
+    let scale = font_size.max(1.0) / units_per_em;
+    let ascent = (f32::from(face.ascender()) * scale).round();
+    let descent = (-(f32::from(face.descender())) * scale).round();
+    let line_gap = (f32::from(face.line_gap()) * scale).round();
+    let line_height = ascent + descent + line_gap;
+    line_height.is_finite().then_some(line_height.max(1.0))
+}
+
 fn strip_important(value: &str) -> &str {
     let value = value.trim();
     let lower = value.to_ascii_lowercase();
@@ -3276,6 +3356,16 @@ impl Rgba {
     const fn with_alpha(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BoxShadow {
+    offset_x: f32,
+    offset_y: f32,
+    blur_radius: f32,
+    spread: f32,
+    color: Rgba,
+    inset: bool,
 }
 
 fn with_opacity(color: Rgba, opacity: f32) -> Rgba {
@@ -3879,6 +3969,116 @@ fn parse_color(value: &str) -> Option<Rgba> {
     parse_color_token(&value)
 }
 
+fn parse_box_shadow(value: &str, font_size: f32, default_color: Rgba) -> Option<Vec<BoxShadow>> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return Some(Vec::new());
+    }
+
+    let mut shadows = Vec::new();
+    for shadow in split_css_top_level_list(value, ',') {
+        let mut lengths = Vec::new();
+        let mut color = None;
+        let mut inset = false;
+        for token in css_top_level_whitespace_tokens(shadow) {
+            if token.eq_ignore_ascii_case("inset") {
+                inset = true;
+                continue;
+            }
+            if let Some(parsed_color) = parse_color(&token) {
+                color = Some(parsed_color);
+                continue;
+            }
+            if let Some(length) = parse_css_length(&token, font_size, true) {
+                lengths.push(length);
+            }
+        }
+        if lengths.len() < 2 {
+            continue;
+        }
+        shadows.push(BoxShadow {
+            offset_x: lengths[0],
+            offset_y: lengths[1],
+            blur_radius: lengths.get(2).copied().unwrap_or(0.0).max(0.0),
+            spread: lengths.get(3).copied().unwrap_or(0.0),
+            color: color.unwrap_or(default_color),
+            inset,
+        });
+    }
+
+    Some(shadows)
+}
+
+fn split_css_top_level_list(value: &str, separator: char) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut quote = None;
+    let mut paren_depth = 0usize;
+
+    for (index, ch) in value.char_indices() {
+        if let Some(current_quote) = quote {
+            if ch == current_quote {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '(' => paren_depth += 1,
+            ')' => paren_depth = paren_depth.saturating_sub(1),
+            _ if ch == separator && paren_depth == 0 => {
+                parts.push(value[start..index].trim());
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+
+    parts.push(value[start..].trim());
+    parts.into_iter().filter(|part| !part.is_empty()).collect()
+}
+
+fn css_top_level_whitespace_tokens(value: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut start = None;
+    let mut quote = None;
+    let mut paren_depth = 0usize;
+
+    for (index, ch) in value.char_indices() {
+        if start.is_none() && !ch.is_whitespace() {
+            start = Some(index);
+        }
+
+        if let Some(current_quote) = quote {
+            if ch == current_quote {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '(' => paren_depth += 1,
+            ')' => paren_depth = paren_depth.saturating_sub(1),
+            _ if ch.is_whitespace() && paren_depth == 0 => {
+                if let Some(token_start) = start.take() {
+                    tokens.push(value[token_start..index].trim().to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(token_start) = start {
+        tokens.push(value[token_start..].trim().to_string());
+    }
+    tokens
+        .into_iter()
+        .filter(|token| !token.is_empty())
+        .collect()
+}
+
 fn parse_background_image(value: &str) -> Option<String> {
     let value = strip_important(value).trim();
     if value.eq_ignore_ascii_case("none") {
@@ -4121,10 +4321,25 @@ fn parse_alpha_channel(value: &str) -> Option<u8> {
         .map(|value| (value.clamp(0.0, 1.0) * 255.0).round() as u8)
 }
 
-fn parse_line_height_declaration(value: &str, font_size: f32) -> Option<(f32, Option<f32>)> {
+#[derive(Debug, Clone, Copy)]
+struct LineHeightDeclaration {
+    height: f32,
+    factor: Option<f32>,
+    normal: bool,
+}
+
+fn normal_line_height_fallback(font_size: f32) -> f32 {
+    font_size.max(1.0) * 1.4
+}
+
+fn parse_line_height_declaration(value: &str, font_size: f32) -> Option<LineHeightDeclaration> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("normal") {
-        return Some((font_size * 1.4, Some(1.4)));
+        return Some(LineHeightDeclaration {
+            height: normal_line_height_fallback(font_size),
+            factor: None,
+            normal: true,
+        });
     }
     if let Some(percent) = value.strip_suffix('%') {
         return percent
@@ -4132,16 +4347,28 @@ fn parse_line_height_declaration(value: &str, font_size: f32) -> Option<(f32, Op
             .parse::<f32>()
             .ok()
             .filter(|value| value.is_finite())
-            .map(|value| (font_size * value / 100.0, None));
+            .map(|value| LineHeightDeclaration {
+                height: font_size * value / 100.0,
+                factor: None,
+                normal: false,
+            });
     }
     if let Some(length) = parse_css_length(value, font_size, false) {
-        return Some((length, None));
+        return Some(LineHeightDeclaration {
+            height: length,
+            factor: None,
+            normal: false,
+        });
     }
     value
         .parse::<f32>()
         .ok()
         .filter(|value| value.is_finite())
-        .map(|scale| (font_size * scale, Some(scale)))
+        .map(|scale| LineHeightDeclaration {
+            height: font_size * scale,
+            factor: Some(scale),
+            normal: false,
+        })
 }
 
 fn parse_text_align(value: &str) -> Option<TextAlign> {
@@ -4972,6 +5199,159 @@ fn fill_style_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, color: Rgba, rad
         return;
     }
     fill_rounded_rect(pixmap, scale, rect, color, radius);
+}
+
+fn paint_box_shadow(
+    pixmap: &mut Pixmap,
+    scale: f32,
+    rect: Rect,
+    radius: f32,
+    color: Rgba,
+    shadow: &BoxShadow,
+) {
+    if color.a == 0
+        || rect.width <= 0.0
+        || rect.height <= 0.0
+        || (shadow.offset_x == 0.0
+            && shadow.offset_y == 0.0
+            && shadow.blur_radius == 0.0
+            && shadow.spread == 0.0)
+    {
+        return;
+    }
+
+    let spread = shadow.spread;
+    let shadow_width = rect.width + spread * 2.0;
+    let shadow_height = rect.height + spread * 2.0;
+    if shadow_width <= 0.0 || shadow_height <= 0.0 {
+        return;
+    }
+
+    // Blink passes sigma = blur-radius / 2 to Skia. Use a 3-sigma pad so the
+    // local mask has room for the visible falloff.
+    let sigma = (shadow.blur_radius * scale * 0.5).max(0.0);
+    let pad_px = (sigma * 3.0).ceil().max(0.0);
+    let x0 = ((rect.x + shadow.offset_x - spread) * scale - pad_px)
+        .floor()
+        .max(0.0);
+    let y0 = ((rect.y + shadow.offset_y - spread) * scale - pad_px)
+        .floor()
+        .max(0.0);
+    let x1 = ((rect.x + shadow.offset_x + rect.width + spread) * scale + pad_px)
+        .ceil()
+        .min(pixmap.width() as f32);
+    let y1 = ((rect.y + shadow.offset_y + rect.height + spread) * scale + pad_px)
+        .ceil()
+        .min(pixmap.height() as f32);
+    if x1 <= x0 || y1 <= y0 {
+        return;
+    }
+
+    let width = (x1 - x0) as u32;
+    let height = (y1 - y0) as u32;
+    if u64::from(width) * u64::from(height) > DEFAULT_MAX_DECODED_PIXELS {
+        return;
+    }
+    let Some(mut mask) = Pixmap::new(width, height) else {
+        return;
+    };
+
+    let mask_rect = Rect::new(
+        (rect.x + shadow.offset_x - spread) * scale - x0,
+        (rect.y + shadow.offset_y - spread) * scale - y0,
+        shadow_width * scale,
+        shadow_height * scale,
+    );
+    let mask_radius = ((radius + spread).max(0.0) * scale)
+        .min(mask_rect.width / 2.0)
+        .min(mask_rect.height / 2.0);
+    fill_style_rect(&mut mask, 1.0, mask_rect, Rgba::BLACK, mask_radius);
+
+    let alpha = blurred_mask_alpha(&mask, sigma);
+    let x0 = x0 as i32;
+    let y0 = y0 as i32;
+    let pixmap_width = pixmap.width() as i32;
+    let pixmap_height = pixmap.height() as i32;
+    let data = pixmap.data_mut();
+    for y in 0..height as i32 {
+        let py = y0 + y;
+        if py < 0 || py >= pixmap_height {
+            continue;
+        }
+        for x in 0..width as i32 {
+            let px = x0 + x;
+            if px < 0 || px >= pixmap_width {
+                continue;
+            }
+            let src_alpha = alpha[(y as u32 * width + x as u32) as usize];
+            if src_alpha == 0 {
+                continue;
+            }
+            let a = ((u16::from(src_alpha) * u16::from(color.a) + 127) / 255) as u8;
+            if a == 0 {
+                continue;
+            }
+            let index = ((py as u32 * pixmap_width as u32 + px as u32) * 4) as usize;
+            composite_pixel(&mut data[index..index + 4], color.r, color.g, color.b, a);
+        }
+    }
+}
+
+fn blurred_mask_alpha(mask: &Pixmap, sigma: f32) -> Vec<u8> {
+    let width = mask.width() as usize;
+    let height = mask.height() as usize;
+    let mut alpha = vec![0u8; width * height];
+    for (index, pixel) in mask.data().chunks_exact(4).enumerate() {
+        alpha[index] = pixel[3];
+    }
+    if sigma <= 0.0 {
+        return alpha;
+    }
+
+    let kernel = gaussian_kernel(sigma);
+    let radius = (kernel.len() / 2) as isize;
+    let mut horizontal = vec![0.0f32; width * height];
+    for y in 0..height {
+        for x in 0..width {
+            let mut sum = 0.0;
+            for (kernel_index, weight) in kernel.iter().enumerate() {
+                let dx = kernel_index as isize - radius;
+                let sx = (x as isize + dx).clamp(0, width as isize - 1) as usize;
+                sum += f32::from(alpha[y * width + sx]) * weight;
+            }
+            horizontal[y * width + x] = sum;
+        }
+    }
+
+    let mut blurred = vec![0u8; width * height];
+    for y in 0..height {
+        for x in 0..width {
+            let mut sum = 0.0;
+            for (kernel_index, weight) in kernel.iter().enumerate() {
+                let dy = kernel_index as isize - radius;
+                let sy = (y as isize + dy).clamp(0, height as isize - 1) as usize;
+                sum += horizontal[sy * width + x] * weight;
+            }
+            blurred[y * width + x] = sum.round().clamp(0.0, 255.0) as u8;
+        }
+    }
+    blurred
+}
+
+fn gaussian_kernel(sigma: f32) -> Vec<f32> {
+    let radius = (sigma * 3.0).ceil().max(1.0) as i32;
+    let denominator = 2.0 * sigma * sigma;
+    let mut kernel = Vec::with_capacity((radius * 2 + 1) as usize);
+    let mut total = 0.0;
+    for offset in -radius..=radius {
+        let value = (-(offset * offset) as f32 / denominator).exp();
+        kernel.push(value);
+        total += value;
+    }
+    for value in &mut kernel {
+        *value /= total;
+    }
+    kernel
 }
 
 fn fill_rounded_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, color: Rgba, radius: f32) {
@@ -5909,8 +6289,32 @@ mod tests {
 
     #[test]
     fn parses_unitless_line_height_as_font_multiplier() {
-        assert!((parse_line_height_declaration("1.625", 16.0).unwrap().0 - 26.0).abs() < 0.1);
-        assert!((parse_line_height_declaration("150%", 16.0).unwrap().0 - 24.0).abs() < 0.1);
+        let unitless = parse_line_height_declaration("1.625", 16.0).unwrap();
+        assert!((unitless.height - 26.0).abs() < 0.1);
+        assert_eq!(unitless.factor, Some(1.625));
+        assert!(!unitless.normal);
+
+        let percent = parse_line_height_declaration("150%", 16.0).unwrap();
+        assert!((percent.height - 24.0).abs() < 0.1);
+        assert_eq!(percent.factor, None);
+        assert!(!percent.normal);
+    }
+
+    #[test]
+    fn line_height_normal_keeps_normal_state() {
+        let mut style = Style::initial();
+        assert!(style.line_height_normal);
+
+        style.apply_declaration("line-height", "normal");
+        assert!(style.line_height_normal);
+        assert_eq!(style.line_height_factor, None);
+
+        style.apply_declaration("font-size", "20px");
+        assert!((style.line_height - normal_line_height_fallback(20.0)).abs() < 0.1);
+
+        style.apply_declaration("line-height", "24px");
+        assert!(!style.line_height_normal);
+        assert_eq!(style.line_height_factor, None);
     }
 
     #[test]
@@ -6102,6 +6506,20 @@ mod tests {
             Rect::new(0.0, 0.0, 100.0, 100.0),
             style.border_radius
         ));
+    }
+
+    #[test]
+    fn parses_outer_box_shadow() {
+        let mut style = Style::initial();
+        style.apply_declaration("box-shadow", "0 2px 3px rgba(0, 0, 0, 0.16)");
+        assert_eq!(style.box_shadows.len(), 1);
+        let shadow = style.box_shadows[0];
+        assert_eq!(shadow.offset_x, 0.0);
+        assert_eq!(shadow.offset_y, 2.0);
+        assert_eq!(shadow.blur_radius, 3.0);
+        assert_eq!(shadow.spread, 0.0);
+        assert_eq!(shadow.color, Rgba::with_alpha(0, 0, 0, 41));
+        assert!(!shadow.inset);
     }
 
     #[test]
