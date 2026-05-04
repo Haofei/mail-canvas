@@ -233,7 +233,13 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     throw new Error(`renderer failed for ${template.name}; see ${logPath}`);
   }
 
-  const comparison = await comparePng(browserPath, rustPath, diffPath, browserMetrics.mediaRects);
+  const comparison = await comparePng(
+    browserPath,
+    rustPath,
+    diffPath,
+    browserMetrics.mediaRects,
+    browserMetrics.textRects,
+  );
   await writeTriptych([browserPath, rustPath, diffPath], sideBySidePath);
   const warningCount = (await readFile(logPath, 'utf8'))
     .split('\n')
@@ -252,7 +258,10 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     diffPixels: comparison.diffPixels,
     diffRatio: comparison.diffRatio,
     media: comparison.media,
+    text: comparison.text,
     nonMedia: comparison.nonMedia,
+    nonMediaText: comparison.nonMediaText,
+    nonMediaNonText: comparison.nonMediaNonText,
     warningCount,
   };
 }
@@ -314,17 +323,17 @@ async function browserScreenshot(browser, htmlPath, outPath, width, timeoutMs) {
       clip: { x: 0, y: 0, width, height },
     });
     return {
-      mediaRects: await collectMediaRects(page, width, height),
+      ...(await collectComparisonRects(page, width, height)),
     };
   } finally {
     await page.close();
   }
 }
 
-async function collectMediaRects(page, width, height) {
+async function collectComparisonRects(page, width, height) {
   return page.evaluate(
     ({ width, height }) => {
-      const rects = [];
+      const mediaRects = [];
       for (const element of document.body.querySelectorAll('*')) {
         const style = window.getComputedStyle(element);
         const tag = element.tagName.toLowerCase();
@@ -341,16 +350,41 @@ async function collectMediaRects(page, width, height) {
         const x1 = Math.min(width, Math.ceil(rect.right));
         const y1 = Math.min(height, Math.ceil(rect.bottom));
         if (x1 > x0 && y1 > y0) {
-          rects.push({ x: x0, y: y0, width: x1 - x0, height: y1 - y0 });
+          mediaRects.push({ x: x0, y: y0, width: x1 - x0, height: y1 - y0 });
         }
       }
-      return rects;
+
+      const textRects = [];
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      const range = document.createRange();
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (!node.nodeValue || !node.nodeValue.trim()) {
+          continue;
+        }
+        range.selectNodeContents(node);
+        for (const rect of range.getClientRects()) {
+          if (rect.width <= 0 || rect.height <= 0) {
+            continue;
+          }
+          const x0 = Math.max(0, Math.floor(rect.left));
+          const y0 = Math.max(0, Math.floor(rect.top));
+          const x1 = Math.min(width, Math.ceil(rect.right));
+          const y1 = Math.min(height, Math.ceil(rect.bottom));
+          if (x1 > x0 && y1 > y0) {
+            textRects.push({ x: x0, y: y0, width: x1 - x0, height: y1 - y0 });
+          }
+        }
+      }
+      range.detach();
+
+      return { mediaRects, textRects };
     },
     { width, height },
   );
 }
 
-async function comparePng(browserPath, rustPath, diffPath, mediaRects = []) {
+async function comparePng(browserPath, rustPath, diffPath, mediaRects = [], textRects = []) {
   const browser = PNG.sync.read(await readFile(browserPath));
   const rust = PNG.sync.read(await readFile(rustPath));
   const width = Math.max(browser.width, rust.width);
@@ -367,8 +401,32 @@ async function comparePng(browserPath, rustPath, diffPath, mediaRects = []) {
     { threshold: 0.1, includeAA: true },
   );
   const mediaMask = buildRectMask(width, height, mediaRects);
+  const textMask = buildRectMask(width, height, textRects);
+  const nonMediaTextMask = combineMasks(width, height, (pixel) => {
+    return textMask[pixel] && !mediaMask[pixel];
+  });
+  const nonMediaNonTextMask = combineMasks(width, height, (pixel) => {
+    return !textMask[pixel] && !mediaMask[pixel];
+  });
   const media = compareMaskedPng(browserCanvas, rustCanvas, width, height, mediaMask, true);
+  const text = compareMaskedPng(browserCanvas, rustCanvas, width, height, textMask, true);
   const nonMedia = compareMaskedPng(browserCanvas, rustCanvas, width, height, mediaMask, false);
+  const nonMediaText = compareMaskedPng(
+    browserCanvas,
+    rustCanvas,
+    width,
+    height,
+    nonMediaTextMask,
+    true,
+  );
+  const nonMediaNonText = compareMaskedPng(
+    browserCanvas,
+    rustCanvas,
+    width,
+    height,
+    nonMediaNonTextMask,
+    true,
+  );
   await writeFile(diffPath, PNG.sync.write(diff));
   return {
     browser: { width: browser.width, height: browser.height },
@@ -377,7 +435,10 @@ async function comparePng(browserPath, rustPath, diffPath, mediaRects = []) {
     diffPixels,
     diffRatio: diffPixels / (width * height),
     media,
+    text,
     nonMedia,
+    nonMediaText,
+    nonMediaNonText,
   };
 }
 
@@ -390,6 +451,16 @@ function buildRectMask(width, height, rects) {
     const y1 = Math.min(height, rect.y + rect.height);
     for (let y = y0; y < y1; y += 1) {
       mask.fill(1, y * width + x0, y * width + x1);
+    }
+  }
+  return mask;
+}
+
+function combineMasks(width, height, predicate) {
+  const mask = new Uint8Array(width * height);
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    if (predicate(pixel)) {
+      mask[pixel] = 1;
     }
   }
   return mask;
@@ -487,8 +558,9 @@ function escapeAttr(value) {
 function printResult(result) {
   const percent = (result.diffRatio * 100).toFixed(2);
   const nonMedia = (result.nonMedia.diffRatio * 100).toFixed(2);
+  const nonMediaNonText = (result.nonMediaNonText.diffRatio * 100).toFixed(2);
   console.log(
-    `${result.name}\tbrowser ${result.browser.width}x${result.browser.height}\trust ${result.rust.width}x${result.rust.height}\tdiff ${percent}%\tnon-media ${nonMedia}%\twarnings ${result.warningCount}`,
+    `${result.name}\tbrowser ${result.browser.width}x${result.browser.height}\trust ${result.rust.width}x${result.rust.height}\tdiff ${percent}%\tnon-media ${nonMedia}%\tnon-media non-text ${nonMediaNonText}%\twarnings ${result.warningCount}`,
   );
 }
 
@@ -533,15 +605,17 @@ function renderMarkdownReport(results, args, expectations) {
     `- Remote image loading in Rust renderer: ${args.allowRemote ? 'enabled' : 'disabled'}`,
     `- Output directory: \`${args.workDir}\``,
     '',
-    '| Template | Browser | Rust | Diff | Media Diff | Non-Media Diff | Diff Target | Non-Media Target | Warnings | Files |',
-    '|---|---:|---:|---:|---:|---:|---:|---:|---:|---|',
+    '| Template | Browser | Rust | Diff | Media Diff | Text Diff | Non-Media Diff | Non-Media Non-Text Diff | Diff Target | Non-Media Target | Warnings | Files |',
+    '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
   ];
 
   for (const result of results) {
     const percent = formatPercent(result.diffRatio);
     const mediaPercent =
       result.media.areaPixels > 0 ? formatPercent(result.media.diffRatio) : '';
+    const textPercent = result.text.areaPixels > 0 ? formatPercent(result.text.diffRatio) : '';
     const nonMediaPercent = formatPercent(result.nonMedia.diffRatio);
+    const nonMediaNonTextPercent = formatPercent(result.nonMediaNonText.diffRatio);
     const expected = expectations?.templates?.[result.name];
     const target = expected?.targetDiffPercent ?? expectations?.targetDiffPercent;
     const max = expected?.maxDiffPercent ?? expectations?.maxDiffPercent;
@@ -560,7 +634,7 @@ function renderMarkdownReport(results, args, expectations) {
         ? `<= ${nonMediaMax.toFixed(2)}%`
         : '';
     lines.push(
-      `| ${result.name} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${percent} | ${mediaPercent} | ${nonMediaPercent} | ${targetText} | ${nonMediaTargetText} | ${result.warningCount} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) |`,
+      `| ${result.name} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${percent} | ${mediaPercent} | ${textPercent} | ${nonMediaPercent} | ${nonMediaNonTextPercent} | ${targetText} | ${nonMediaTargetText} | ${result.warningCount} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) |`,
     );
   }
   lines.push('');
