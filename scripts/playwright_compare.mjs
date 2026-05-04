@@ -21,6 +21,7 @@ function parseArgs(argv) {
     workDir: DEFAULT_WORK_DIR,
     timeoutMs: DEFAULT_TIMEOUT_MS,
     limit: TEMPLATES.length,
+    only: [],
     allowRemote: true,
     keep: false,
   };
@@ -47,6 +48,9 @@ function parseArgs(argv) {
         break;
       case '--limit':
         args.limit = Number.parseInt(next(), 10);
+        break;
+      case '--only':
+        args.only.push(next());
         break;
       case '--no-remote':
         args.allowRemote = false;
@@ -86,7 +90,13 @@ async function main() {
   await Promise.all(Object.values(dirs).map((dir) => mkdir(dir, { recursive: true })));
 
   const renderer = await ensureRenderer();
-  const templates = TEMPLATES.slice(0, args.limit);
+  const templates =
+    args.only.length === 0
+      ? TEMPLATES.slice(0, args.limit)
+      : TEMPLATES.filter(([name]) => args.only.includes(name));
+  if (templates.length === 0) {
+    throw new Error(`no templates matched --only: ${args.only.join(', ')}`);
+  }
   const downloaded = [];
   for (const [name, url] of templates) {
     const html = await download(url, args.timeoutMs);

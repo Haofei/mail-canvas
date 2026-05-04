@@ -243,17 +243,30 @@ fn font_family_available(db: &fontdb::Database, candidate: &str) -> bool {
     })
 }
 
+fn font_database_families(db: &fontdb::Database) -> Vec<String> {
+    let mut families = Vec::new();
+    for family in db
+        .faces()
+        .flat_map(|face| face.families.iter().map(|(family, _)| family.clone()))
+    {
+        push_unique_case_insensitive(&mut families, family);
+    }
+    families
+}
+
 pub type ServoEmailRenderer = RustEmailRenderer;
 
 impl EmailRenderer for RustEmailRenderer {
     fn render_png(&mut self, request: RenderRequest) -> Result<RenderedImage> {
         validate_request(&request)?;
 
+        let available_font_families = font_database_families(self.font_system.db());
         let html = inline_css(&request.html, request.width)?;
         let document = kuchiki::parse_html().one(html);
         let mut engine = LayoutEngine::new(
             &mut self.font_system,
             ResourcePolicy::from_request(&request, document_base_url(&document)),
+            available_font_families,
         );
         let mut layout = engine.layout_document(&document, request.width)?;
         let warnings = std::mem::take(&mut engine.warnings);
@@ -387,6 +400,15 @@ fn inline_css(html: &str, viewport_width: u32) -> Result<String> {
         .build()
         .inline(&html)
         .context("failed to inline CSS")
+}
+
+fn push_unique_case_insensitive(values: &mut Vec<String>, value: String) {
+    if !values
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(&value))
+    {
+        values.push(value);
+    }
 }
 
 fn inject_active_media_styles(html: &str, viewport_width: u32) -> String {
@@ -820,23 +842,33 @@ fn decode_image_bytes(bytes: &[u8], policy: &ResourcePolicy) -> Result<ImageData
 struct LayoutEngine<'a> {
     font_system: &'a mut FontSystem,
     resources: ResourcePolicy,
+    available_font_families: Vec<String>,
     warnings: Vec<ConsoleMessage>,
 }
 
 impl<'a> LayoutEngine<'a> {
-    fn new(font_system: &'a mut FontSystem, resources: ResourcePolicy) -> Self {
+    fn new(
+        font_system: &'a mut FontSystem,
+        resources: ResourcePolicy,
+        available_font_families: Vec<String>,
+    ) -> Self {
         Self {
             font_system,
             resources,
+            available_font_families,
             warnings: Vec::new(),
         }
+    }
+
+    fn style_for_node(&self, node: &NodeRef, parent: &Style) -> Style {
+        style_for_node_with_fonts(node, parent, &self.available_font_families)
     }
 
     fn layout_document(&mut self, document: &NodeRef, width: u32) -> Result<LayoutBox> {
         let root_node = find_first_tag(document, "body").unwrap_or_else(|| document.clone());
         let initial = Style::initial();
         let root_style = if root_node.as_element().is_some() {
-            style_for_node(&root_node, &initial)
+            self.style_for_node(&root_node, &initial)
         } else {
             initial
         };
@@ -876,13 +908,13 @@ impl<'a> LayoutEngine<'a> {
 
         let mut children = Vec::new();
         let mut cursor_y = y;
-        let mut text = String::new();
+        let mut text = Vec::new();
         let parent_tag = element_tag(node);
         let mut ordered_list_index = 1usize;
 
         for child in node.children() {
             if let Some(text_node) = child.as_text() {
-                append_text(&mut text, &text_node.borrow());
+                append_text_span(&mut text, &text_node.borrow(), style.color);
                 continue;
             }
 
@@ -894,11 +926,11 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
             if tag == "br" {
-                text.push(HARD_BREAK);
+                append_text_span(&mut text, &HARD_BREAK.to_string(), style.color);
                 continue;
             }
 
-            let child_style = style_for_node(&child, style);
+            let child_style = self.style_for_node(&child, style);
             if child_style.display == Display::None {
                 continue;
             }
@@ -907,7 +939,7 @@ impl<'a> LayoutEngine<'a> {
                 && tag != "img"
                 && inline_can_flatten(&child, &child_style)
             {
-                append_text(&mut text, &text_content(&child));
+                append_color_spans(&child, &child_style, &mut text);
                 continue;
             }
 
@@ -953,24 +985,29 @@ impl<'a> LayoutEngine<'a> {
 
     fn flush_text(
         &mut self,
-        text: &mut String,
+        text: &mut Vec<TextSpan>,
         style: &Style,
         x: f32,
         cursor_y: &mut f32,
         width: f32,
         children: &mut Vec<LayoutBox>,
     ) -> Result<()> {
-        let normalized = normalize_text(text);
+        let normalized = normalize_text_spans(text, style.text_transform);
         text.clear();
 
         if normalized.is_empty() {
             return Ok(());
         }
 
-        let normalized = apply_text_transform(&normalized, style.text_transform);
-        let height = self.measure_text_height(&normalized, width, style)?;
+        let plain_text = spans_text(&normalized);
+        let height = self.measure_text_height(&plain_text, width, style)?;
+        let kind = if normalized.iter().all(|span| span.color == style.color) {
+            LayoutKind::Text(plain_text)
+        } else {
+            LayoutKind::RichText(normalized)
+        };
         children.push(LayoutBox {
-            kind: LayoutKind::Text(normalized),
+            kind,
             rect: Rect::new(x, *cursor_y, width, height),
             style: style.clone(),
             children: Vec::new(),
@@ -1136,7 +1173,7 @@ impl<'a> LayoutEngine<'a> {
         let column_widths = self.resolve_table_column_widths(&grid, &style, content_width, spacing);
 
         for row in grid.rows {
-            let row_style = style_for_node(&row.node, &style);
+            let row_style = self.style_for_node(&row.node, &style);
             if row.cells.is_empty() {
                 continue;
             }
@@ -1145,7 +1182,7 @@ impl<'a> LayoutEngine<'a> {
             let mut row_height: f32 = 0.0;
 
             for cell in row.cells {
-                let mut cell_style = style_for_node(&cell.node, &row_style);
+                let mut cell_style = self.style_for_node(&cell.node, &row_style);
                 if cell_style.padding.is_zero() && style.cell_padding > 0.0 {
                     cell_style.padding = Edges::all(style.cell_padding);
                 }
@@ -1239,7 +1276,7 @@ impl<'a> LayoutEngine<'a> {
 
         for row in &grid.rows {
             for cell in &row.cells {
-                let style = style_for_node(&cell.node, table_style);
+                let style = self.style_for_node(&cell.node, table_style);
                 if let Some(width) = style.width.and_then(|width| width.resolve(available)) {
                     let outer_width = style.outer_width_for_declared(width);
                     let per_col = ((outer_width - spacing * cell.colspan.saturating_sub(1) as f32)
@@ -1343,9 +1380,9 @@ impl<'a> LayoutEngine<'a> {
         let inner_x = rect_x + style.border.left + style.padding.left;
         let inner_y = rect_y + style.border.top + style.padding.top;
         let inner_width = style.inner_width_for_outer(outer_width);
-        let marker_width = (style.font_size * 1.75).max(20.0).min(inner_width);
-        let content_x = inner_x + marker_width;
-        let content_width = (inner_width - marker_width).max(1.0);
+        let marker_width = (style.font_size * 1.5).max(18.0).min(inner_width);
+        let content_x = inner_x;
+        let content_width = inner_width;
 
         let (mut children, content_height) =
             self.layout_children(node, &style, content_x, inner_y, content_width, depth)?;
@@ -1356,7 +1393,7 @@ impl<'a> LayoutEngine<'a> {
             LayoutBox {
                 kind: LayoutKind::Text(marker),
                 rect: Rect::new(
-                    inner_x,
+                    inner_x - marker_width,
                     inner_y,
                     (marker_width - 6.0).max(1.0),
                     style.line_height,
@@ -1480,7 +1517,7 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
 
-            let child_style = style_for_node(&child, style);
+            let child_style = self.style_for_node(&child, style);
             if child_style.display == Display::None {
                 continue;
             }
@@ -1588,6 +1625,7 @@ impl LayoutPainter<'_> {
 
         match &layout.kind {
             LayoutKind::Text(text) => self.paint_text(layout.rect, &layout.style, text),
+            LayoutKind::RichText(spans) => self.paint_rich_text(layout.rect, &layout.style, spans),
             LayoutKind::Image(Some(image)) => self.paint_image(layout.rect, image),
             LayoutKind::Image(None) => self.paint_image_placeholder(layout.rect),
             LayoutKind::Block | LayoutKind::Table | LayoutKind::Row | LayoutKind::Cell => {}
@@ -1599,6 +1637,35 @@ impl LayoutPainter<'_> {
     }
 
     fn paint_text(&mut self, rect: Rect, style: &Style, text: &str) {
+        self.paint_text_buffer(rect, style, |buffer, font_system| {
+            buffer.set_text(
+                font_system,
+                text,
+                &style.text_attrs(),
+                Shaping::Advanced,
+                Some(style.text_align.to_cosmic()),
+            );
+        });
+    }
+
+    fn paint_rich_text(&mut self, rect: Rect, style: &Style, spans: &[TextSpan]) {
+        self.paint_text_buffer(rect, style, |buffer, font_system| {
+            buffer.set_rich_text(
+                font_system,
+                rich_text_color_spans(spans, style),
+                &style.text_attrs(),
+                Shaping::Advanced,
+                Some(style.text_align.to_cosmic()),
+            );
+        });
+    }
+
+    fn paint_text_buffer(
+        &mut self,
+        rect: Rect,
+        style: &Style,
+        set_text: impl FnOnce(&mut Buffer, &mut FontSystem),
+    ) {
         let metrics = Metrics::new(
             (style.font_size * self.scale).max(1.0),
             (style.line_height * self.scale).max(1.0),
@@ -1610,13 +1677,7 @@ impl LayoutPainter<'_> {
             Some((rect.width * self.scale).max(1.0)),
             Some((rect.height * self.scale).max(1.0)),
         );
-        buffer.set_text(
-            self.font_system,
-            text,
-            &style.text_attrs(),
-            Shaping::Advanced,
-            Some(style.text_align.to_cosmic()),
-        );
+        set_text(&mut buffer, self.font_system);
 
         let origin_x = (rect.x * self.scale).round() as i32;
         let origin_y = (rect.y * self.scale).round() as i32;
@@ -1669,7 +1730,20 @@ enum LayoutKind {
     Row,
     Cell,
     Text(String),
+    RichText(Vec<TextSpan>),
     Image(Option<ImageData>),
+}
+
+#[derive(Debug, Clone)]
+struct TextSpan {
+    text: String,
+    color: Rgba,
+}
+
+impl TextSpan {
+    fn new(text: String, color: Rgba) -> Self {
+        Self { text, color }
+    }
 }
 
 #[derive(Debug)]
@@ -1790,9 +1864,41 @@ impl Style {
         };
 
         match tag {
-            "h1" => style.set_font_size(32.0),
-            "h2" => style.set_font_size(24.0),
-            "h3" => style.set_font_size(20.0),
+            "h1" => {
+                style.set_font_size(parent.font_size * 2.0);
+                style.font_weight = FontWeight::BOLD;
+                style.margin.top = 0.67 * parent.font_size;
+                style.margin.bottom = 0.67 * parent.font_size;
+            }
+            "h2" => {
+                style.set_font_size(parent.font_size * 1.5);
+                style.font_weight = FontWeight::BOLD;
+                style.margin.top = 0.83 * parent.font_size;
+                style.margin.bottom = 0.83 * parent.font_size;
+            }
+            "h3" => {
+                style.set_font_size(parent.font_size * 1.17);
+                style.font_weight = FontWeight::BOLD;
+                style.margin.top = parent.font_size;
+                style.margin.bottom = parent.font_size;
+            }
+            "h4" => {
+                style.font_weight = FontWeight::BOLD;
+                style.margin.top = 1.33 * parent.font_size;
+                style.margin.bottom = 1.33 * parent.font_size;
+            }
+            "h5" => {
+                style.set_font_size(parent.font_size * 0.83);
+                style.font_weight = FontWeight::BOLD;
+                style.margin.top = 1.67 * parent.font_size;
+                style.margin.bottom = 1.67 * parent.font_size;
+            }
+            "h6" => {
+                style.set_font_size(parent.font_size * 0.67);
+                style.font_weight = FontWeight::BOLD;
+                style.margin.top = 2.33 * parent.font_size;
+                style.margin.bottom = 2.33 * parent.font_size;
+            }
             "small" => style.set_font_size(parent.font_size * 0.85),
             "p" => style.margin.bottom = 16.0,
             "ul" | "ol" => {
@@ -2262,6 +2368,14 @@ impl Rect {
 }
 
 fn style_for_node(node: &NodeRef, parent: &Style) -> Style {
+    style_for_node_with_fonts(node, parent, &[])
+}
+
+fn style_for_node_with_fonts(
+    node: &NodeRef,
+    parent: &Style,
+    available_font_families: &[String],
+) -> Style {
     let Some(element) = node.as_element() else {
         return parent.clone();
     };
@@ -2323,7 +2437,15 @@ fn style_for_node(node: &NodeRef, parent: &Style) -> Style {
         for important in [false, true] {
             for (name, value, is_important) in &declarations {
                 if *is_important == important {
-                    style.apply_declaration(name, value);
+                    if name == "font-family" {
+                        if let Some(font_family) =
+                            parse_font_family_with_available(value, available_font_families)
+                        {
+                            style.font_family = Some(font_family);
+                        }
+                    } else {
+                        style.apply_declaration(name, value);
+                    }
                 }
             }
         }
@@ -2622,7 +2744,45 @@ fn parse_box_sizing(value: &str) -> Option<BoxSizing> {
 }
 
 fn parse_font_family(value: &str) -> Option<String> {
-    let candidates: Vec<String> = value
+    parse_font_family_with_available(value, &[])
+}
+
+fn parse_font_family_with_available(
+    value: &str,
+    available_font_families: &[String],
+) -> Option<String> {
+    let candidates = parse_font_family_candidates(value);
+
+    if let Some(first) = candidates.first() {
+        if let Some(generic) = generic_font_family(first) {
+            return Some(generic.to_string());
+        }
+    }
+
+    for family in &candidates {
+        if available_font_families
+            .iter()
+            .any(|available| available.eq_ignore_ascii_case(family))
+        {
+            return Some(family.clone());
+        }
+    }
+
+    for family in &candidates {
+        if is_safe_system_font(family) {
+            return Some(family.clone());
+        }
+    }
+    for family in &candidates {
+        if let Some(generic) = generic_font_family(family) {
+            return Some(generic.to_string());
+        }
+    }
+    candidates.into_iter().next()
+}
+
+fn parse_font_family_candidates(value: &str) -> Vec<String> {
+    value
         .split(',')
         .filter_map(|candidate| {
             let family = candidate.trim().trim_matches('"').trim_matches('\'').trim();
@@ -2637,24 +2797,7 @@ fn parse_font_family(value: &str) -> Option<String> {
                 Some(family.to_string())
             }
         })
-        .collect();
-
-    if let Some(first) = candidates.first() {
-        if let Some(generic) = generic_font_family(first) {
-            return Some(generic.to_string());
-        }
-    }
-    for family in &candidates {
-        if is_safe_system_font(family) {
-            return Some(family.clone());
-        }
-    }
-    for family in &candidates {
-        if let Some(generic) = generic_font_family(family) {
-            return Some(generic.to_string());
-        }
-    }
-    candidates.into_iter().next()
+        .collect()
 }
 
 fn generic_font_family(value: &str) -> Option<&'static str> {
@@ -3031,32 +3174,166 @@ fn append_text(out: &mut String, text: &str) {
     out.push_str(text);
 }
 
-fn normalize_text(text: &str) -> String {
-    let mut out = String::new();
-    let mut pending_space = false;
+fn append_text_span(out: &mut Vec<TextSpan>, text: &str, color: Rgba) {
+    if !text.is_empty() {
+        out.push(TextSpan::new(text.to_string(), color));
+    }
+}
 
-    for ch in text.chars() {
-        if ch == HARD_BREAK {
-            while out.ends_with(' ') {
-                out.pop();
-            }
-            if !out.ends_with('\n') {
-                out.push('\n');
-            }
-            pending_space = false;
-        } else if ch.is_whitespace() {
-            pending_space = true;
-        } else {
-            if pending_space && !out.is_empty() && !out.ends_with('\n') {
-                out.push(' ');
-            }
-            out.push(ch);
-            pending_space = false;
-        }
+fn append_color_spans(node: &NodeRef, style: &Style, out: &mut Vec<TextSpan>) {
+    if let Some(text) = node.as_text() {
+        append_text_span(out, &text.borrow(), style.color);
+        return;
     }
 
-    out.trim_matches(|ch: char| ch != '\n' && ch.is_whitespace())
-        .to_string()
+    let Some(tag) = element_tag(node) else {
+        return;
+    };
+    if is_metadata_tag(&tag) {
+        return;
+    }
+    if tag == "br" {
+        append_text_span(out, &HARD_BREAK.to_string(), style.color);
+        return;
+    }
+    if tag == "img" {
+        append_text_span(out, &attr(node, "alt").unwrap_or_default(), style.color);
+        return;
+    }
+
+    for child in node.children() {
+        if child.as_text().is_some() {
+            append_color_spans(&child, style, out);
+            continue;
+        }
+        let Some(child_tag) = element_tag(&child) else {
+            continue;
+        };
+        if is_metadata_tag(&child_tag) {
+            continue;
+        }
+        let child_style = style_for_node(&child, style);
+        if child_style.display != Display::None {
+            append_color_spans(&child, &child_style, out);
+        }
+    }
+}
+
+fn normalize_text(text: &str) -> String {
+    spans_text(&normalize_text_spans(
+        &[TextSpan::new(text.to_string(), Rgba::BLACK)],
+        TextTransform::None,
+    ))
+}
+
+fn normalize_text_spans(spans: &[TextSpan], text_transform: TextTransform) -> Vec<TextSpan> {
+    let mut out = Vec::new();
+    let mut pending_space = false;
+
+    for span in spans {
+        let mut segment = String::new();
+        for ch in span.text.chars() {
+            if ch == HARD_BREAK {
+                while segment.ends_with(' ') {
+                    segment.pop();
+                }
+                push_text_span_segment(&mut out, segment, span.color, text_transform);
+                trim_trailing_span_space(&mut out);
+                if !rich_text_ends_with_newline(&out) {
+                    out.push(TextSpan::new("\n".to_string(), span.color));
+                }
+                segment = String::new();
+                pending_space = false;
+            } else if ch.is_whitespace() {
+                pending_space = true;
+            } else {
+                if pending_space
+                    && (!out.is_empty() || !segment.is_empty())
+                    && !segment.ends_with('\n')
+                    && !rich_text_ends_with_newline(&out)
+                {
+                    segment.push(' ');
+                }
+                segment.push(ch);
+                pending_space = false;
+            }
+        }
+        push_text_span_segment(&mut out, segment, span.color, text_transform);
+    }
+
+    trim_leading_span_space(&mut out);
+    trim_trailing_span_space(&mut out);
+    out
+}
+
+fn push_text_span_segment(
+    out: &mut Vec<TextSpan>,
+    text: String,
+    color: Rgba,
+    text_transform: TextTransform,
+) {
+    if text.is_empty() {
+        return;
+    }
+    let text = apply_text_transform(&text, text_transform);
+    if !text.is_empty() {
+        out.push(TextSpan::new(text, color));
+    }
+}
+
+fn trim_leading_span_space(spans: &mut Vec<TextSpan>) {
+    while let Some(first) = spans.first_mut() {
+        let trimmed = first
+            .text
+            .trim_start_matches(|ch: char| ch != '\n' && ch.is_whitespace())
+            .to_string();
+        first.text = trimmed;
+        if first.text.is_empty() {
+            spans.remove(0);
+        } else {
+            break;
+        }
+    }
+}
+
+fn trim_trailing_span_space(spans: &mut Vec<TextSpan>) {
+    while let Some(last) = spans.last_mut() {
+        let trimmed = last
+            .text
+            .trim_end_matches(|ch: char| ch != '\n' && ch.is_whitespace())
+            .to_string();
+        last.text = trimmed;
+        if last.text.is_empty() {
+            spans.pop();
+        } else {
+            break;
+        }
+    }
+}
+
+fn rich_text_ends_with_newline(spans: &[TextSpan]) -> bool {
+    spans.last().is_some_and(|span| span.text.ends_with('\n'))
+}
+
+fn spans_text(spans: &[TextSpan]) -> String {
+    spans.iter().map(|span| span.text.as_str()).collect()
+}
+
+fn rich_text_color_spans<'a>(
+    spans: &'a [TextSpan],
+    style: &'a Style,
+) -> impl Iterator<Item = (&'a str, Attrs<'a>)> + 'a {
+    spans.iter().map(|span| {
+        (
+            span.text.as_str(),
+            style.text_attrs().color(TextColor::rgba(
+                span.color.r,
+                span.color.g,
+                span.color.b,
+                span.color.a,
+            )),
+        )
+    })
 }
 
 fn fill_style_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, color: Rgba, radius: f32) {
@@ -3505,7 +3782,7 @@ fn layout_for_test(html: &str, width: u32) -> LayoutBox {
     let html = inline_css(&build_document(html, None, None, width), width).unwrap();
     let document = kuchiki::parse_html().one(html);
     let mut font_system = FontSystem::new();
-    let mut engine = LayoutEngine::new(&mut font_system, resource_policy_for_test());
+    let mut engine = LayoutEngine::new(&mut font_system, resource_policy_for_test(), Vec::new());
     engine.layout_document(&document, width).unwrap()
 }
 
@@ -3607,6 +3884,20 @@ mod tests {
     }
 
     #[test]
+    fn headings_keep_browser_like_default_font_defaults() {
+        let parent = Style::initial();
+        let h1 = Style::from_parent_for_tag(&parent, "h1");
+        assert_eq!(h1.font_weight, FontWeight::BOLD);
+        assert!((h1.font_size - 32.0).abs() < 0.1);
+        assert!((h1.margin.bottom - 10.72).abs() < 0.1);
+
+        let h3 = Style::from_parent_for_tag(&parent, "h3");
+        assert_eq!(h3.font_weight, FontWeight::BOLD);
+        assert!((h3.font_size - 18.72).abs() < 0.1);
+        assert!((h3.margin.top - 16.0).abs() < 0.1);
+    }
+
+    #[test]
     fn selects_safe_fallback_font_from_web_font_stack() {
         let family = parse_font_family(r#""Nunito Sans", Helvetica, Arial, sans-serif"#).unwrap();
         assert_eq!(family, "Helvetica");
@@ -3614,6 +3905,25 @@ mod tests {
         assert_eq!(family, "serif");
         let family = parse_font_family("Avenir, Montserrat, Corbel, sans-serif").unwrap();
         assert_eq!(family, "Avenir");
+    }
+
+    #[test]
+    fn selects_loaded_web_font_before_safe_fallback() {
+        let available = vec!["Nunito Sans".to_string()];
+        let family = parse_font_family_with_available(
+            r#""Nunito Sans", Helvetica, Arial, sans-serif"#,
+            &available,
+        )
+        .unwrap();
+        assert_eq!(family, "Nunito Sans");
+    }
+
+    #[test]
+    fn generic_first_font_family_stays_generic_with_available_fallbacks() {
+        let available = vec!["Georgia".to_string()];
+        let family = parse_font_family_with_available("ui-serif, Georgia, serif", &available)
+            .expect("font family");
+        assert_eq!(family, "serif");
     }
 
     #[test]
@@ -3728,6 +4038,23 @@ mod tests {
         );
         assert!(marker.is_some());
         assert!(text.is_some());
+    }
+
+    #[test]
+    fn flattened_inline_text_preserves_color_spans() {
+        let layout = layout_for_test(
+            r##"<p>Open <a href="#" style="color:#2563eb">link</a></p>"##,
+            200,
+        );
+        let rich = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::RichText(_))
+        })
+        .expect("rich text");
+        let LayoutKind::RichText(spans) = &rich.kind else {
+            unreachable!();
+        };
+        assert_eq!(spans_text(spans), "Open link");
+        assert_eq!(spans[1].color, Rgba::rgb(0x25, 0x63, 0xeb));
     }
 
     #[test]
