@@ -199,7 +199,13 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
   const baseUrl = new URL('.', template.url).href;
   await writeFile(preparedPath, buildBrowserDocument(sourceHtml, baseUrl, args.width));
 
-  await browserScreenshot(browser, preparedPath, browserPath, args.width, args.timeoutMs);
+  const browserMetrics = await browserScreenshot(
+    browser,
+    preparedPath,
+    browserPath,
+    args.width,
+    args.timeoutMs,
+  );
 
   const renderArgs = [
     '--html',
@@ -227,7 +233,7 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     throw new Error(`renderer failed for ${template.name}; see ${logPath}`);
   }
 
-  const comparison = await comparePng(browserPath, rustPath, diffPath);
+  const comparison = await comparePng(browserPath, rustPath, diffPath, browserMetrics.mediaRects);
   await writeTriptych([browserPath, rustPath, diffPath], sideBySidePath);
   const warningCount = (await readFile(logPath, 'utf8'))
     .split('\n')
@@ -245,6 +251,8 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     compared: comparison.compared,
     diffPixels: comparison.diffPixels,
     diffRatio: comparison.diffRatio,
+    media: comparison.media,
+    nonMedia: comparison.nonMedia,
     warningCount,
   };
 }
@@ -305,12 +313,44 @@ async function browserScreenshot(browser, htmlPath, outPath, width, timeoutMs) {
       path: outPath,
       clip: { x: 0, y: 0, width, height },
     });
+    return {
+      mediaRects: await collectMediaRects(page, width, height),
+    };
   } finally {
     await page.close();
   }
 }
 
-async function comparePng(browserPath, rustPath, diffPath) {
+async function collectMediaRects(page, width, height) {
+  return page.evaluate(
+    ({ width, height }) => {
+      const rects = [];
+      for (const element of document.body.querySelectorAll('*')) {
+        const style = window.getComputedStyle(element);
+        const tag = element.tagName.toLowerCase();
+        const hasMedia = tag === 'img' || style.backgroundImage !== 'none';
+        if (!hasMedia) {
+          continue;
+        }
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+          continue;
+        }
+        const x0 = Math.max(0, Math.floor(rect.left));
+        const y0 = Math.max(0, Math.floor(rect.top));
+        const x1 = Math.min(width, Math.ceil(rect.right));
+        const y1 = Math.min(height, Math.ceil(rect.bottom));
+        if (x1 > x0 && y1 > y0) {
+          rects.push({ x: x0, y: y0, width: x1 - x0, height: y1 - y0 });
+        }
+      }
+      return rects;
+    },
+    { width, height },
+  );
+}
+
+async function comparePng(browserPath, rustPath, diffPath, mediaRects = []) {
   const browser = PNG.sync.read(await readFile(browserPath));
   const rust = PNG.sync.read(await readFile(rustPath));
   const width = Math.max(browser.width, rust.width);
@@ -326,6 +366,9 @@ async function comparePng(browserPath, rustPath, diffPath) {
     height,
     { threshold: 0.1, includeAA: true },
   );
+  const mediaMask = buildRectMask(width, height, mediaRects);
+  const media = compareMaskedPng(browserCanvas, rustCanvas, width, height, mediaMask, true);
+  const nonMedia = compareMaskedPng(browserCanvas, rustCanvas, width, height, mediaMask, false);
   await writeFile(diffPath, PNG.sync.write(diff));
   return {
     browser: { width: browser.width, height: browser.height },
@@ -333,7 +376,54 @@ async function comparePng(browserPath, rustPath, diffPath) {
     compared: { width, height },
     diffPixels,
     diffRatio: diffPixels / (width * height),
+    media,
+    nonMedia,
   };
+}
+
+function buildRectMask(width, height, rects) {
+  const mask = new Uint8Array(width * height);
+  for (const rect of rects) {
+    const x0 = Math.max(0, rect.x);
+    const y0 = Math.max(0, rect.y);
+    const x1 = Math.min(width, rect.x + rect.width);
+    const y1 = Math.min(height, rect.y + rect.height);
+    for (let y = y0; y < y1; y += 1) {
+      mask.fill(1, y * width + x0, y * width + x1);
+    }
+  }
+  return mask;
+}
+
+function compareMaskedPng(browserCanvas, rustCanvas, width, height, mask, keepMasked) {
+  const browserMasked = new PNG({ width, height });
+  const rustMasked = new PNG({ width, height });
+  let areaPixels = 0;
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    const keep = Boolean(mask[pixel]) === keepMasked;
+    const index = pixel * 4;
+    if (keep) {
+      areaPixels += 1;
+      browserCanvas.data.copy(browserMasked.data, index, index, index + 4);
+      rustCanvas.data.copy(rustMasked.data, index, index, index + 4);
+    } else {
+      browserCanvas.data.copy(browserMasked.data, index, index, index + 4);
+      browserCanvas.data.copy(rustMasked.data, index, index, index + 4);
+    }
+  }
+  if (areaPixels === 0) {
+    return { areaPixels: 0, diffPixels: 0, diffRatio: 0 };
+  }
+  const scratch = new PNG({ width, height });
+  const diffPixels = pixelmatch(
+    browserMasked.data,
+    rustMasked.data,
+    scratch.data,
+    width,
+    height,
+    { threshold: 0.1, includeAA: true },
+  );
+  return { areaPixels, diffPixels, diffRatio: diffPixels / areaPixels };
 }
 
 function padPng(source, width, height) {
@@ -396,8 +486,9 @@ function escapeAttr(value) {
 
 function printResult(result) {
   const percent = (result.diffRatio * 100).toFixed(2);
+  const nonMedia = (result.nonMedia.diffRatio * 100).toFixed(2);
   console.log(
-    `${result.name}\tbrowser ${result.browser.width}x${result.browser.height}\trust ${result.rust.width}x${result.rust.height}\tdiff ${percent}%\twarnings ${result.warningCount}`,
+    `${result.name}\tbrowser ${result.browser.width}x${result.browser.height}\trust ${result.rust.width}x${result.rust.height}\tdiff ${percent}%\tnon-media ${nonMedia}%\twarnings ${result.warningCount}`,
   );
 }
 
@@ -432,12 +523,15 @@ function renderMarkdownReport(results, args, expectations) {
     `- Remote image loading in Rust renderer: ${args.allowRemote ? 'enabled' : 'disabled'}`,
     `- Output directory: \`${args.workDir}\``,
     '',
-    '| Template | Browser | Rust | Diff | Target | Warnings | Files |',
-    '|---|---:|---:|---:|---:|---:|---|',
+    '| Template | Browser | Rust | Diff | Media Diff | Non-Media Diff | Target | Warnings | Files |',
+    '|---|---:|---:|---:|---:|---:|---:|---:|---|',
   ];
 
   for (const result of results) {
     const percent = `${(result.diffRatio * 100).toFixed(2)}%`;
+    const mediaPercent =
+      result.media.areaPixels > 0 ? `${(result.media.diffRatio * 100).toFixed(2)}%` : '';
+    const nonMediaPercent = `${(result.nonMedia.diffRatio * 100).toFixed(2)}%`;
     const expected = expectations?.templates?.[result.name];
     const target = expected?.targetDiffPercent ?? expectations?.targetDiffPercent;
     const max = expected?.maxDiffPercent ?? expectations?.maxDiffPercent;
@@ -447,7 +541,7 @@ function renderMarkdownReport(results, args, expectations) {
         ? `<= ${max.toFixed(2)}%`
         : '';
     lines.push(
-      `| ${result.name} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${percent} | ${targetText} | ${result.warningCount} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) |`,
+      `| ${result.name} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${percent} | ${mediaPercent} | ${nonMediaPercent} | ${targetText} | ${result.warningCount} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) |`,
     );
   }
   lines.push('');
