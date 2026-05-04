@@ -29,6 +29,7 @@ const MAX_CONSOLE_MESSAGE_LEN: usize = 2048;
 const MAX_LAYOUT_DEPTH: usize = 64;
 const DEFAULT_MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 const DEFAULT_MAX_DECODED_PIXELS: u64 = 16_000_000;
+const HARD_BREAK: char = '\u{000B}';
 
 #[derive(Debug, Clone)]
 pub struct PreparedDocument {
@@ -127,21 +128,31 @@ impl RustEmailRenderer {
         let _ = scaled_dimension(width, scale, "width")?;
         let _ = scaled_dimension(viewport_height.max(1), scale, "viewport-height")?;
         let font_paths: Vec<PathBuf> = font_paths.into_iter().collect();
-        let font_system = if font_paths.is_empty() {
-            FontSystem::new()
+        let font_db = if font_paths.is_empty() {
+            system_font_database()
         } else {
-            FontSystem::new_with_locale_and_db_and_fallback(
-                "en-US".to_string(),
-                font_database_from_paths(&font_paths)?,
-                cosmic_text::PlatformFallback,
-            )
+            font_database_from_paths(&font_paths)?
         };
+        let font_system = FontSystem::new_with_locale_and_db_and_fallback(
+            "en-US".to_string(),
+            font_db,
+            cosmic_text::PlatformFallback,
+        );
 
         Ok(Self {
             font_system,
             swash_cache: SwashCache::new(),
         })
     }
+}
+
+fn system_font_database() -> fontdb::Database {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+    #[cfg(target_os = "macos")]
+    db.load_fonts_dir("/System/Library/Fonts/Supplemental");
+    set_generic_font_families(&mut db);
+    db
 }
 
 fn font_database_from_paths(paths: &[PathBuf]) -> Result<fontdb::Database> {
@@ -155,16 +166,81 @@ fn font_database_from_paths(paths: &[PathBuf]) -> Result<fontdb::Database> {
     if db.is_empty() {
         bail!("no valid font faces found in supplied font files");
     }
-    let default_family = db
+    set_generic_font_families(&mut db);
+    Ok(db)
+}
+
+fn set_generic_font_families(db: &mut fontdb::Database) {
+    let fallback_family = db
         .faces()
         .flat_map(|face| face.families.iter().map(|(family, _)| family.clone()))
         .next();
-    if let Some(default_family) = default_family {
-        db.set_sans_serif_family(default_family.clone());
-        db.set_serif_family(default_family.clone());
-        db.set_monospace_family(default_family);
+    let sans = first_available_family(
+        db,
+        &[
+            "Helvetica Neue",
+            "Helvetica",
+            "Arial",
+            "Avenir",
+            "Segoe UI",
+            "Roboto",
+            "Open Sans",
+            "DejaVu Sans",
+            "Noto Sans",
+        ],
+    )
+    .or_else(|| fallback_family.clone());
+    let serif = first_available_family(
+        db,
+        &[
+            "Iowan Old Style",
+            "Palatino Linotype",
+            "Palatino",
+            "Georgia",
+            "Times New Roman",
+            "Times",
+            "DejaVu Serif",
+            "Noto Serif",
+        ],
+    )
+    .or_else(|| fallback_family.clone());
+    let mono = first_available_family(
+        db,
+        &[
+            "Menlo",
+            "Monaco",
+            "Consolas",
+            "Courier New",
+            "DejaVu Sans Mono",
+            "Noto Sans Mono",
+        ],
+    )
+    .or(fallback_family);
+
+    if let Some(sans) = sans {
+        db.set_sans_serif_family(sans);
     }
-    Ok(db)
+    if let Some(serif) = serif {
+        db.set_serif_family(serif);
+    }
+    if let Some(mono) = mono {
+        db.set_monospace_family(mono);
+    }
+}
+
+fn first_available_family(db: &fontdb::Database, candidates: &[&str]) -> Option<String> {
+    candidates
+        .iter()
+        .find(|candidate| font_family_available(db, candidate))
+        .map(|candidate| (*candidate).to_string())
+}
+
+fn font_family_available(db: &fontdb::Database, candidate: &str) -> bool {
+    db.faces().any(|face| {
+        face.families
+            .iter()
+            .any(|(family, _)| family.eq_ignore_ascii_case(candidate))
+    })
 }
 
 pub type ServoEmailRenderer = RustEmailRenderer;
@@ -801,6 +877,8 @@ impl<'a> LayoutEngine<'a> {
         let mut children = Vec::new();
         let mut cursor_y = y;
         let mut text = String::new();
+        let parent_tag = element_tag(node);
+        let mut ordered_list_index = 1usize;
 
         for child in node.children() {
             if let Some(text_node) = child.as_text() {
@@ -816,7 +894,7 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
             if tag == "br" {
-                text.push('\n');
+                text.push(HARD_BREAK);
                 continue;
             }
 
@@ -835,9 +913,31 @@ impl<'a> LayoutEngine<'a> {
 
             self.flush_text(&mut text, style, x, &mut cursor_y, width, &mut children)?;
             let child_display = child_style.display;
-            if let Some(flow) =
+            let list_marker = if tag == "li" {
+                match parent_tag.as_deref() {
+                    Some("ol") => {
+                        let marker = format!("{ordered_list_index}.");
+                        ordered_list_index += 1;
+                        Some(marker)
+                    }
+                    Some("ul") => Some("\u{2022}".to_string()),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let flow = if let Some(marker) = list_marker {
+                self.layout_list_item(
+                    &child,
+                    child_style,
+                    marker,
+                    Rect::new(x, cursor_y, width, 0.0),
+                    depth + 1,
+                )?
+            } else {
                 self.layout_element_with_style(&child, child_style, x, cursor_y, width, depth + 1)?
-            {
+            };
+            if let Some(flow) = flow {
                 let mut flow = flow;
                 if is_inline_flow(child_display, &tag) {
                     align_inline_flow(&mut flow.node, style.text_align, width);
@@ -935,19 +1035,20 @@ impl<'a> LayoutEngine<'a> {
                 .max(1.0)
         };
 
-        let rect_x = x + style.margin.left;
+        let rect_x = x + style.horizontal_offset(containing_width, max_outer_width);
         let rect_y = y + style.margin.top;
-        let inner_x = rect_x + style.border_width + style.padding.left;
-        let inner_y = rect_y + style.border_width + style.padding.top;
+        let inner_x = rect_x + style.border.left + style.padding.left;
+        let inner_y = rect_y + style.border.top + style.padding.top;
         let (children, content_height) =
             self.layout_children(node, &style, inner_x, inner_y, preferred_inner_width, depth)?;
         let explicit_height = style.resolve_height(0.0).unwrap_or(0.0);
         let rect_width = if explicit_width.is_some() {
             max_outer_width
         } else {
-            (preferred_inner_width + style.padding.horizontal() + style.border_width * 2.0).max(1.0)
+            (preferred_inner_width + style.padding.horizontal() + style.border.horizontal())
+                .max(1.0)
         };
-        let rect_height = (content_height + style.padding.vertical() + style.border_width * 2.0)
+        let rect_height = (content_height + style.padding.vertical() + style.border.vertical())
             .max(explicit_height)
             .max(1.0);
 
@@ -976,16 +1077,16 @@ impl<'a> LayoutEngine<'a> {
             .map(|width| style.outer_width_for_declared(width))
             .unwrap_or(containing_width - style.margin.horizontal())
             .max(1.0);
-        let rect_x = x + style.margin.left;
+        let rect_x = x + style.horizontal_offset(containing_width, outer_width);
         let rect_y = y + style.margin.top;
-        let inner_x = rect_x + style.border_width + style.padding.left;
-        let inner_y = rect_y + style.border_width + style.padding.top;
+        let inner_x = rect_x + style.border.left + style.padding.left;
+        let inner_y = rect_y + style.border.top + style.padding.top;
         let inner_width = style.inner_width_for_outer(outer_width);
 
         let (children, content_height) =
             self.layout_children(node, &style, inner_x, inner_y, inner_width, depth)?;
         let min_height = style.resolve_height(0.0).unwrap_or(0.0);
-        let rect_height = (content_height + style.padding.vertical() + style.border_width * 2.0)
+        let rect_height = (content_height + style.padding.vertical() + style.border.vertical())
             .max(min_height)
             .max(0.0);
 
@@ -1014,10 +1115,10 @@ impl<'a> LayoutEngine<'a> {
             .map(|width| style.outer_width_for_declared(width))
             .unwrap_or(containing_width - style.margin.horizontal())
             .max(1.0);
-        let rect_x = x + style.margin.left;
+        let rect_x = x + style.horizontal_offset(containing_width, table_width);
         let rect_y = y + style.margin.top;
-        let content_x = rect_x + style.border_width + style.padding.left;
-        let content_y = rect_y + style.border_width + style.padding.top;
+        let content_x = rect_x + style.border.left + style.padding.left;
+        let content_y = rect_y + style.border.top + style.padding.top;
         let content_width = style.inner_width_for_outer(table_width);
 
         let grid = build_table_grid(node);
@@ -1051,10 +1152,10 @@ impl<'a> LayoutEngine<'a> {
 
                 let cell_x = content_x + column_offset(&column_widths, cell.col, spacing);
                 let cell_width = spanned_width(&column_widths, cell.col, cell.colspan, spacing);
-                let cell_inner_x = cell_x + cell_style.border_width + cell_style.padding.left;
-                let cell_inner_y = row_y + cell_style.border_width + cell_style.padding.top;
+                let cell_inner_x = cell_x + cell_style.border.left + cell_style.padding.left;
+                let cell_inner_y = row_y + cell_style.border.top + cell_style.padding.top;
                 let cell_inner_width =
-                    (cell_width - cell_style.padding.horizontal() - cell_style.border_width * 2.0)
+                    (cell_width - cell_style.padding.horizontal() - cell_style.border.horizontal())
                         .max(1.0);
                 let (children, content_height) = self.layout_children(
                     &cell.node,
@@ -1065,11 +1166,10 @@ impl<'a> LayoutEngine<'a> {
                     depth + 1,
                 )?;
                 let explicit_height = cell_style.resolve_height(0.0).unwrap_or(0.0);
-                let cell_height = (content_height
-                    + cell_style.padding.vertical()
-                    + cell_style.border_width * 2.0)
-                    .max(explicit_height)
-                    .max(1.0);
+                let cell_height =
+                    (content_height + cell_style.padding.vertical() + cell_style.border.vertical())
+                        .max(explicit_height)
+                        .max(1.0);
                 row_height = row_height.max(cell_height);
                 cell_boxes.push(LayoutBox {
                     kind: LayoutKind::Cell,
@@ -1103,7 +1203,7 @@ impl<'a> LayoutEngine<'a> {
 
         let content_height = (row_y - content_y - spacing).max(0.0);
         let explicit_height = style.resolve_height(0.0).unwrap_or(0.0);
-        let table_height = (content_height + style.padding.vertical() + style.border_width * 2.0)
+        let table_height = (content_height + style.padding.vertical() + style.border.vertical())
             .max(explicit_height)
             .max(1.0);
 
@@ -1225,13 +1325,72 @@ impl<'a> LayoutEngine<'a> {
         }
     }
 
+    fn layout_list_item(
+        &mut self,
+        node: &NodeRef,
+        style: Style,
+        marker: String,
+        flow_rect: Rect,
+        depth: usize,
+    ) -> Result<Option<FlowBox>> {
+        let outer_width = style
+            .resolve_width(flow_rect.width)
+            .map(|width| style.outer_width_for_declared(width))
+            .unwrap_or(flow_rect.width - style.margin.horizontal())
+            .max(1.0);
+        let rect_x = flow_rect.x + style.horizontal_offset(flow_rect.width, outer_width);
+        let rect_y = flow_rect.y + style.margin.top;
+        let inner_x = rect_x + style.border.left + style.padding.left;
+        let inner_y = rect_y + style.border.top + style.padding.top;
+        let inner_width = style.inner_width_for_outer(outer_width);
+        let marker_width = (style.font_size * 1.75).max(20.0).min(inner_width);
+        let content_x = inner_x + marker_width;
+        let content_width = (inner_width - marker_width).max(1.0);
+
+        let (mut children, content_height) =
+            self.layout_children(node, &style, content_x, inner_y, content_width, depth)?;
+        let mut marker_style = style.clone();
+        marker_style.text_align = TextAlign::Right;
+        children.insert(
+            0,
+            LayoutBox {
+                kind: LayoutKind::Text(marker),
+                rect: Rect::new(
+                    inner_x,
+                    inner_y,
+                    (marker_width - 6.0).max(1.0),
+                    style.line_height,
+                ),
+                style: marker_style,
+                children: Vec::new(),
+            },
+        );
+
+        let min_height = style.resolve_height(0.0).unwrap_or(0.0);
+        let rect_height = (content_height.max(style.line_height)
+            + style.padding.vertical()
+            + style.border.vertical())
+        .max(min_height)
+        .max(0.0);
+
+        Ok(Some(FlowBox {
+            advance: style.margin.top + rect_height + style.margin.bottom,
+            node: LayoutBox {
+                kind: LayoutKind::Block,
+                rect: Rect::new(rect_x, rect_y, outer_width, rect_height),
+                style,
+                children,
+            },
+        }))
+    }
+
     fn layout_hr(&mut self, mut style: Style, x: f32, y: f32, containing_width: f32) -> FlowBox {
         let width = style
             .resolve_width(containing_width)
             .unwrap_or(containing_width);
         let height = style
             .resolve_height(0.0)
-            .unwrap_or_else(|| style.border_width.max(1.0))
+            .unwrap_or_else(|| style.border.max_width().max(1.0))
             .max(1.0);
         if style.background.is_none() {
             style.background = Some(style.border_color);
@@ -1283,11 +1442,9 @@ impl<'a> LayoutEngine<'a> {
 
         let mut width: f32 = 0.0;
         for run in buffer.layout_runs() {
-            for glyph in run.glyphs {
-                width = width.max(glyph.x + glyph.w);
-            }
+            width = width.max(run.line_w);
         }
-        width
+        width.ceil()
     }
 
     fn preferred_content_width(
@@ -1351,7 +1508,7 @@ impl<'a> LayoutEngine<'a> {
             } else if child_style.display == Display::InlineBlock {
                 self.preferred_content_width(&child, &child_style, containing_width)?
                     + child_style.padding.horizontal()
-                    + child_style.border_width * 2.0
+                    + child_style.border.horizontal()
             } else {
                 child_style
                     .resolve_width(containing_width)
@@ -1418,13 +1575,14 @@ impl LayoutPainter<'_> {
                 layout.style.border_radius,
             );
         }
-        if layout.style.border_width > 0.0 {
-            stroke_rect(
+        if layout.style.border.max_width() > 0.0 {
+            stroke_style_border(
                 self.pixmap,
                 self.scale,
                 layout.rect,
-                layout.style.border_width,
+                layout.style.border,
                 layout.style.border_color,
+                layout.style.border_radius,
             );
         }
 
@@ -1530,6 +1688,8 @@ struct Style {
     min_height: Option<Length>,
     max_height: Option<Length>,
     margin: Edges,
+    margin_left_auto: bool,
+    margin_right_auto: bool,
     padding: Edges,
     background: Option<Rgba>,
     color: Rgba,
@@ -1538,12 +1698,13 @@ struct Style {
     font_style: FontStyle,
     font_size: f32,
     line_height: f32,
+    letter_spacing: f32,
     text_align: TextAlign,
     text_transform: TextTransform,
     vertical_align: VerticalAlign,
     wrap: TextWrap,
     box_sizing: BoxSizing,
-    border_width: f32,
+    border: Edges,
     border_radius: f32,
     border_color: Rgba,
     border_collapse: BorderCollapse,
@@ -1562,6 +1723,8 @@ impl Style {
             min_height: None,
             max_height: None,
             margin: Edges::ZERO,
+            margin_left_auto: false,
+            margin_right_auto: false,
             padding: Edges::ZERO,
             background: None,
             color: Rgba::BLACK,
@@ -1570,12 +1733,13 @@ impl Style {
             font_style: FontStyle::Normal,
             font_size: 16.0,
             line_height: 22.4,
+            letter_spacing: 0.0,
             text_align: TextAlign::Left,
             text_transform: TextTransform::None,
             vertical_align: VerticalAlign::Top,
             wrap: TextWrap::WordOrGlyph,
             box_sizing: BoxSizing::BorderBox,
-            border_width: 0.0,
+            border: Edges::ZERO,
             border_radius: 0.0,
             border_color: Rgba::BLACK,
             border_collapse: BorderCollapse::Separate,
@@ -1594,6 +1758,8 @@ impl Style {
             min_height: None,
             max_height: None,
             margin: Edges::ZERO,
+            margin_left_auto: false,
+            margin_right_auto: false,
             padding: Edges::ZERO,
             background: None,
             color: parent.color,
@@ -1602,6 +1768,7 @@ impl Style {
             font_style: parent.font_style,
             font_size: parent.font_size,
             line_height: parent.line_height,
+            letter_spacing: parent.letter_spacing,
             text_align: if tag == "table" {
                 TextAlign::Left
             } else {
@@ -1611,7 +1778,7 @@ impl Style {
             vertical_align: VerticalAlign::Top,
             wrap: parent.wrap,
             box_sizing: parent.box_sizing,
-            border_width: 0.0,
+            border: Edges::ZERO,
             border_radius: 0.0,
             border_color: parent.border_color,
             border_collapse: BorderCollapse::Separate,
@@ -1625,6 +1792,17 @@ impl Style {
             "h3" => style.set_font_size(20.0),
             "small" => style.set_font_size(parent.font_size * 0.85),
             "p" => style.margin.bottom = 16.0,
+            "ul" | "ol" => {
+                style.margin.top = 16.0;
+                style.margin.bottom = 16.0;
+                style.padding.left = 40.0;
+            }
+            "hr" => {
+                style.margin.top = 8.0;
+                style.margin.bottom = 8.0;
+                style.border = Edges::all(1.0);
+                style.border_color = Rgba::rgb(0xcb, 0xcc, 0xcf);
+            }
             "strong" | "b" => style.font_weight = FontWeight::BOLD,
             "em" | "i" => style.font_style = FontStyle::Italic,
             "th" => {
@@ -1657,20 +1835,26 @@ impl Style {
             "min-height" => self.min_height = parse_length(value),
             "max-height" => self.max_height = parse_length(value),
             "margin" => {
-                if let Some(edges) = parse_edges_with_font(value, self.font_size) {
+                if let Some((edges, left_auto, right_auto)) =
+                    parse_margin_edges(value, self.font_size)
+                {
                     self.margin = edges;
+                    self.margin_left_auto = left_auto;
+                    self.margin_right_auto = right_auto;
                 }
             }
             "margin-top" => {
                 self.margin.top = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
             }
             "margin-right" => {
+                self.margin_right_auto = value.trim().eq_ignore_ascii_case("auto");
                 self.margin.right = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
             }
             "margin-bottom" => {
                 self.margin.bottom = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
             }
             "margin-left" => {
+                self.margin_left_auto = value.trim().eq_ignore_ascii_case("auto");
                 self.margin.left = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
             }
             "padding" => {
@@ -1717,6 +1901,13 @@ impl Style {
                     self.line_height = line_height.max(1.0);
                 }
             }
+            "letter-spacing" => {
+                self.letter_spacing = if value.trim().eq_ignore_ascii_case("normal") {
+                    0.0
+                } else {
+                    parse_css_length(value, self.font_size, true).unwrap_or(0.0)
+                };
+            }
             "text-align" | "align" => {
                 if let Some(align) = parse_text_align(value) {
                     self.text_align = align;
@@ -1758,16 +1949,29 @@ impl Style {
             "border" => apply_border(self, value),
             "border-radius" => self.border_radius = parse_radius(value).unwrap_or(0.0).max(0.0),
             "border-width" => {
-                self.border_width = parse_edges(value)
-                    .map(|edges| edges.top.max(edges.right).max(edges.bottom).max(edges.left))
-                    .or_else(|| parse_px(value))
-                    .unwrap_or(0.0);
+                self.border = parse_edges(value).unwrap_or(Edges::ZERO);
+            }
+            "border-top-width" => {
+                self.border.top = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+            }
+            "border-right-width" => {
+                self.border.right = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+            }
+            "border-bottom-width" => {
+                self.border.bottom = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
+            }
+            "border-left-width" => {
+                self.border.left = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
             }
             "border-color" => {
                 if let Some(color) = parse_color(value) {
                     self.border_color = color;
                 }
             }
+            "border-top" => apply_border_side(self, BorderSide::Top, value),
+            "border-right" => apply_border_side(self, BorderSide::Right, value),
+            "border-bottom" => apply_border_side(self, BorderSide::Bottom, value),
+            "border-left" => apply_border_side(self, BorderSide::Left, value),
             "border-collapse" => {
                 if value.trim().eq_ignore_ascii_case("collapse") {
                     self.border_collapse = BorderCollapse::Collapse;
@@ -1811,14 +2015,33 @@ impl Style {
     fn outer_width_for_declared(&self, width: f32) -> f32 {
         match self.box_sizing {
             BoxSizing::BorderBox => width,
-            BoxSizing::ContentBox => {
-                width + self.padding.horizontal() + self.border_width.mul_add(2.0, 0.0)
-            }
+            BoxSizing::ContentBox => width + self.padding.horizontal() + self.border.horizontal(),
         }
     }
 
     fn inner_width_for_outer(&self, width: f32) -> f32 {
-        (width - self.padding.horizontal() - self.border_width.mul_add(2.0, 0.0)).max(1.0)
+        (width - self.padding.horizontal() - self.border.horizontal()).max(1.0)
+    }
+
+    fn horizontal_offset(&self, containing_width: f32, outer_width: f32) -> f32 {
+        let fixed_left = if self.margin_left_auto {
+            0.0
+        } else {
+            self.margin.left
+        };
+        let fixed_right = if self.margin_right_auto {
+            0.0
+        } else {
+            self.margin.right
+        };
+        let free = (containing_width - outer_width - fixed_left - fixed_right).max(0.0);
+        if self.margin_left_auto && self.margin_right_auto {
+            fixed_left + free / 2.0
+        } else if self.margin_left_auto {
+            fixed_left + free
+        } else {
+            fixed_left
+        }
     }
 
     fn text_attrs(&self) -> Attrs<'_> {
@@ -1832,10 +2055,15 @@ impl Style {
                 .map_or(FontFamily::SansSerif, FontFamily::Name),
             None => FontFamily::SansSerif,
         };
-        Attrs::new()
+        let attrs = Attrs::new()
             .family(family)
             .weight(self.font_weight)
-            .style(self.font_style)
+            .style(self.font_style);
+        if self.letter_spacing == 0.0 {
+            attrs
+        } else {
+            attrs.letter_spacing(self.letter_spacing / self.font_size.max(1.0))
+        }
     }
 }
 
@@ -1906,6 +2134,10 @@ impl Edges {
 
     fn vertical(self) -> f32 {
         self.top + self.bottom
+    }
+
+    fn max_width(self) -> f32 {
+        self.top.max(self.right).max(self.bottom).max(self.left)
     }
 
     fn is_zero(self) -> bool {
@@ -2038,8 +2270,20 @@ fn style_for_node(node: &NodeRef, parent: &Style) -> Style {
     if let Some(background) = attrs.get("bgcolor").and_then(parse_color) {
         style.background = Some(background);
     }
-    if tag != "table" {
-        if let Some(align) = attrs.get("align").and_then(parse_text_align) {
+    if let Some(raw_align) = attrs.get("align") {
+        if tag == "table" {
+            match parse_text_align(raw_align) {
+                Some(TextAlign::Center) => {
+                    style.margin_left_auto = true;
+                    style.margin_right_auto = true;
+                }
+                Some(TextAlign::Right) => {
+                    style.margin_left_auto = true;
+                    style.margin_right_auto = false;
+                }
+                _ => {}
+            }
+        } else if let Some(align) = parse_text_align(raw_align) {
             style.text_align = align;
         }
     }
@@ -2052,7 +2296,7 @@ fn style_for_node(node: &NodeRef, parent: &Style) -> Style {
         }
         if let Some(border) = attrs.get("border").and_then(parse_px) {
             if border > 0.0 {
-                style.border_width = border;
+                style.border = Edges::all(border);
             }
         }
     }
@@ -2169,6 +2413,37 @@ fn parse_font_size(value: &str, parent_font_size: f32) -> Option<f32> {
 
 fn parse_edges(value: &str) -> Option<Edges> {
     parse_edges_with_font(value, 16.0)
+}
+
+fn parse_margin_edges(value: &str, font_size: f32) -> Option<(Edges, bool, bool)> {
+    let values: Vec<(&str, f32, bool)> = value
+        .split_whitespace()
+        .filter_map(|token| {
+            let is_auto = token.eq_ignore_ascii_case("auto");
+            parse_css_length(token, font_size, true)
+                .or(Some(0.0).filter(|_| is_auto))
+                .map(|length| (token, length, is_auto))
+        })
+        .collect();
+
+    let expanded = match values.as_slice() {
+        [all] => [all, all, all, all],
+        [vertical, horizontal] => [vertical, horizontal, vertical, horizontal],
+        [top, horizontal, bottom] => [top, horizontal, bottom, horizontal],
+        [top, right, bottom, left, ..] => [top, right, bottom, left],
+        _ => return None,
+    };
+
+    Some((
+        Edges {
+            top: expanded[0].1,
+            right: expanded[1].1,
+            bottom: expanded[2].1,
+            left: expanded[3].1,
+        },
+        expanded[3].2,
+        expanded[1].2,
+    ))
 }
 
 fn parse_edges_with_font(value: &str, font_size: f32) -> Option<Edges> {
@@ -2427,14 +2702,14 @@ fn parse_font_style(value: &str) -> FontStyle {
 
 fn apply_border(style: &mut Style, value: &str) {
     if value.contains("none") {
-        style.border_width = 0.0;
+        style.border = Edges::ZERO;
         return;
     }
 
     let mut saw_width = false;
     for token in value.split_whitespace() {
         if let Some(width) = parse_px(token) {
-            style.border_width = width;
+            style.border = Edges::all(width);
             saw_width = true;
         }
         if let Some(color) = parse_color(token) {
@@ -2443,7 +2718,46 @@ fn apply_border(style: &mut Style, value: &str) {
     }
 
     if !saw_width && !value.trim().is_empty() {
-        style.border_width = 1.0;
+        style.border = Edges::all(1.0);
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum BorderSide {
+    Top,
+    Right,
+    Bottom,
+    Left,
+}
+
+fn apply_border_side(style: &mut Style, side: BorderSide, value: &str) {
+    if value.contains("none") {
+        set_border_side(&mut style.border, side, 0.0);
+        return;
+    }
+
+    let mut saw_width = false;
+    for token in value.split_whitespace() {
+        if let Some(width) = parse_px(token) {
+            set_border_side(&mut style.border, side, width);
+            saw_width = true;
+        }
+        if let Some(color) = parse_color(token) {
+            style.border_color = color;
+        }
+    }
+
+    if !saw_width && !value.trim().is_empty() {
+        set_border_side(&mut style.border, side, 1.0);
+    }
+}
+
+fn set_border_side(border: &mut Edges, side: BorderSide, width: f32) {
+    match side {
+        BorderSide::Top => border.top = width,
+        BorderSide::Right => border.right = width,
+        BorderSide::Bottom => border.bottom = width,
+        BorderSide::Left => border.left = width,
     }
 }
 
@@ -2658,7 +2972,7 @@ fn text_content(node: &NodeRef) -> String {
         return String::new();
     }
     if tag == "br" {
-        return "\n".to_string();
+        return HARD_BREAK.to_string();
     }
     if tag == "img" {
         return attr(node, "alt").unwrap_or_default();
@@ -2714,7 +3028,7 @@ fn normalize_text(text: &str) -> String {
     let mut pending_space = false;
 
     for ch in text.chars() {
-        if ch == '\n' {
+        if ch == HARD_BREAK {
             while out.ends_with(' ') {
                 out.pop();
             }
@@ -2844,6 +3158,67 @@ fn fill_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, color: Rgba) {
     pixmap.fill_rect(rect, &paint, Transform::identity(), None);
 }
 
+fn stroke_style_border(
+    pixmap: &mut Pixmap,
+    scale: f32,
+    rect: Rect,
+    border: Edges,
+    color: Rgba,
+    _radius: f32,
+) {
+    if border.top == border.right
+        && border.top == border.bottom
+        && border.top == border.left
+        && border.top > 0.0
+    {
+        stroke_rect(pixmap, scale, rect, border.top, color);
+        return;
+    }
+
+    if border.top > 0.0 {
+        fill_rect(
+            pixmap,
+            scale,
+            Rect::new(rect.x, rect.y, rect.width, border.top),
+            color,
+        );
+    }
+    if border.bottom > 0.0 {
+        fill_rect(
+            pixmap,
+            scale,
+            Rect::new(
+                rect.x,
+                rect.y + rect.height - border.bottom,
+                rect.width,
+                border.bottom,
+            ),
+            color,
+        );
+    }
+    if border.left > 0.0 {
+        fill_rect(
+            pixmap,
+            scale,
+            Rect::new(rect.x, rect.y, border.left, rect.height),
+            color,
+        );
+    }
+    if border.right > 0.0 {
+        fill_rect(
+            pixmap,
+            scale,
+            Rect::new(
+                rect.x + rect.width - border.right,
+                rect.y,
+                border.right,
+                rect.height,
+            ),
+            color,
+        );
+    }
+}
+
 fn stroke_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, width: f32, color: Rgba) {
     let width = width.max(1.0);
     fill_rect(
@@ -2928,24 +3303,55 @@ fn draw_image(pixmap: &mut Pixmap, scale: f32, rect: Rect, image: &ImageData) {
     }
 
     for py in start_y..end_y {
-        let rel_y = (py - y0) as f32 / target_height as f32;
-        let src_y = (rel_y * image.height as f32).floor() as u32;
-        let src_y = src_y.min(image.height.saturating_sub(1));
+        let src_y = ((py - y0) as f32 + 0.5) * image.height as f32 / target_height as f32 - 0.5;
         for px in start_x..end_x {
-            let rel_x = (px - x0) as f32 / target_width as f32;
-            let src_x = (rel_x * image.width as f32).floor() as u32;
-            let src_x = src_x.min(image.width.saturating_sub(1));
-            let src_index = ((src_y * image.width + src_x) * 4) as usize;
+            let src_x = ((px - x0) as f32 + 0.5) * image.width as f32 / target_width as f32 - 0.5;
+            let [r, g, b, a] = sample_image_bilinear(image, src_x, src_y);
             let dst_index = ((py as u32 * pixmap_width as u32 + px as u32) * 4) as usize;
-            composite_pixel(
-                &mut data[dst_index..dst_index + 4],
-                image.rgba[src_index],
-                image.rgba[src_index + 1],
-                image.rgba[src_index + 2],
-                image.rgba[src_index + 3],
-            );
+            composite_pixel(&mut data[dst_index..dst_index + 4], r, g, b, a);
         }
     }
+}
+
+fn sample_image_bilinear(image: &ImageData, x: f32, y: f32) -> [u8; 4] {
+    let max_x = image.width.saturating_sub(1);
+    let max_y = image.height.saturating_sub(1);
+    let x = x.clamp(0.0, max_x as f32);
+    let y = y.clamp(0.0, max_y as f32);
+    let x0 = x.floor() as u32;
+    let y0 = y.floor() as u32;
+    let x1 = x0.saturating_add(1).min(max_x);
+    let y1 = y0.saturating_add(1).min(max_y);
+    let tx = x - x0 as f32;
+    let ty = y - y0 as f32;
+
+    let p00 = image_pixel(image, x0, y0);
+    let p10 = image_pixel(image, x1, y0);
+    let p01 = image_pixel(image, x0, y1);
+    let p11 = image_pixel(image, x1, y1);
+    let mut sampled = [0; 4];
+
+    for channel in 0..4 {
+        let top = lerp(p00[channel] as f32, p10[channel] as f32, tx);
+        let bottom = lerp(p01[channel] as f32, p11[channel] as f32, tx);
+        sampled[channel] = lerp(top, bottom, ty).round().clamp(0.0, 255.0) as u8;
+    }
+
+    sampled
+}
+
+fn image_pixel(image: &ImageData, x: u32, y: u32) -> [u8; 4] {
+    let index = ((y * image.width + x) * 4) as usize;
+    [
+        image.rgba[index],
+        image.rgba[index + 1],
+        image.rgba[index + 2],
+        image.rgba[index + 3],
+    ]
+}
+
+fn lerp(start: f32, end: f32, amount: f32) -> f32 {
+    start + (end - start) * amount
 }
 
 fn composite_pixel(dst: &mut [u8], r: u8, g: u8, b: u8, a: u8) {
@@ -3164,6 +3570,15 @@ mod tests {
     }
 
     #[test]
+    fn parses_letter_spacing_against_current_font_size() {
+        let mut style = Style::initial();
+        style.apply_declaration("letter-spacing", "0.00938em");
+        assert!((style.letter_spacing - 0.15008).abs() < 0.001);
+        style.apply_declaration("letter-spacing", "normal");
+        assert_eq!(style.letter_spacing, 0.0);
+    }
+
+    #[test]
     fn parses_em_spacing_against_current_font_size() {
         let edges = parse_edges_with_font(".4em 0 1.1875em", 16.0).unwrap();
         assert!((edges.top - 6.4).abs() < 0.1);
@@ -3196,7 +3611,34 @@ mod tests {
     fn zero_border_shorthand_does_not_create_default_border() {
         let mut style = Style::initial();
         style.apply_declaration("border", "0");
-        assert_eq!(style.border_width, 0.0);
+        assert_eq!(style.border, Edges::ZERO);
+    }
+
+    #[test]
+    fn parses_asymmetric_border_widths() {
+        let mut style = Style::initial();
+        style.apply_declaration("border-width", "10px 20px");
+        assert_eq!(
+            style.border,
+            Edges {
+                top: 10.0,
+                right: 20.0,
+                bottom: 10.0,
+                left: 20.0,
+            }
+        );
+        style.apply_declaration("border-left-width", "0");
+        assert_eq!(style.border.left, 0.0);
+    }
+
+    #[test]
+    fn parses_border_side_shorthand() {
+        let mut style = Style::initial();
+        style.apply_declaration("border-top", "10px solid #22BC66");
+        style.apply_declaration("border-right", "18px solid #22BC66");
+        assert_eq!(style.border.top, 10.0);
+        assert_eq!(style.border.right, 18.0);
+        assert_eq!(style.border_color, Rgba::rgb(0x22, 0xbc, 0x66));
     }
 
     #[test]
@@ -3214,6 +3656,13 @@ mod tests {
             |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "CONFIRM"),
         );
         assert!(text.is_some());
+    }
+
+    #[test]
+    fn collapses_source_newlines_but_preserves_br_breaks() {
+        assert_eq!(normalize_text("Viewed by\n  Someone"), "Viewed by Someone");
+        let with_break = format!("Viewed by{HARD_BREAK}Someone");
+        assert_eq!(normalize_text(&with_break), "Viewed by\nSomeone");
     }
 
     #[test]
@@ -3245,6 +3694,21 @@ mod tests {
     }
 
     #[test]
+    fn list_items_render_markers() {
+        let layout = layout_for_test("<ul><li>First</li><li>Second</li></ul>", 200);
+        let marker = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "\u{2022}"),
+        );
+        let text = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "First"),
+        );
+        assert!(marker.is_some());
+        assert!(text.is_some());
+    }
+
+    #[test]
     fn nested_table_content_does_not_inherit_outer_align_attribute() {
         let layout = layout_for_test(
             r#"<table width="200"><tr><td align="center"><table width="100"><tr><td>Inner</td></tr></table></td></tr></table>"#,
@@ -3264,6 +3728,28 @@ mod tests {
         let text =
             find_layout(&layout, |child| matches!(child.kind, LayoutKind::Text(_))).expect("text");
         assert_eq!(text.style.text_align, TextAlign::Left);
+    }
+
+    #[test]
+    fn table_align_center_offsets_table_horizontally() {
+        let layout = layout_for_test(
+            r#"<table align="center" width="100"><tr><td>Inner</td></tr></table>"#,
+            200,
+        );
+        let table =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+        assert!((table.rect.x - 50.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn auto_horizontal_margins_center_fixed_width_blocks() {
+        let layout = layout_for_test(
+            r#"<div style="width:100px;margin:0 auto;background:#000">Inner</div>"#,
+            200,
+        );
+        let block = find_layout(&layout, |child| child.style.background == Some(Rgba::BLACK))
+            .expect("block");
+        assert!((block.rect.x - 50.0).abs() < 0.1);
     }
 
     #[test]
@@ -3293,6 +3779,19 @@ mod tests {
         .expect("image");
         assert!((image.rect.width - 20.0).abs() < 0.1);
         assert!((image.rect.height - 10.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn bilinear_image_sampling_blends_neighbor_pixels() {
+        let image = ImageData {
+            width: 2,
+            height: 1,
+            rgba: vec![0, 0, 0, 255, 255, 255, 255, 255],
+        };
+
+        let sampled = sample_image_bilinear(&image, 0.5, 0.0);
+
+        assert_eq!(sampled, [128, 128, 128, 255]);
     }
 
     #[test]
