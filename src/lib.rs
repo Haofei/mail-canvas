@@ -789,7 +789,7 @@ impl<'a> LayoutEngine<'a> {
                 ) {
                     previous_margin_bottom = None;
                 }
-                append_text_span(&mut text, &text_value, style.color);
+                append_text_span(&mut text, &text_value, style);
                 continue;
             }
 
@@ -812,7 +812,7 @@ impl<'a> LayoutEngine<'a> {
                 ) {
                     previous_margin_bottom = None;
                 }
-                append_text_span(&mut text, &HARD_BREAK.to_string(), style.color);
+                append_text_span(&mut text, &HARD_BREAK.to_string(), style);
                 continue;
             }
 
@@ -832,7 +832,7 @@ impl<'a> LayoutEngine<'a> {
                 && !inline_style_has_own_box(&child_style)
                 && inline_can_flatten(&child, &child_style)
             {
-                append_color_spans(&child, &child_style, &mut text);
+                append_inline_spans(&child, &child_style, &mut text);
                 continue;
             }
 
@@ -990,7 +990,7 @@ impl<'a> LayoutEngine<'a> {
         width: f32,
         children: &mut Vec<LayoutBox>,
     ) -> Result<bool> {
-        let normalized = normalize_text_spans(text, style.text_transform);
+        let normalized = normalize_text_spans(text);
         text.clear();
 
         if normalized.is_empty() {
@@ -998,8 +998,13 @@ impl<'a> LayoutEngine<'a> {
         }
 
         let plain_text = spans_text(&normalized);
-        let height = self.measure_text_height(&plain_text, width, style)?;
-        let kind = if normalized.iter().all(|span| span.color == style.color) {
+        let matches_parent_style = text_spans_match_style(&normalized, style);
+        let height = if matches_parent_style {
+            self.measure_text_height(&plain_text, width, style)?
+        } else {
+            self.measure_rich_text_height(&normalized, width, style)?
+        };
+        let kind = if matches_parent_style {
             LayoutKind::Text(plain_text)
         } else {
             LayoutKind::RichText(normalized)
@@ -1196,14 +1201,22 @@ impl<'a> LayoutEngine<'a> {
                 if text_value.chars().all(is_collapsible_whitespace) {
                     continue;
                 }
-                let normalized = normalize_text_spans(
-                    &[TextSpan::new(text_value.to_string(), style.color)],
-                    style.text_transform,
-                );
+                let normalized =
+                    normalize_text_spans(&[TextSpan::from_style(text_value.to_string(), &style)]);
                 let plain_text = spans_text(&normalized);
-                let item_width = self.measure_text_width(&plain_text, &style).max(1.0);
-                let item_height = self.measure_text_height(&plain_text, item_width, &style)?;
-                let kind = if normalized.iter().all(|span| span.color == style.color) {
+                let matches_parent_style = text_spans_match_style(&normalized, &style);
+                let item_width = if matches_parent_style {
+                    self.measure_text_width(&plain_text, &style)
+                } else {
+                    self.measure_rich_text_width(&normalized, &style)
+                }
+                .max(1.0);
+                let item_height = if matches_parent_style {
+                    self.measure_text_height(&plain_text, item_width, &style)?
+                } else {
+                    self.measure_rich_text_height(&normalized, item_width, &style)?
+                };
+                let kind = if matches_parent_style {
                     LayoutKind::Text(plain_text)
                 } else {
                     LayoutKind::RichText(normalized)
@@ -1901,6 +1914,33 @@ impl<'a> LayoutEngine<'a> {
         Ok(height.max(line_height))
     }
 
+    fn measure_rich_text_height(
+        &mut self,
+        spans: &[TextSpan],
+        width: f32,
+        style: &Style,
+    ) -> Result<f32> {
+        let line_height = resolved_line_height_from_db(self.font_system.db(), style);
+        let metrics = Metrics::new(style.font_size.max(1.0), line_height.max(1.0));
+        let rich_spans = rich_text_style_spans(spans, self.font_system.db(), 1.0, style);
+        let mut buffer = Buffer::new_empty(metrics);
+        buffer.set_wrap(self.font_system, style.wrap.to_cosmic());
+        buffer.set_size(self.font_system, Some(width.max(1.0)), None);
+        buffer.set_rich_text(
+            self.font_system,
+            rich_spans,
+            &style.text_attrs(),
+            Shaping::Advanced,
+            Some(style.text_align.to_cosmic()),
+        );
+
+        let mut height: f32 = 0.0;
+        for run in buffer.layout_runs() {
+            height = height.max(run.line_top + run.line_height);
+        }
+        Ok(height.max(line_height))
+    }
+
     fn measure_text_width(&mut self, text: &str, style: &Style) -> f32 {
         let line_height = resolved_line_height_from_db(self.font_system.db(), style);
         let metrics = Metrics::new(style.font_size.max(1.0), line_height.max(1.0));
@@ -1910,6 +1950,28 @@ impl<'a> LayoutEngine<'a> {
         buffer.set_text(
             self.font_system,
             text,
+            &style.text_attrs(),
+            Shaping::Advanced,
+            Some(TextAlignMode::Left),
+        );
+
+        let mut width: f32 = 0.0;
+        for run in buffer.layout_runs() {
+            width = width.max(run.line_w);
+        }
+        width.ceil()
+    }
+
+    fn measure_rich_text_width(&mut self, spans: &[TextSpan], style: &Style) -> f32 {
+        let line_height = resolved_line_height_from_db(self.font_system.db(), style);
+        let metrics = Metrics::new(style.font_size.max(1.0), line_height.max(1.0));
+        let rich_spans = rich_text_style_spans(spans, self.font_system.db(), 1.0, style);
+        let mut buffer = Buffer::new_empty(metrics);
+        buffer.set_wrap(self.font_system, Wrap::None);
+        buffer.set_size(self.font_system, None, None);
+        buffer.set_rich_text(
+            self.font_system,
+            rich_spans,
             &style.text_attrs(),
             Shaping::Advanced,
             Some(TextAlignMode::Left),
@@ -2263,10 +2325,12 @@ impl LayoutPainter<'_> {
     }
 
     fn paint_rich_text(&mut self, rect: Rect, style: &Style, spans: &[TextSpan]) {
+        let scale = self.scale;
         self.paint_text_buffer(rect, style, |buffer, font_system| {
+            let rich_spans = rich_text_style_spans(spans, font_system.db(), scale, style);
             buffer.set_rich_text(
                 font_system,
-                rich_text_color_spans(spans, style),
+                rich_spans,
                 &style.text_attrs(),
                 Shaping::Advanced,
                 Some(style.text_align.to_cosmic()),
@@ -2364,12 +2428,94 @@ enum LayoutKind {
 #[derive(Debug, Clone)]
 struct TextSpan {
     text: String,
-    color: Rgba,
+    style: TextRunStyle,
 }
 
 impl TextSpan {
-    fn new(text: String, color: Rgba) -> Self {
-        Self { text, color }
+    fn from_style(text: String, style: &Style) -> Self {
+        Self {
+            text,
+            style: TextRunStyle::from_style(style),
+        }
+    }
+
+    fn with_run_style(text: String, style: TextRunStyle) -> Self {
+        Self { text, style }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct TextRunStyle {
+    color: Rgba,
+    font_family: Option<String>,
+    font_weight: FontWeight,
+    font_face_weight: Option<FontWeight>,
+    font_style: FontStyle,
+    font_size: f32,
+    line_height: f32,
+    line_height_factor: Option<f32>,
+    line_height_normal: bool,
+    letter_spacing: f32,
+    text_transform: TextTransform,
+}
+
+impl TextRunStyle {
+    fn from_style(style: &Style) -> Self {
+        Self {
+            color: style.color,
+            font_family: style.font_family.clone(),
+            font_weight: style.font_weight,
+            font_face_weight: style.font_face_weight,
+            font_style: style.font_style,
+            font_size: style.font_size,
+            line_height: style.line_height,
+            line_height_factor: style.line_height_factor,
+            line_height_normal: style.line_height_normal,
+            letter_spacing: style.letter_spacing,
+            text_transform: style.text_transform,
+        }
+    }
+
+    fn text_attrs(&self) -> Attrs<'_> {
+        let attrs = Attrs::new()
+            .family(cosmic_font_family(self.font_family.as_deref()))
+            .weight(self.font_face_weight.unwrap_or(self.font_weight))
+            .style(self.font_style);
+        if self.letter_spacing == 0.0 {
+            attrs
+        } else {
+            attrs.letter_spacing(self.letter_spacing / self.font_size.max(1.0))
+        }
+    }
+
+    fn text_attrs_for_span(
+        &self,
+        db: &fontdb::Database,
+        scale: f32,
+        parent_style: &Style,
+    ) -> Attrs<'_> {
+        let attrs = self.text_attrs().color(TextColor::rgba(
+            self.color.r,
+            self.color.g,
+            self.color.b,
+            self.color.a,
+        ));
+        if !self.needs_own_metrics(db, parent_style) {
+            return attrs;
+        }
+
+        let font_size = (self.font_size * scale).max(1.0);
+        let line_height = (resolved_line_height_from_run_db(db, self) * scale).max(1.0);
+        attrs.metrics(Metrics::new(font_size, line_height))
+    }
+
+    fn needs_own_metrics(&self, db: &fontdb::Database, parent_style: &Style) -> bool {
+        if (self.font_size - parent_style.font_size).abs() > 0.01 {
+            return true;
+        }
+        let run_line_height = resolved_line_height_from_run_db(db, self);
+        let parent_line_height = resolved_line_height_from_db(db, parent_style);
+        (run_line_height - parent_line_height).abs() > 0.01
     }
 }
 
@@ -3082,18 +3228,8 @@ impl Style {
     }
 
     fn text_attrs(&self) -> Attrs<'_> {
-        let family = match self.font_family.as_deref().map(str::to_ascii_lowercase) {
-            Some(family) if family == "serif" => FontFamily::Serif,
-            Some(family) if family == "monospace" => FontFamily::Monospace,
-            Some(family) if family == "sans-serif" => FontFamily::SansSerif,
-            Some(_) => self
-                .font_family
-                .as_deref()
-                .map_or(FontFamily::SansSerif, FontFamily::Name),
-            None => FontFamily::SansSerif,
-        };
         let attrs = Attrs::new()
-            .family(family)
+            .family(cosmic_font_family(self.font_family.as_deref()))
             .weight(self.font_face_weight.unwrap_or(self.font_weight))
             .style(self.font_style);
         if self.letter_spacing == 0.0 {
@@ -3104,12 +3240,30 @@ impl Style {
     }
 }
 
+fn cosmic_font_family(font_family: Option<&str>) -> FontFamily<'_> {
+    match font_family.map(str::to_ascii_lowercase) {
+        Some(family) if family == "serif" => FontFamily::Serif,
+        Some(family) if family == "monospace" => FontFamily::Monospace,
+        Some(family) if family == "sans-serif" => FontFamily::SansSerif,
+        Some(_) => font_family.map_or(FontFamily::SansSerif, FontFamily::Name),
+        None => FontFamily::SansSerif,
+    }
+}
+
 fn resolved_line_height_from_db(db: &fontdb::Database, style: &Style) -> f32 {
     if !style.line_height_normal {
         return style.line_height.max(1.0);
     }
 
     blink_normal_line_height_from_db(db, style).unwrap_or_else(|| style.line_height.max(1.0))
+}
+
+fn resolved_line_height_from_run_db(db: &fontdb::Database, style: &TextRunStyle) -> f32 {
+    if !style.line_height_normal {
+        return style.line_height.max(1.0);
+    }
+
+    blink_normal_line_height_from_run_db(db, style).unwrap_or_else(|| style.line_height.max(1.0))
 }
 
 fn blink_normal_line_height_from_db(db: &fontdb::Database, style: &Style) -> Option<f32> {
@@ -3128,8 +3282,35 @@ fn blink_normal_line_height_from_db(db: &fontdb::Database, style: &Style) -> Opt
     .flatten()
 }
 
+fn blink_normal_line_height_from_run_db(
+    db: &fontdb::Database,
+    style: &TextRunStyle,
+) -> Option<f32> {
+    let family = fontdb_family_for_run_style(style);
+    let families = [family];
+    let query = fontdb::Query {
+        families: &families,
+        weight: style.font_face_weight.unwrap_or(style.font_weight),
+        stretch: fontdb::Stretch::Normal,
+        style: style.font_style,
+    };
+    let id = db.query(&query)?;
+    db.with_face_data(id, |font_data, face_index| {
+        blink_normal_line_height_from_face(font_data, face_index, style.font_size)
+    })
+    .flatten()
+}
+
 fn fontdb_family_for_style(style: &Style) -> fontdb::Family<'_> {
-    match style.font_family.as_deref() {
+    fontdb_family(style.font_family.as_deref())
+}
+
+fn fontdb_family_for_run_style(style: &TextRunStyle) -> fontdb::Family<'_> {
+    fontdb_family(style.font_family.as_deref())
+}
+
+fn fontdb_family(font_family: Option<&str>) -> fontdb::Family<'_> {
+    match font_family {
         Some(family) if family.eq_ignore_ascii_case("serif") => fontdb::Family::Serif,
         Some(family) if family.eq_ignore_ascii_case("monospace") => fontdb::Family::Monospace,
         Some(family) if family.eq_ignore_ascii_case("sans-serif") => fontdb::Family::SansSerif,
@@ -4978,6 +5159,10 @@ fn text_content(node: &NodeRef) -> String {
     out
 }
 
+fn append_text(out: &mut String, text: &str) {
+    out.push_str(text);
+}
+
 fn table_cell_is_spacer(node: &NodeRef) -> bool {
     let text = text_content(node);
     text.chars().any(|ch| ch == '\u{00a0}')
@@ -5021,19 +5206,15 @@ fn inline_can_flatten(node: &NodeRef, style: &Style) -> bool {
     true
 }
 
-fn append_text(out: &mut String, text: &str) {
-    out.push_str(text);
-}
-
-fn append_text_span(out: &mut Vec<TextSpan>, text: &str, color: Rgba) {
+fn append_text_span(out: &mut Vec<TextSpan>, text: &str, style: &Style) {
     if !text.is_empty() {
-        out.push(TextSpan::new(text.to_string(), color));
+        out.push(TextSpan::from_style(text.to_string(), style));
     }
 }
 
-fn append_color_spans(node: &NodeRef, style: &Style, out: &mut Vec<TextSpan>) {
+fn append_inline_spans(node: &NodeRef, style: &Style, out: &mut Vec<TextSpan>) {
     if let Some(text) = node.as_text() {
-        append_text_span(out, &text.borrow(), style.color);
+        append_text_span(out, &text.borrow(), style);
         return;
     }
 
@@ -5044,17 +5225,17 @@ fn append_color_spans(node: &NodeRef, style: &Style, out: &mut Vec<TextSpan>) {
         return;
     }
     if tag == "br" {
-        append_text_span(out, &HARD_BREAK.to_string(), style.color);
+        append_text_span(out, &HARD_BREAK.to_string(), style);
         return;
     }
     if tag == "img" {
-        append_text_span(out, &attr(node, "alt").unwrap_or_default(), style.color);
+        append_text_span(out, &attr(node, "alt").unwrap_or_default(), style);
         return;
     }
 
     for child in node.children() {
         if child.as_text().is_some() {
-            append_color_spans(&child, style, out);
+            append_inline_spans(&child, style, out);
             continue;
         }
         let Some(child_tag) = element_tag(&child) else {
@@ -5065,21 +5246,22 @@ fn append_color_spans(node: &NodeRef, style: &Style, out: &mut Vec<TextSpan>) {
         }
         let child_style = style_for_node(&child, style);
         if child_style.display != Display::None {
-            append_color_spans(&child, &child_style, out);
+            append_inline_spans(&child, &child_style, out);
         }
     }
 }
 
 fn normalize_text(text: &str) -> String {
-    spans_text(&normalize_text_spans(
-        &[TextSpan::new(text.to_string(), Rgba::BLACK)],
-        TextTransform::None,
-    ))
+    let style = Style::initial();
+    spans_text(&normalize_text_spans(&[TextSpan::from_style(
+        text.to_string(),
+        &style,
+    )]))
 }
 
-fn normalize_text_spans(spans: &[TextSpan], text_transform: TextTransform) -> Vec<TextSpan> {
+fn normalize_text_spans(spans: &[TextSpan]) -> Vec<TextSpan> {
     let mut out = Vec::new();
-    let mut pending_space = false;
+    let mut pending_space_style: Option<TextRunStyle> = None;
 
     for span in spans {
         let mut segment = String::new();
@@ -5088,30 +5270,39 @@ fn normalize_text_spans(spans: &[TextSpan], text_transform: TextTransform) -> Ve
                 while segment.ends_with(' ') {
                     segment.pop();
                 }
-                push_text_span_segment(&mut out, segment, span.color, text_transform);
+                push_text_span_segment(&mut out, segment, &span.style);
                 trim_trailing_span_space(&mut out);
                 if !rich_text_ends_with_newline(&out) {
-                    out.push(TextSpan::new("\n".to_string(), span.color));
+                    out.push(TextSpan::with_run_style(
+                        "\n".to_string(),
+                        span.style.clone(),
+                    ));
                 }
                 segment = String::new();
-                pending_space = false;
+                pending_space_style = None;
             } else if is_collapsible_whitespace(ch) {
-                pending_space = true;
+                pending_space_style.get_or_insert_with(|| span.style.clone());
             } else {
                 let at_line_start_after_break =
                     segment.is_empty() && rich_text_ends_with_newline(&out);
-                if pending_space
-                    && (!out.is_empty() || !segment.is_empty())
-                    && !segment.ends_with('\n')
-                    && !at_line_start_after_break
-                {
-                    segment.push(' ');
+                if let Some(space_style) = pending_space_style.take() {
+                    if (!out.is_empty() || !segment.is_empty())
+                        && !segment.ends_with('\n')
+                        && !at_line_start_after_break
+                    {
+                        if space_style == span.style {
+                            segment.push(' ');
+                        } else {
+                            push_text_span_segment(&mut out, segment, &span.style);
+                            segment = String::new();
+                            push_text_span_segment(&mut out, " ".to_string(), &space_style);
+                        }
+                    }
                 }
                 segment.push(ch);
-                pending_space = false;
             }
         }
-        push_text_span_segment(&mut out, segment, span.color, text_transform);
+        push_text_span_segment(&mut out, segment, &span.style);
     }
 
     trim_leading_span_space(&mut out);
@@ -5119,18 +5310,19 @@ fn normalize_text_spans(spans: &[TextSpan], text_transform: TextTransform) -> Ve
     out
 }
 
-fn push_text_span_segment(
-    out: &mut Vec<TextSpan>,
-    text: String,
-    color: Rgba,
-    text_transform: TextTransform,
-) {
+fn push_text_span_segment(out: &mut Vec<TextSpan>, text: String, style: &TextRunStyle) {
     if text.is_empty() {
         return;
     }
-    let text = apply_text_transform(&text, text_transform);
+    let text = apply_text_transform(&text, style.text_transform);
     if !text.is_empty() {
-        out.push(TextSpan::new(text, color));
+        if let Some(last) = out.last_mut() {
+            if last.style == *style {
+                last.text.push_str(&text);
+                return;
+            }
+        }
+        out.push(TextSpan::with_run_style(text, style.clone()));
     }
 }
 
@@ -5176,21 +5368,26 @@ fn spans_text(spans: &[TextSpan]) -> String {
     spans.iter().map(|span| span.text.as_str()).collect()
 }
 
-fn rich_text_color_spans<'a>(
+fn text_spans_match_style(spans: &[TextSpan], style: &Style) -> bool {
+    let parent_style = TextRunStyle::from_style(style);
+    spans.iter().all(|span| span.style == parent_style)
+}
+
+fn rich_text_style_spans<'a>(
     spans: &'a [TextSpan],
-    style: &'a Style,
-) -> impl Iterator<Item = (&'a str, Attrs<'a>)> + 'a {
-    spans.iter().map(|span| {
-        (
-            span.text.as_str(),
-            style.text_attrs().color(TextColor::rgba(
-                span.color.r,
-                span.color.g,
-                span.color.b,
-                span.color.a,
-            )),
-        )
-    })
+    db: &fontdb::Database,
+    scale: f32,
+    parent_style: &'a Style,
+) -> Vec<(&'a str, Attrs<'a>)> {
+    spans
+        .iter()
+        .map(|span| {
+            (
+                span.text.as_str(),
+                span.style.text_attrs_for_span(db, scale, parent_style),
+            )
+        })
+        .collect()
 }
 
 fn fill_style_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, color: Rgba, radius: f32) {
@@ -7096,7 +7293,30 @@ mod tests {
             unreachable!();
         };
         assert_eq!(spans_text(spans), "Open link");
-        assert_eq!(spans[1].color, Rgba::rgb(0x25, 0x63, 0xeb));
+        assert_eq!(spans[0].text, "Open ");
+        assert_eq!(spans[0].style.color, Rgba::BLACK);
+        assert_eq!(spans[1].text, "link");
+        assert_eq!(spans[1].style.color, Rgba::rgb(0x25, 0x63, 0xeb));
+    }
+
+    #[test]
+    fn flattened_inline_text_preserves_font_runs() {
+        let layout = layout_for_test(
+            r#"<h1 style="font-size:30px;font-family:serif">Open <a style="font-size:20px;font-family:sans-serif;font-weight:400;text-transform:uppercase">link</a></h1>"#,
+            300,
+        );
+        let rich = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::RichText(_))
+        })
+        .expect("rich text");
+        let LayoutKind::RichText(spans) = &rich.kind else {
+            unreachable!();
+        };
+        assert_eq!(spans_text(spans), "Open LINK");
+        assert_eq!(spans[0].style.font_size, 30.0);
+        assert_eq!(spans[1].style.font_size, 20.0);
+        assert_eq!(spans[1].style.font_family.as_deref(), Some("sans-serif"));
+        assert_eq!(spans[1].style.font_weight, FontWeight::NORMAL);
     }
 
     #[test]

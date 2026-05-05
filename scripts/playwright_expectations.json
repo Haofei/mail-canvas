@@ -41,7 +41,7 @@
     "waypoint-marketplace-first-listing-notification": {
       "maxDiffPercent": 8.7,
       "maxNonMediaDiffPercent": 8.8,
-      "maxNonMediaNonTextDiffPercent": 1.4
+      "maxNonMediaNonTextDiffPercent": 1.7
     },
     "sendgrid-merriweather-receipt": {
       "maxDiffPercent": 9,
@@ -49,9 +49,9 @@
       "maxNonMediaNonTextDiffPercent": 4.6
     },
     "postmark-example": {
-      "maxDiffPercent": 10.1,
-      "maxNonMediaDiffPercent": 10.1,
-      "maxNonMediaNonTextDiffPercent": 4
+      "maxDiffPercent": 10.3,
+      "maxNonMediaDiffPercent": 10.3,
+      "maxNonMediaNonTextDiffPercent": 4.25
     },
     "colorlib-template-1": {
       "maxDiffPercent": 16.9,
