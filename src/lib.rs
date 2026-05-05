@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use cosmic_text::{
-    Align as TextAlignMode, Attrs, Buffer, CacheKeyFlags, Color as TextColor, Family as FontFamily,
-    FontSystem, Metrics, Shaping, Style as FontStyle, SwashCache, Weight as FontWeight, Wrap,
+    Align as TextAlignMode, Attrs, Buffer, Color as TextColor, FontSystem, Metrics, Shaping,
+    Style as FontStyle, SwashCache, Weight as FontWeight, Wrap,
 };
 use kuchiki::{NodeRef, traits::TendrilSink as _};
 use pdf_writer::{Content, Name, Pdf, Rect as PdfRect, Ref};
@@ -28,6 +28,7 @@ use url::Url;
 mod css;
 mod document;
 mod resource;
+mod text;
 
 use css::{
     css_declarations, css_format_hint, css_function_value, first_css_url, first_quoted_css_string,
@@ -36,6 +37,15 @@ use css::{
 };
 pub use document::{PreparedDocument, build_document, build_document_from_files};
 use resource::{ImageData, ResourcePolicy, load_image, load_resource_bytes};
+use text::{
+    blink_font_descent_from_db, normal_line_height_fallback, parse_line_height_declaration,
+    resolved_line_height_from_db, resolved_line_height_from_run_db,
+    rich_text_baseline_leading_offset, text_style_attrs,
+};
+#[cfg(test)]
+use text::{
+    blink_mac_ascent_hack_applies, blink_web_standard_family_ascent_adjustment, fontdb_family,
+};
 
 const MAX_RENDER_PIXELS_PER_AXIS: u32 = 16_384;
 const MAX_CONSOLE_MESSAGES: usize = 50;
@@ -1922,7 +1932,7 @@ impl<'a> LayoutEngine<'a> {
             Err(error) => {
                 self.push_warning(
                     "warn",
-                    &format!("failed to load image {src}: {error}; drew placeholder"),
+                    &format!("failed to load image {src}: {error}; left image box empty"),
                 );
                 None
             }
@@ -2501,7 +2511,7 @@ impl LayoutPainter<'_> {
             LayoutKind::Image(Some(image)) => {
                 self.paint_image(layout.rect, &layout.style, image, opacity)
             }
-            LayoutKind::Image(None) => self.paint_image_placeholder(layout.rect, opacity),
+            LayoutKind::Image(None) => {}
             LayoutKind::Block | LayoutKind::Table | LayoutKind::Row | LayoutKind::Cell => {}
         }
 
@@ -2565,11 +2575,9 @@ impl LayoutPainter<'_> {
         );
         set_text(&mut buffer, self.font_system);
 
-        let origin_x = rect.x * self.scale + text_origin_x_offset(style);
-        let origin_y =
-            rect.y * self.scale + text_origin_y_offset(style) + origin_y_extra * self.scale;
+        let origin_x = rect.x * self.scale;
+        let origin_y = rect.y * self.scale + origin_y_extra * self.scale;
         let color = TextColor::rgba(style.color.r, style.color.g, style.color.b, style.color.a);
-        let coverage_scale = text_coverage_scale(style);
         let synthetic_bold = needs_synthetic_bold_paint(style);
         for shadow in style.text_shadows.iter().rev() {
             if shadow.blur_radius > 0.0 {
@@ -2588,7 +2596,6 @@ impl LayoutPainter<'_> {
                 PaintTextRunOptions {
                     color: shadow_color,
                     opacity,
-                    coverage_scale,
                     synthetic_bold,
                     use_glyph_color: false,
                 },
@@ -2601,7 +2608,6 @@ impl LayoutPainter<'_> {
             PaintTextRunOptions {
                 color,
                 opacity,
-                coverage_scale,
                 synthetic_bold,
                 use_glyph_color: true,
             },
@@ -2637,7 +2643,6 @@ impl LayoutPainter<'_> {
                             1,
                             1,
                             color,
-                            options.coverage_scale,
                         );
                         if options.synthetic_bold {
                             blend_text_rect(
@@ -2647,29 +2652,12 @@ impl LayoutPainter<'_> {
                                 1,
                                 1,
                                 color,
-                                options.coverage_scale,
                             );
                         }
                     },
                 );
             }
         }
-    }
-
-    fn paint_image_placeholder(&mut self, rect: Rect, opacity: f32) {
-        fill_rect(
-            self.pixmap,
-            self.scale,
-            rect,
-            with_opacity(Rgba::rgb(0xe5, 0xe7, 0xeb), opacity),
-        );
-        stroke_rect(
-            self.pixmap,
-            self.scale,
-            rect,
-            1.0,
-            with_opacity(Rgba::rgb(0x9c, 0xa3, 0xaf), opacity),
-        );
     }
 
     fn paint_image(&mut self, rect: Rect, style: &Style, image: &ImageData, opacity: f32) {
@@ -2714,7 +2702,6 @@ impl LayoutPainter<'_> {
 struct PaintTextRunOptions {
     color: TextColor,
     opacity: f32,
-    coverage_scale: f32,
     synthetic_bold: bool,
     use_glyph_color: bool,
 }
@@ -2811,17 +2798,15 @@ impl TextRunStyle {
     }
 
     fn text_attrs(&self) -> Attrs<'_> {
-        let mut attrs = Attrs::new()
-            .family(cosmic_font_family(self.font_family.as_deref()))
-            .weight(self.font_face_weight.unwrap_or(self.font_weight))
-            .style(self.font_style);
-        if self.font_hinting_disabled {
-            attrs = attrs.cache_key_flags(CacheKeyFlags::DISABLE_HINTING);
-        }
-        if self.letter_spacing != 0.0 {
-            attrs = attrs.letter_spacing(self.letter_spacing / self.font_size.max(1.0));
-        }
-        attrs
+        text_style_attrs(
+            self.font_family.as_deref(),
+            self.font_weight,
+            self.font_face_weight,
+            self.font_style,
+            self.font_hinting_disabled,
+            self.letter_spacing,
+            self.font_size,
+        )
     }
 
     fn text_attrs_for_span(
@@ -3608,177 +3593,16 @@ impl Style {
     }
 
     fn text_attrs(&self) -> Attrs<'_> {
-        let mut attrs = Attrs::new()
-            .family(cosmic_font_family(self.font_family.as_deref()))
-            .weight(self.font_face_weight.unwrap_or(self.font_weight))
-            .style(self.font_style);
-        if self.font_hinting_disabled {
-            attrs = attrs.cache_key_flags(CacheKeyFlags::DISABLE_HINTING);
-        }
-        if self.letter_spacing != 0.0 {
-            attrs = attrs.letter_spacing(self.letter_spacing / self.font_size.max(1.0));
-        }
-        attrs
-    }
-}
-
-fn cosmic_font_family(font_family: Option<&str>) -> FontFamily<'_> {
-    match font_family.map(str::to_ascii_lowercase) {
-        Some(family) if family == "serif" => FontFamily::Name("Times"),
-        Some(family) if family == "monospace" => FontFamily::Monospace,
-        Some(family) if family == "sans-serif" => FontFamily::Name("Helvetica"),
-        Some(_) => font_family.map_or(FontFamily::SansSerif, FontFamily::Name),
-        None => FontFamily::Name("Times"),
-    }
-}
-
-fn resolved_line_height_from_db(db: &fontdb::Database, style: &Style) -> f32 {
-    if !style.line_height_normal {
-        return style.line_height.max(1.0);
-    }
-
-    blink_normal_line_height_from_db(db, style).unwrap_or_else(|| style.line_height.max(1.0))
-}
-
-fn resolved_line_height_from_run_db(db: &fontdb::Database, style: &TextRunStyle) -> f32 {
-    if !style.line_height_normal {
-        return style.line_height.max(1.0);
-    }
-
-    blink_normal_line_height_from_run_db(db, style).unwrap_or_else(|| style.line_height.max(1.0))
-}
-
-fn blink_normal_line_height_from_db(db: &fontdb::Database, style: &Style) -> Option<f32> {
-    let family = fontdb_family_for_style(style);
-    let families = [family];
-    let query = fontdb::Query {
-        families: &families,
-        weight: style.font_face_weight.unwrap_or(style.font_weight),
-        stretch: fontdb::Stretch::Normal,
-        style: style.font_style,
-    };
-    let id = db.query(&query)?;
-    let apply_mac_ascent_hack = blink_mac_ascent_hack_applies(style.font_family.as_deref());
-    db.with_face_data(id, |font_data, face_index| {
-        blink_normal_line_height_from_face(
-            font_data,
-            face_index,
-            style.font_size,
-            apply_mac_ascent_hack,
+        text_style_attrs(
+            self.font_family.as_deref(),
+            self.font_weight,
+            self.font_face_weight,
+            self.font_style,
+            self.font_hinting_disabled,
+            self.letter_spacing,
+            self.font_size,
         )
-    })
-    .flatten()
-}
-
-fn blink_font_descent_from_db(db: &fontdb::Database, style: &Style) -> Option<f32> {
-    let family = fontdb_family_for_style(style);
-    let families = [family];
-    let query = fontdb::Query {
-        families: &families,
-        weight: style.font_face_weight.unwrap_or(style.font_weight),
-        stretch: fontdb::Stretch::Normal,
-        style: style.font_style,
-    };
-    let id = db.query(&query)?;
-    db.with_face_data(id, |font_data, face_index| {
-        blink_font_descent_from_face(font_data, face_index, style.font_size)
-    })
-    .flatten()
-}
-
-fn blink_normal_line_height_from_run_db(
-    db: &fontdb::Database,
-    style: &TextRunStyle,
-) -> Option<f32> {
-    let family = fontdb_family_for_run_style(style);
-    let families = [family];
-    let query = fontdb::Query {
-        families: &families,
-        weight: style.font_face_weight.unwrap_or(style.font_weight),
-        stretch: fontdb::Stretch::Normal,
-        style: style.font_style,
-    };
-    let id = db.query(&query)?;
-    let apply_mac_ascent_hack = blink_mac_ascent_hack_applies(style.font_family.as_deref());
-    db.with_face_data(id, |font_data, face_index| {
-        blink_normal_line_height_from_face(
-            font_data,
-            face_index,
-            style.font_size,
-            apply_mac_ascent_hack,
-        )
-    })
-    .flatten()
-}
-
-fn fontdb_family_for_style(style: &Style) -> fontdb::Family<'_> {
-    fontdb_family(style.font_family.as_deref())
-}
-
-fn fontdb_family_for_run_style(style: &TextRunStyle) -> fontdb::Family<'_> {
-    fontdb_family(style.font_family.as_deref())
-}
-
-fn fontdb_family(font_family: Option<&str>) -> fontdb::Family<'_> {
-    match font_family {
-        Some(family) if family.eq_ignore_ascii_case("serif") => fontdb::Family::Name("Times"),
-        Some(family) if family.eq_ignore_ascii_case("monospace") => fontdb::Family::Monospace,
-        Some(family) if family.eq_ignore_ascii_case("sans-serif") => {
-            fontdb::Family::Name("Helvetica")
-        }
-        Some(family) => fontdb::Family::Name(family),
-        None => fontdb::Family::Name("Times"),
     }
-}
-
-fn blink_normal_line_height_from_face(
-    font_data: &[u8],
-    face_index: u32,
-    font_size: f32,
-    apply_mac_ascent_hack: bool,
-) -> Option<f32> {
-    let face = ttf_parser::Face::parse(font_data, face_index).ok()?;
-    let units_per_em = f32::from(face.units_per_em());
-    if units_per_em <= 0.0 {
-        return None;
-    }
-
-    let scale = font_size.max(1.0) / units_per_em;
-    let mut ascent = (f32::from(face.ascender()) * scale).round();
-    let descent = (-(f32::from(face.descender())) * scale).round();
-    if apply_mac_ascent_hack {
-        ascent += blink_web_standard_family_ascent_adjustment(ascent, descent);
-    }
-    let line_gap = (f32::from(face.line_gap()) * scale).round();
-    let line_height = ascent + descent + line_gap;
-    line_height.is_finite().then_some(line_height.max(1.0))
-}
-
-fn blink_mac_ascent_hack_applies(font_family: Option<&str>) -> bool {
-    let Some(family) = font_family else {
-        return true;
-    };
-    let family = family.trim().trim_matches(['"', '\'']).to_ascii_lowercase();
-    matches!(
-        family.as_str(),
-        "serif" | "times" | "sans-serif" | "helvetica" | "monospace" | "courier"
-    )
-}
-
-fn blink_web_standard_family_ascent_adjustment(ascent: f32, descent: f32) -> f32 {
-    ((ascent + descent) * 0.15 + 0.5).floor()
-}
-
-fn blink_font_descent_from_face(font_data: &[u8], face_index: u32, font_size: f32) -> Option<f32> {
-    let face = ttf_parser::Face::parse(font_data, face_index).ok()?;
-    let units_per_em = f32::from(face.units_per_em());
-    if units_per_em <= 0.0 {
-        return None;
-    }
-
-    let scale = font_size.max(1.0) / units_per_em;
-    let descent = (-(f32::from(face.descender())) * scale).round();
-    descent.is_finite().then_some(descent.max(0.0))
 }
 
 fn strip_important(value: &str) -> &str {
@@ -5030,56 +4854,6 @@ fn parse_alpha_channel(value: &str) -> Option<u8> {
         .ok()
         .filter(|value| value.is_finite())
         .map(|value| (value.clamp(0.0, 1.0) * 255.0).round() as u8)
-}
-
-#[derive(Debug, Clone, Copy)]
-struct LineHeightDeclaration {
-    height: f32,
-    factor: Option<f32>,
-    normal: bool,
-}
-
-fn normal_line_height_fallback(font_size: f32) -> f32 {
-    font_size.max(1.0) * 1.4
-}
-
-fn parse_line_height_declaration(value: &str, font_size: f32) -> Option<LineHeightDeclaration> {
-    let value = value.trim();
-    if value.eq_ignore_ascii_case("normal") {
-        return Some(LineHeightDeclaration {
-            height: normal_line_height_fallback(font_size),
-            factor: None,
-            normal: true,
-        });
-    }
-    if let Some(percent) = value.strip_suffix('%') {
-        return percent
-            .trim()
-            .parse::<f32>()
-            .ok()
-            .filter(|value| value.is_finite())
-            .map(|value| LineHeightDeclaration {
-                height: font_size * value / 100.0,
-                factor: None,
-                normal: false,
-            });
-    }
-    if let Some(length) = parse_css_length(value, font_size, false) {
-        return Some(LineHeightDeclaration {
-            height: length,
-            factor: None,
-            normal: false,
-        });
-    }
-    value
-        .parse::<f32>()
-        .ok()
-        .filter(|value| value.is_finite())
-        .map(|scale| LineHeightDeclaration {
-            height: font_size * scale,
-            factor: Some(scale),
-            normal: false,
-        })
 }
 
 fn parse_text_align(value: &str) -> Option<TextAlign> {
@@ -6487,83 +6261,8 @@ fn stroke_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, width: f32, color: R
     );
 }
 
-// Swash grayscale coverage is a little heavier than Chromium/Skia on the
-// regression font stack; scale coverage before compositing to match Blink.
-const SANS_TEXT_COVERAGE_SCALE: f32 = 0.95;
-
-fn text_coverage_scale(style: &Style) -> f32 {
-    if style.color.a < 255 {
-        return 1.05;
-    }
-    let Some(family) = style.font_family.as_deref() else {
-        return 1.0;
-    };
-    let family = family.to_ascii_lowercase();
-    if family.contains("merriweather") {
-        1.10
-    } else if family.contains("helvetica") && !family.contains("helvetica neue") {
-        1.25
-    } else if uses_default_text_coverage(&family) {
-        1.0
-    } else {
-        SANS_TEXT_COVERAGE_SCALE
-    }
-}
-
-fn uses_default_text_coverage(family: &str) -> bool {
-    family.contains("work sans") || (family.contains("serif") && !family.contains("sans-serif"))
-}
-
-fn rich_text_baseline_leading_offset(spans: &[TextSpan], style: &Style) -> f32 {
-    let max_span_size = spans
-        .iter()
-        .map(|span| span.style.font_size)
-        .fold(0.0, f32::max);
-    if max_span_size >= style.font_size - 0.5 {
-        return 0.0;
-    }
-    ((style.line_height - style.font_size).max(0.0) * 0.5).round()
-}
-
-fn text_origin_x_offset(style: &Style) -> f32 {
-    let Some(family) = style.font_family.as_deref() else {
-        return 0.0;
-    };
-    let family = family.to_ascii_lowercase();
-    if family.contains("helvetica neue") {
-        1.0
-    } else {
-        0.0
-    }
-}
-
-fn text_origin_y_offset(style: &Style) -> f32 {
-    let Some(family) = style.font_family.as_deref() else {
-        return 0.0;
-    };
-    let family = family.to_ascii_lowercase();
-    // These stacks consistently land lower in Chromium's Skia text
-    // rasterization than in swash after matching layout metrics.
-    if family.contains("nunito") {
-        1.0
-    } else if family.contains("helvetica") && style.font_size >= 15.0 {
-        0.5
-    } else {
-        0.0
-    }
-}
-
-fn blend_text_rect(
-    pixmap: &mut Pixmap,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-    color: TextColor,
-    coverage_scale: f32,
-) {
+fn blend_text_rect(pixmap: &mut Pixmap, x: i32, y: i32, width: u32, height: u32, color: TextColor) {
     let (r, g, b, a) = color.as_rgba_tuple();
-    let a = ((a as f32) * coverage_scale).round().clamp(0.0, 255.0) as u8;
     if a == 0 {
         return;
     }
@@ -7459,33 +7158,6 @@ mod tests {
     fn text_opacity_multiplies_mask_alpha() {
         let color = apply_text_opacity(TextColor::rgba(10, 20, 30, 200), 0.5);
         assert_eq!(color.as_rgba_tuple(), (10, 20, 30, 100));
-    }
-
-    #[test]
-    fn work_sans_uses_blink_matched_text_coverage() {
-        let mut style = Style::initial();
-        style.font_family = Some("Work Sans".to_string());
-        assert!((text_coverage_scale(&style) - 1.0).abs() < 0.01);
-
-        style.font_family = Some("Arial".to_string());
-        assert!((text_coverage_scale(&style) - SANS_TEXT_COVERAGE_SCALE).abs() < 0.01);
-    }
-
-    #[test]
-    fn helvetica_uses_blink_matched_text_coverage() {
-        let mut style = Style::initial();
-        style.font_family = Some("Helvetica".to_string());
-        assert!((text_coverage_scale(&style) - 1.25).abs() < 0.01);
-    }
-
-    #[test]
-    fn helvetica_neue_uses_blink_matched_x_origin_offset() {
-        let mut style = Style::initial();
-        style.font_family = Some("Helvetica Neue".to_string());
-        assert!((text_origin_x_offset(&style) - 1.0).abs() < 0.01);
-
-        style.font_family = Some("Helvetica".to_string());
-        assert!((text_origin_x_offset(&style) - 0.0).abs() < 0.01);
     }
 
     #[test]

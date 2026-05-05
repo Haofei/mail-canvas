@@ -93,6 +93,8 @@ older local experiments.
 
 - `src/lib.rs`: renderer API, layout tree, email-oriented layout rules, and
   painting.
+- `src/text.rs`: text metrics, Blink-style line-height helpers, and rich inline
+  text helpers.
 - `src/css.rs`: CSS inlining helpers, `lightningcss` declaration parsing,
   active media extraction, and `@font-face` extraction.
 - `src/resource.rs`: bounded local, data URL, and opt-in remote resource loading.
@@ -103,16 +105,44 @@ older local experiments.
 
 ### Fidelity Workflow
 
-Run the fixed Playwright regression set:
+Run the fixed Playwright semantic visual regression set:
 
 ```sh
 npm run test:playwright-regression
 ```
 
+This gate uses Chromium as the reference, but it does not require strict total
+pixel equality. The pass/fail checks are semantic and tolerant:
+
+- renderer warnings must stay at zero for the fixed regression set;
+- viewport width and rendered height must stay within configured semantic
+  tolerances;
+- text, media, and non-text/non-media regions must remain within coarse diff
+  limits that catch missing content or major placement regressions; media checks
+  also use an absolute pixel tolerance so small anti-aliased logos are not
+  over-penalized;
+- total pixel diff is still reported for investigation, but it is observational
+  unless `maxTotalDiffPercent` is explicitly configured.
+
 Run a broader comparison:
 
 ```sh
 npm run compare:playwright
+```
+
+Run every template in `scripts/templates.mjs` against the same semantic gate.
+Templates with renderer warnings are skipped in this broad corpus unless they
+are explicitly listed in `scripts/playwright_expectations.json`; this keeps
+broken upstream image URLs and unfilled template-variable images out of the pass
+rate.
+
+```sh
+node scripts/playwright_compare.mjs \
+  --expectations scripts/playwright_expectations.json \
+  --work-dir /tmp/mail-canvas-playwright-all-semantic \
+  --timeout-ms 30000 \
+  --all \
+  --limit 89
 ```
 
 Artifacts are written under `/tmp/mail-canvas-playwright-regression` or
@@ -149,12 +179,12 @@ the smallest email-relevant rule in Rust.
 - JavaScript, forms, video, canvas, full positioning, full flex/grid, and full
   browser painting are out of scope.
 - Remote resources are disabled by default and must be enabled explicitly.
-- Pixel fidelity is measured against Chromium, but some templates still differ
-  because font rasterization and long-tail layout rules are not fully matched.
-- The fixed Playwright regression suite currently passes. Several templates are
-  already below 2% total pixel diff; the larger remaining diffs are dominated by
-  text rasterization differences between Chromium/Skia and the pure Rust text
-  stack.
+- Visual fidelity is measured against Chromium with semantic tolerances. Strict
+  total pixel equality is not required because text rasterization differs between
+  Chromium/Skia and the pure Rust text stack.
+- The fixed Playwright regression suite currently passes. Total pixel diff is
+  reported as a diagnostic signal, while the gate focuses on content presence,
+  layout stability, media regions, and non-text/non-media structure.
 
 ### Development Checks
 
@@ -249,6 +279,8 @@ fn main() -> anyhow::Result<()> {
 ### 项目结构
 
 - `src/lib.rs`: renderer API、layout tree、邮件布局规则和绘制逻辑。
+- `src/text.rs`: 文字度量、Blink 风格 line-height 辅助逻辑，以及 rich inline
+  text 辅助逻辑。
 - `src/css.rs`: CSS inlining、`lightningcss` declaration 解析、active media
   提取和 `@font-face` 提取。
 - `src/resource.rs`: 带限制的本地资源、data URL、可选远程资源加载。
@@ -258,16 +290,40 @@ fn main() -> anyhow::Result<()> {
 
 ### 对比和调试
 
-固定回归集：
+固定 Playwright 语义视觉回归集：
 
 ```sh
 npm run test:playwright-regression
 ```
 
+这个 gate 仍然使用 Chromium 作为参考，但不要求总像素完全一致。真正的通过条件
+是更宽容的语义检查：
+
+- 固定回归集里的 renderer warnings 必须为 0；
+- viewport 宽度和最终渲染高度必须落在语义容差内；
+- 文字、媒体、非文字非媒体区域必须落在粗粒度 diff 限制内，用来发现内容缺失
+  或明显布局错误；媒体检查也带绝对像素容差，避免小图标抗锯齿差异被过度惩罚；
+- total pixel diff 仍会输出，方便排查，但除非显式配置 `maxTotalDiffPercent`，
+  否则不作为失败条件。
+
 更多模板对比：
 
 ```sh
 npm run compare:playwright
+```
+
+对 `scripts/templates.mjs` 里的全部模板使用同一套 semantic gate。全量语料里，
+如果模板触发 renderer warning，会先跳过，除非它被显式列在
+`scripts/playwright_expectations.json`；这样上游已经失效的图片链接和模板变量图片
+不会污染通过率。
+
+```sh
+node scripts/playwright_compare.mjs \
+  --expectations scripts/playwright_expectations.json \
+  --work-dir /tmp/mail-canvas-playwright-all-semantic \
+  --timeout-ms 30000 \
+  --all \
+  --limit 89
 ```
 
 输出会在 `/tmp/mail-canvas-playwright-regression` 或
@@ -301,9 +357,10 @@ scripts/fetch_blink_reference.sh
 - JavaScript、form、video、canvas、完整 positioning、完整 flex/grid、完整浏览器
   painting 都不在当前范围内。
 - 远程资源默认关闭，需要显式开启。
-- 像素效果以 Chromium 为参考，但字体栅格化和长尾布局规则还没有完全对齐。
-- 固定 Playwright 回归集目前可以通过。部分模板总像素差已经低于 2%；剩余较大
-  差距主要来自 Chromium/Skia 和纯 Rust 文本栈之间的字体栅格化差异。
+- 视觉效果以 Chromium 为参考，但采用语义化容差；由于 Chromium/Skia 和纯 Rust
+  文本栈的文字栅格化不同，不要求 total pixel diff 完全一致。
+- 固定 Playwright 回归集目前可以通过。total pixel diff 作为诊断信号保留，gate
+  主要关注内容是否存在、布局是否稳定、媒体区域和非文字非媒体结构是否正确。
 
 ### 开发检查
 

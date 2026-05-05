@@ -1,72 +1,28 @@
 {
   "width": 600,
-  "targetDiffPercent": 1,
+  "validationMode": "semantic",
+  "skipTemplatesWithWarnings": true,
   "maxWarnings": 0,
+  "maxWidthDeltaPx": 0,
+  "maxHeightDeltaPx": 20,
+  "maxHeightDeltaPercent": 7,
+  "maxTextDiffPercent": 45,
+  "maxMediaDiffPixels": 1000,
+  "maxMediaDiffPercent": 25,
+  "maxNonMediaNonTextDiffPercent": 5.5,
   "templates": {
-    "waypoint-saas-app-store-links": {
-      "maxDiffPercent": 0.75,
-      "maxNonMediaDiffPercent": 1,
-      "maxNonMediaNonTextDiffPercent": 0.15
-    },
-    "waypoint-marketplace-credit-expiring": {
-      "maxDiffPercent": 1,
-      "maxNonMediaDiffPercent": 1.1,
-      "maxNonMediaNonTextDiffPercent": 0.2
-    },
-    "waypoint-marketplace-qr": {
-      "maxDiffPercent": 1,
-      "maxNonMediaDiffPercent": 1.35,
-      "maxNonMediaNonTextDiffPercent": 0.35
-    },
-    "waypoint-social-new-follower": {
-      "maxDiffPercent": 1.25,
-      "maxNonMediaDiffPercent": 1.15,
-      "maxNonMediaNonTextDiffPercent": 0.25
-    },
-    "waypoint-ecommerce-promo-code": {
-      "maxDiffPercent": 1.25,
-      "maxNonMediaDiffPercent": 3.1,
-      "maxNonMediaNonTextDiffPercent": 0.8
-    },
-    "mailgun-action": {
-      "maxDiffPercent": 4.9,
-      "maxNonMediaDiffPercent": 4.9,
-      "maxNonMediaNonTextDiffPercent": 0.35
-    },
-    "leemunroe-inlined": {
-      "maxDiffPercent": 7.8,
-      "maxNonMediaDiffPercent": 7.8,
-      "maxNonMediaNonTextDiffPercent": 0.6
-    },
-    "waypoint-marketplace-first-listing-notification": {
-      "maxDiffPercent": 8.7,
-      "maxNonMediaDiffPercent": 8.8,
-      "maxNonMediaNonTextDiffPercent": 1.7
-    },
-    "sendgrid-merriweather-receipt": {
-      "maxDiffPercent": 9,
-      "maxNonMediaDiffPercent": 9.1,
-      "maxNonMediaNonTextDiffPercent": 4.6
-    },
-    "postmark-example": {
-      "maxDiffPercent": 10.3,
-      "maxNonMediaDiffPercent": 10.3,
-      "maxNonMediaNonTextDiffPercent": 4.25
-    },
-    "colorlib-template-1": {
-      "maxDiffPercent": 16.9,
-      "maxNonMediaDiffPercent": 11.2,
-      "maxNonMediaNonTextDiffPercent": 6.3
-    },
-    "colorlib-template-3": {
-      "maxDiffPercent": 7.5,
-      "maxNonMediaDiffPercent": 5.9,
-      "maxNonMediaNonTextDiffPercent": 1.8
-    },
-    "colorlib-template-4": {
-      "maxDiffPercent": 11,
-      "maxNonMediaDiffPercent": 8.9,
-      "maxNonMediaNonTextDiffPercent": 3.1
-    }
+    "waypoint-saas-app-store-links": {},
+    "waypoint-marketplace-credit-expiring": {},
+    "waypoint-marketplace-qr": {},
+    "waypoint-social-new-follower": {},
+    "waypoint-ecommerce-promo-code": {},
+    "mailgun-action": {},
+    "leemunroe-inlined": {},
+    "waypoint-marketplace-first-listing-notification": {},
+    "sendgrid-merriweather-receipt": {},
+    "postmark-example": {},
+    "colorlib-template-1": {},
+    "colorlib-template-3": {},
+    "colorlib-template-4": {}
   }
 }

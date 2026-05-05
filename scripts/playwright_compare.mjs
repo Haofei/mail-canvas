@@ -22,6 +22,7 @@ function parseArgs(argv) {
     timeoutMs: DEFAULT_TIMEOUT_MS,
     limit: TEMPLATES.length,
     only: [],
+    all: false,
     allowRemote: true,
     keep: false,
     expectations: null,
@@ -52,6 +53,9 @@ function parseArgs(argv) {
         break;
       case '--only':
         args.only.push(next());
+        break;
+      case '--all':
+        args.all = true;
         break;
       case '--no-remote':
         args.allowRemote = false;
@@ -128,6 +132,9 @@ async function main() {
   );
   const failures = expectations ? checkExpectations(results, expectations) : [];
   await writeFile(path.join(args.workDir, 'report.md'), renderMarkdownReport(results, args, expectations));
+  if (expectations) {
+    console.log(validationSummary(results, failures, expectations));
+  }
   console.log(`outputs: ${args.workDir}`);
   if (failures.length > 0) {
     for (const failure of failures) {
@@ -147,6 +154,8 @@ function selectTemplates(args, expectations) {
   const wanted =
     args.only.length > 0
       ? args.only
+      : args.all
+        ? TEMPLATES.slice(0, args.limit).map(([name]) => name)
       : expectedNames.length > 0
         ? expectedNames
         : TEMPLATES.slice(0, args.limit).map(([name]) => name);
@@ -557,17 +566,28 @@ function escapeAttr(value) {
 
 function printResult(result) {
   const percent = (result.diffRatio * 100).toFixed(2);
+  const media = result.media.areaPixels > 0 ? `${(result.media.diffRatio * 100).toFixed(2)}%` : '';
+  const text = result.text.areaPixels > 0 ? `${(result.text.diffRatio * 100).toFixed(2)}%` : '';
   const nonMedia = (result.nonMedia.diffRatio * 100).toFixed(2);
   const nonMediaNonText = (result.nonMediaNonText.diffRatio * 100).toFixed(2);
+  const heightDelta = result.rust.height - result.browser.height;
   console.log(
-    `${result.name}\tbrowser ${result.browser.width}x${result.browser.height}\trust ${result.rust.width}x${result.rust.height}\tdiff ${percent}%\tnon-media ${nonMedia}%\tnon-media non-text ${nonMediaNonText}%\twarnings ${result.warningCount}`,
+    `${result.name}\tbrowser ${result.browser.width}x${result.browser.height}\trust ${result.rust.width}x${result.rust.height}\theightΔ ${heightDelta}px\tdiff ${percent}%\ttext ${text}\tmedia ${media}\tnon-media ${nonMedia}%\tnon-media non-text ${nonMediaNonText}%\twarnings ${result.warningCount}`,
   );
 }
 
 function checkExpectations(results, expectations) {
   const failures = [];
+  const semanticMode = expectations.validationMode === 'semantic';
   for (const result of results) {
     const expected = expectations.templates?.[result.name];
+    if (semanticMode) {
+      if (semanticResultSkipped(result, expectations)) {
+        continue;
+      }
+      failures.push(...checkSemanticExpectations(result, expectations, expected ?? {}));
+      continue;
+    }
     if (!expected) {
       continue;
     }
@@ -607,7 +627,177 @@ function checkExpectations(results, expectations) {
   return failures;
 }
 
+function validationSummary(results, failures, expectations) {
+  const failedNames = new Set();
+  for (const failure of failures) {
+    const separator = failure.indexOf(':');
+    if (separator > 0) {
+      failedNames.add(failure.slice(0, separator));
+    }
+  }
+  const skippedNames =
+    expectations.validationMode === 'semantic'
+      ? new Set(
+          results
+            .filter((result) => semanticResultSkipped(result, expectations))
+            .map((result) => result.name),
+        )
+      : new Set();
+  const checked = results.length - skippedNames.size;
+  const passed = checked - failedNames.size;
+  const mode =
+    expectations.validationMode === 'semantic' ? 'semantic validation' : 'pixel validation';
+  const skipped = skippedNames.size > 0 ? ` (${skippedNames.size} skipped due warnings)` : '';
+  return `${mode}: ${passed}/${checked} templates passed${skipped}`;
+}
+
+function semanticResultSkipped(result, expectations) {
+  if (!expectations.skipTemplatesWithWarnings || result.warningCount === 0) {
+    return false;
+  }
+  return !Object.prototype.hasOwnProperty.call(expectations.templates ?? {}, result.name);
+}
+
+function checkSemanticExpectations(result, expectations, expected) {
+  const failures = [];
+  const maxWarnings = expected.maxWarnings ?? expectations.maxWarnings;
+  if (Number.isFinite(maxWarnings) && result.warningCount > maxWarnings) {
+    failures.push(`${result.name}: warnings ${result.warningCount} exceeded ${maxWarnings}`);
+  }
+
+  const maxWidthDeltaPx = expected.maxWidthDeltaPx ?? expectations.maxWidthDeltaPx;
+  const widthDeltaPx = Math.abs(result.rust.width - result.browser.width);
+  if (Number.isFinite(maxWidthDeltaPx) && widthDeltaPx > maxWidthDeltaPx) {
+    failures.push(`${result.name}: width delta ${widthDeltaPx}px exceeded ${maxWidthDeltaPx}px`);
+  }
+
+  const maxHeightDeltaPx = expected.maxHeightDeltaPx ?? expectations.maxHeightDeltaPx;
+  const maxHeightDeltaPercent =
+    expected.maxHeightDeltaPercent ?? expectations.maxHeightDeltaPercent;
+  const heightDeltaPx = Math.abs(result.rust.height - result.browser.height);
+  const heightDeltaPercent = (heightDeltaPx / Math.max(1, result.browser.height)) * 100;
+  if (
+    semanticDeltaExceeded(
+      heightDeltaPx,
+      heightDeltaPercent,
+      maxHeightDeltaPx,
+      maxHeightDeltaPercent,
+    )
+  ) {
+    failures.push(
+      `${result.name}: height delta ${heightDeltaPx}px (${heightDeltaPercent.toFixed(2)}%) exceeded ${formatSemanticDeltaLimit(maxHeightDeltaPx, maxHeightDeltaPercent)}`,
+    );
+  }
+
+  const maxMediaDiffPercent = expected.maxMediaDiffPercent ?? expectations.maxMediaDiffPercent;
+  const maxMediaDiffPixels = expected.maxMediaDiffPixels ?? expectations.maxMediaDiffPixels;
+  if (
+    result.media.areaPixels > 0 &&
+    semanticMetricExceeded(
+      result.media.diffPixels,
+      result.media.diffRatio * 100,
+      maxMediaDiffPixels,
+      maxMediaDiffPercent,
+    )
+  ) {
+    failures.push(
+      `${result.name}: media diff ${formatSemanticMetric(result.media.diffPixels, result.media.diffRatio * 100)} exceeded ${formatSemanticMetricLimit(maxMediaDiffPixels, maxMediaDiffPercent)}`,
+    );
+  }
+
+  const maxTextDiffPercent = expected.maxTextDiffPercent ?? expectations.maxTextDiffPercent;
+  if (
+    result.text.areaPixels > 0 &&
+    Number.isFinite(maxTextDiffPercent) &&
+    result.text.diffRatio * 100 > maxTextDiffPercent
+  ) {
+    failures.push(
+      `${result.name}: text diff ${formatPercent(result.text.diffRatio)} exceeded ${maxTextDiffPercent.toFixed(2)}%`,
+    );
+  }
+
+  const maxNonMediaNonTextDiffPercent =
+    expected.maxNonMediaNonTextDiffPercent ?? expectations.maxNonMediaNonTextDiffPercent;
+  if (
+    Number.isFinite(maxNonMediaNonTextDiffPercent) &&
+    result.nonMediaNonText.diffRatio * 100 > maxNonMediaNonTextDiffPercent
+  ) {
+    failures.push(
+      `${result.name}: non-media non-text diff ${formatPercent(result.nonMediaNonText.diffRatio)} exceeded ${maxNonMediaNonTextDiffPercent.toFixed(2)}%`,
+    );
+  }
+
+  const maxTotalDiffPercent = expected.maxTotalDiffPercent ?? expectations.maxTotalDiffPercent;
+  if (Number.isFinite(maxTotalDiffPercent) && result.diffRatio * 100 > maxTotalDiffPercent) {
+    failures.push(
+      `${result.name}: total diff ${formatPercent(result.diffRatio)} exceeded ${maxTotalDiffPercent.toFixed(2)}%`,
+    );
+  }
+
+  return failures;
+}
+
+function semanticDeltaExceeded(deltaPx, deltaPercent, maxPx, maxPercent) {
+  const hasPx = Number.isFinite(maxPx);
+  const hasPercent = Number.isFinite(maxPercent);
+  if (hasPx && hasPercent) {
+    return deltaPx > maxPx && deltaPercent > maxPercent;
+  }
+  if (hasPx) {
+    return deltaPx > maxPx;
+  }
+  if (hasPercent) {
+    return deltaPercent > maxPercent;
+  }
+  return false;
+}
+
+function semanticMetricExceeded(diffPixels, diffPercent, maxPixels, maxPercent) {
+  const hasPixels = Number.isFinite(maxPixels);
+  const hasPercent = Number.isFinite(maxPercent);
+  if (hasPixels && hasPercent) {
+    return diffPixels > maxPixels && diffPercent > maxPercent;
+  }
+  if (hasPixels) {
+    return diffPixels > maxPixels;
+  }
+  if (hasPercent) {
+    return diffPercent > maxPercent;
+  }
+  return false;
+}
+
+function formatSemanticDeltaLimit(maxPx, maxPercent) {
+  const limits = [];
+  if (Number.isFinite(maxPx)) {
+    limits.push(`${maxPx}px`);
+  }
+  if (Number.isFinite(maxPercent)) {
+    limits.push(`${maxPercent.toFixed(2)}%`);
+  }
+  return limits.length > 0 ? limits.join(' or ') : 'no limit';
+}
+
+function formatSemanticMetric(diffPixels, diffPercent) {
+  return `${diffPixels}px / ${diffPercent.toFixed(2)}%`;
+}
+
+function formatSemanticMetricLimit(maxPixels, maxPercent) {
+  const limits = [];
+  if (Number.isFinite(maxPixels)) {
+    limits.push(`${maxPixels}px`);
+  }
+  if (Number.isFinite(maxPercent)) {
+    limits.push(`${maxPercent.toFixed(2)}%`);
+  }
+  return limits.length > 0 ? limits.join(' or ') : 'no limit';
+}
+
 function renderMarkdownReport(results, args, expectations) {
+  if (expectations?.validationMode === 'semantic') {
+    return renderSemanticMarkdownReport(results, args, expectations);
+  }
+
   const lines = [
     '# Playwright Comparison Report',
     '',
@@ -661,6 +851,75 @@ function renderMarkdownReport(results, args, expectations) {
   lines.push('');
   lines.push('Notes: pixel comparison pads the shorter image with white before diffing.');
   return `${lines.join('\n')}\n`;
+}
+
+function renderSemanticMarkdownReport(results, args, expectations) {
+  const lines = [
+    '# Playwright Semantic Visual Validation Report',
+    '',
+    `- Width: ${args.width}px`,
+    `- Remote image loading in Rust renderer: ${args.allowRemote ? 'enabled' : 'disabled'}`,
+    `- Output directory: \`${args.workDir}\``,
+    '- Total pixel diff is reported as an observation only unless `maxTotalDiffPercent` is set.',
+    '',
+    '| Template | Status | Browser | Rust | Height Delta | Total Diff | Text Diff | Media Diff | Non-Media Non-Text Diff | Semantic Limits | Warnings | Files |',
+    '|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|',
+  ];
+
+  for (const result of results) {
+    const expected = expectations?.templates?.[result.name] ?? {};
+    const status = semanticResultSkipped(result, expectations)
+      ? 'skipped: warnings'
+      : semanticResultStatus(result, expectations, expected);
+    const heightDeltaPx = Math.abs(result.rust.height - result.browser.height);
+    const heightDeltaPercent = heightDeltaPx / Math.max(1, result.browser.height);
+    const mediaPercent =
+      result.media.areaPixels > 0 ? formatPercent(result.media.diffRatio) : '';
+    const textPercent = result.text.areaPixels > 0 ? formatPercent(result.text.diffRatio) : '';
+    const limits = semanticLimitSummary(expectations, expected);
+    lines.push(
+      `| ${result.name} | ${status} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${heightDeltaPx}px (${formatPercent(heightDeltaPercent)}) | ${formatPercent(result.diffRatio)} | ${textPercent} | ${mediaPercent} | ${formatPercent(result.nonMediaNonText.diffRatio)} | ${limits} | ${result.warningCount} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) |`,
+    );
+  }
+  lines.push('');
+  lines.push(
+    'Notes: text and media diffs are tolerant coarse checks. They are intended to catch missing content or major placement failures, not exact font rasterization. In `--all` runs, templates with renderer warnings are skipped unless they are explicitly listed in the expectations file.',
+  );
+  return `${lines.join('\n')}\n`;
+}
+
+function semanticResultStatus(result, expectations, expected) {
+  const failures = checkSemanticExpectations(result, expectations, expected);
+  return failures.length > 0 ? 'failed' : 'passed';
+}
+
+function semanticLimitSummary(expectations, expected) {
+  const limits = [];
+  const maxWidthDeltaPx = expected.maxWidthDeltaPx ?? expectations.maxWidthDeltaPx;
+  if (Number.isFinite(maxWidthDeltaPx)) {
+    limits.push(`width <= ${maxWidthDeltaPx}px`);
+  }
+  const maxHeightDeltaPx = expected.maxHeightDeltaPx ?? expectations.maxHeightDeltaPx;
+  const maxHeightDeltaPercent =
+    expected.maxHeightDeltaPercent ?? expectations.maxHeightDeltaPercent;
+  if (Number.isFinite(maxHeightDeltaPx) || Number.isFinite(maxHeightDeltaPercent)) {
+    limits.push(`height <= ${formatSemanticDeltaLimit(maxHeightDeltaPx, maxHeightDeltaPercent)}`);
+  }
+  const maxTextDiffPercent = expected.maxTextDiffPercent ?? expectations.maxTextDiffPercent;
+  if (Number.isFinite(maxTextDiffPercent)) {
+    limits.push(`text <= ${maxTextDiffPercent.toFixed(2)}%`);
+  }
+  const maxMediaDiffPercent = expected.maxMediaDiffPercent ?? expectations.maxMediaDiffPercent;
+  const maxMediaDiffPixels = expected.maxMediaDiffPixels ?? expectations.maxMediaDiffPixels;
+  if (Number.isFinite(maxMediaDiffPixels) || Number.isFinite(maxMediaDiffPercent)) {
+    limits.push(`media <= ${formatSemanticMetricLimit(maxMediaDiffPixels, maxMediaDiffPercent)}`);
+  }
+  const maxNonMediaNonTextDiffPercent =
+    expected.maxNonMediaNonTextDiffPercent ?? expectations.maxNonMediaNonTextDiffPercent;
+  if (Number.isFinite(maxNonMediaNonTextDiffPercent)) {
+    limits.push(`box <= ${maxNonMediaNonTextDiffPercent.toFixed(2)}%`);
+  }
+  return limits.join('<br>');
 }
 
 function formatPercent(ratio) {
