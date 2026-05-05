@@ -1032,6 +1032,7 @@ impl<'a> LayoutEngine<'a> {
             };
             if let Some(flow) = flow {
                 let mut flow = flow;
+                let collapsible_margin_bottom = flow.collapsible_margin_bottom;
                 if child_float_side != FloatSide::None {
                     let occupied_width =
                         (flow.node.rect.width + flow.node.style.margin.horizontal()).max(1.0);
@@ -1095,8 +1096,8 @@ impl<'a> LayoutEngine<'a> {
                     translate_layout(&mut flow.node, 0.0, -margin_overlap);
                 }
                 cursor_y += flow.advance - margin_overlap;
-                previous_margin_bottom = can_collapse_sibling_margin(child_display)
-                    .then_some(flow.node.style.margin.bottom);
+                previous_margin_bottom =
+                    can_collapse_sibling_margin(child_display).then_some(collapsible_margin_bottom);
                 children.push(flow.node);
             }
         }
@@ -1264,8 +1265,10 @@ impl<'a> LayoutEngine<'a> {
             depth,
         )?;
 
+        let collapsible_margin_bottom = style.margin.bottom;
         Ok(Some(FlowBox {
-            advance: style.margin.top + rect_height + style.margin.bottom,
+            advance: style.margin.top + rect_height + collapsible_margin_bottom,
+            collapsible_margin_bottom,
             node: LayoutBox {
                 kind: LayoutKind::Block,
                 rect: Rect::new(rect_x, rect_y, rect_width, rect_height),
@@ -1315,11 +1318,11 @@ impl<'a> LayoutEngine<'a> {
             depth,
         )?;
 
+        let collapsed_bottom_margin = style.margin.bottom.max(collapsed_trailing_margin);
+
         Ok(Some(FlowBox {
-            advance: style.margin.top
-                + rect_height
-                + style.margin.bottom
-                + collapsed_trailing_margin,
+            advance: style.margin.top + rect_height + collapsed_bottom_margin,
+            collapsible_margin_bottom: collapsed_bottom_margin,
             node: LayoutBox {
                 kind: LayoutKind::Block,
                 rect: Rect::new(rect_x, rect_y, outer_width, rect_height),
@@ -1469,8 +1472,10 @@ impl<'a> LayoutEngine<'a> {
             depth,
         )?;
 
+        let collapsible_margin_bottom = style.margin.bottom;
         Ok(Some(FlowBox {
-            advance: style.margin.top + rect_height + style.margin.bottom,
+            advance: style.margin.top + rect_height + collapsible_margin_bottom,
+            collapsible_margin_bottom,
             node: LayoutBox {
                 kind: LayoutKind::Block,
                 rect: Rect::new(rect_x, rect_y, outer_width, rect_height),
@@ -1610,8 +1615,10 @@ impl<'a> LayoutEngine<'a> {
             .max(explicit_height)
             .max(1.0);
 
+        let collapsible_margin_bottom = style.margin.bottom;
         Ok(Some(FlowBox {
-            advance: style.margin.top + table_height + style.margin.bottom,
+            advance: style.margin.top + table_height + collapsible_margin_bottom,
+            collapsible_margin_bottom,
             node: LayoutBox {
                 kind: LayoutKind::Table,
                 rect: Rect::new(rect_x, rect_y, table_width, table_height),
@@ -1958,8 +1965,10 @@ impl<'a> LayoutEngine<'a> {
             .unwrap_or(natural_height)
             .max(min_size);
 
+        let collapsible_margin_bottom = style.margin.bottom;
         FlowBox {
-            advance: style.margin.top + height + style.margin.bottom,
+            advance: style.margin.top + height + collapsible_margin_bottom,
+            collapsible_margin_bottom,
             node: LayoutBox {
                 kind: LayoutKind::Image(image),
                 rect: Rect::new(
@@ -2018,13 +2027,22 @@ impl<'a> LayoutEngine<'a> {
 
         let min_height = style.resolve_height(0.0).unwrap_or(0.0);
         let line_height = resolved_line_height_from_db(self.font_system.db(), &style);
-        let rect_height =
-            (content.advance.max(line_height) + style.padding.vertical() + style.border.vertical())
-                .max(min_height)
-                .max(0.0);
+        let collapsed_trailing_margin = if block_allows_trailing_margin_collapse(&style) {
+            content.trailing_collapsible_margin.min(content.advance)
+        } else {
+            0.0
+        };
+        let content_box_height = (content.advance - collapsed_trailing_margin).max(0.0);
+        let rect_height = (content_box_height.max(line_height)
+            + style.padding.vertical()
+            + style.border.vertical())
+        .max(min_height)
+        .max(0.0);
+        let collapsed_bottom_margin = style.margin.bottom.max(collapsed_trailing_margin);
 
         Ok(Some(FlowBox {
-            advance: style.margin.top + rect_height + style.margin.bottom,
+            advance: style.margin.top + rect_height + collapsed_bottom_margin,
+            collapsible_margin_bottom: collapsed_bottom_margin,
             node: LayoutBox {
                 kind: LayoutKind::Block,
                 rect: Rect::new(rect_x, rect_y, outer_width, rect_height),
@@ -2046,8 +2064,10 @@ impl<'a> LayoutEngine<'a> {
             style.background = Some(style.border_color);
         }
 
+        let collapsible_margin_bottom = style.margin.bottom;
         FlowBox {
-            advance: style.margin.top + height + style.margin.bottom,
+            advance: style.margin.top + height + collapsible_margin_bottom,
+            collapsible_margin_bottom,
             node: LayoutBox {
                 kind: LayoutKind::Block,
                 rect: Rect::new(x + style.margin.left, y + style.margin.top, width, height),
@@ -2489,7 +2509,7 @@ impl LayoutPainter<'_> {
     }
 
     fn paint_text(&mut self, rect: Rect, style: &Style, text: &str, opacity: f32) {
-        self.paint_text_buffer(rect, style, opacity, |buffer, font_system| {
+        self.paint_text_buffer(rect, style, opacity, 0.0, |buffer, font_system| {
             buffer.set_text(
                 font_system,
                 text,
@@ -2502,16 +2522,23 @@ impl LayoutPainter<'_> {
 
     fn paint_rich_text(&mut self, rect: Rect, style: &Style, spans: &[TextSpan], opacity: f32) {
         let scale = self.scale;
-        self.paint_text_buffer(rect, style, opacity, |buffer, font_system| {
-            let rich_spans = rich_text_style_spans(spans, font_system.db(), scale, style);
-            buffer.set_rich_text(
-                font_system,
-                rich_spans,
-                &style.text_attrs(),
-                Shaping::Advanced,
-                Some(style.text_align.to_cosmic()),
-            );
-        });
+        let baseline_offset = rich_text_baseline_leading_offset(spans, style);
+        self.paint_text_buffer(
+            rect,
+            style,
+            opacity,
+            baseline_offset,
+            |buffer, font_system| {
+                let rich_spans = rich_text_style_spans(spans, font_system.db(), scale, style);
+                buffer.set_rich_text(
+                    font_system,
+                    rich_spans,
+                    &style.text_attrs(),
+                    Shaping::Advanced,
+                    Some(style.text_align.to_cosmic()),
+                );
+            },
+        );
     }
 
     fn paint_text_buffer(
@@ -2519,6 +2546,7 @@ impl LayoutPainter<'_> {
         rect: Rect,
         style: &Style,
         opacity: f32,
+        origin_y_extra: f32,
         set_text: impl FnOnce(&mut Buffer, &mut FontSystem),
     ) {
         let line_height = resolved_line_height_from_db(self.font_system.db(), style);
@@ -2535,22 +2563,71 @@ impl LayoutPainter<'_> {
         );
         set_text(&mut buffer, self.font_system);
 
-        let origin_x = rect.x * self.scale;
-        let origin_y = rect.y * self.scale + text_origin_y_offset(style);
+        let origin_x = rect.x * self.scale + text_origin_x_offset(style);
+        let origin_y =
+            rect.y * self.scale + text_origin_y_offset(style) + origin_y_extra * self.scale;
         let color = TextColor::rgba(style.color.r, style.color.g, style.color.b, style.color.a);
         let coverage_scale = text_coverage_scale(style);
         let synthetic_bold = needs_synthetic_bold_paint(style);
+        for shadow in style.text_shadows.iter().rev() {
+            if shadow.blur_radius > 0.0 {
+                continue;
+            }
+            let shadow_color = TextColor::rgba(
+                shadow.color.r,
+                shadow.color.g,
+                shadow.color.b,
+                shadow.color.a,
+            );
+            self.paint_text_runs(
+                &buffer,
+                origin_x + shadow.offset_x * self.scale,
+                origin_y + shadow.offset_y * self.scale,
+                PaintTextRunOptions {
+                    color: shadow_color,
+                    opacity,
+                    coverage_scale,
+                    synthetic_bold,
+                    use_glyph_color: false,
+                },
+            );
+        }
+        self.paint_text_runs(
+            &buffer,
+            origin_x,
+            origin_y,
+            PaintTextRunOptions {
+                color,
+                opacity,
+                coverage_scale,
+                synthetic_bold,
+                use_glyph_color: true,
+            },
+        );
+    }
+
+    fn paint_text_runs(
+        &mut self,
+        buffer: &Buffer,
+        origin_x: f32,
+        origin_y: f32,
+        options: PaintTextRunOptions,
+    ) {
         for run in buffer.layout_runs() {
             for glyph in run.glyphs {
                 let physical_glyph = glyph.physical((origin_x, origin_y + run.line_y), 1.0);
-                let glyph_color = glyph.color_opt.map_or(color, |some| some);
+                let glyph_color = if options.use_glyph_color {
+                    glyph.color_opt.map_or(options.color, |some| some)
+                } else {
+                    options.color
+                };
                 self.swash_cache.with_pixels(
                     self.font_system,
                     physical_glyph.cache_key,
                     glyph_color,
                     |x, y, color| {
                         let color = apply_text_base_alpha(color, glyph_color);
-                        let color = apply_text_opacity(color, opacity);
+                        let color = apply_text_opacity(color, options.opacity);
                         blend_text_rect(
                             self.pixmap,
                             physical_glyph.x + x,
@@ -2558,9 +2635,9 @@ impl LayoutPainter<'_> {
                             1,
                             1,
                             color,
-                            coverage_scale,
+                            options.coverage_scale,
                         );
-                        if synthetic_bold {
+                        if options.synthetic_bold {
                             blend_text_rect(
                                 self.pixmap,
                                 physical_glyph.x + x + 1,
@@ -2568,7 +2645,7 @@ impl LayoutPainter<'_> {
                                 1,
                                 1,
                                 color,
-                                coverage_scale,
+                                options.coverage_scale,
                             );
                         }
                     },
@@ -2629,6 +2706,15 @@ impl LayoutPainter<'_> {
             },
         );
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PaintTextRunOptions {
+    color: TextColor,
+    opacity: f32,
+    coverage_scale: f32,
+    synthetic_bold: bool,
+    use_glyph_color: bool,
 }
 
 fn apply_text_opacity(color: TextColor, opacity: f32) -> TextColor {
@@ -2730,11 +2816,10 @@ impl TextRunStyle {
         if self.font_hinting_disabled {
             attrs = attrs.cache_key_flags(CacheKeyFlags::DISABLE_HINTING);
         }
-        if self.letter_spacing == 0.0 {
-            attrs
-        } else {
-            attrs.letter_spacing(self.letter_spacing / self.font_size.max(1.0))
+        if self.letter_spacing != 0.0 {
+            attrs = attrs.letter_spacing(self.letter_spacing / self.font_size.max(1.0));
         }
+        attrs
     }
 
     fn text_attrs_for_span(
@@ -2772,6 +2857,7 @@ impl TextRunStyle {
 struct FlowBox {
     node: LayoutBox,
     advance: f32,
+    collapsible_margin_bottom: f32,
 }
 
 #[derive(Debug, Default)]
@@ -2810,6 +2896,7 @@ struct Style {
     opacity: f32,
     color: Rgba,
     box_shadows: Vec<BoxShadow>,
+    text_shadows: Vec<BoxShadow>,
     font_family: Option<String>,
     font_weight: FontWeight,
     font_face_weight: Option<FontWeight>,
@@ -2884,6 +2971,7 @@ impl Style {
             opacity: 1.0,
             color: Rgba::BLACK,
             box_shadows: Vec::new(),
+            text_shadows: Vec::new(),
             font_family: None,
             font_weight: FontWeight::NORMAL,
             font_face_weight: None,
@@ -2958,6 +3046,7 @@ impl Style {
             opacity: 1.0,
             color: parent.color,
             box_shadows: Vec::new(),
+            text_shadows: parent.text_shadows.clone(),
             font_family: parent.font_family.clone(),
             font_weight: parent.font_weight,
             font_face_weight: parent.font_face_weight,
@@ -3227,6 +3316,11 @@ impl Style {
             "box-shadow" => {
                 if let Some(shadows) = parse_box_shadow(value, self.font_size, self.color) {
                     self.box_shadows = shadows;
+                }
+            }
+            "text-shadow" => {
+                if let Some(shadows) = parse_text_shadow(value, self.font_size, self.color) {
+                    self.text_shadows = shadows;
                 }
             }
             "font-size" => {
@@ -3518,11 +3612,10 @@ impl Style {
         if self.font_hinting_disabled {
             attrs = attrs.cache_key_flags(CacheKeyFlags::DISABLE_HINTING);
         }
-        if self.letter_spacing == 0.0 {
-            attrs
-        } else {
-            attrs.letter_spacing(self.letter_spacing / self.font_size.max(1.0))
+        if self.letter_spacing != 0.0 {
+            attrs = attrs.letter_spacing(self.letter_spacing / self.font_size.max(1.0));
         }
+        attrs
     }
 }
 
@@ -4559,6 +4652,41 @@ fn parse_box_shadow(value: &str, font_size: f32, default_color: Rgba) -> Option<
             spread: lengths.get(3).copied().unwrap_or(0.0),
             color: color.unwrap_or(default_color),
             inset,
+        });
+    }
+
+    Some(shadows)
+}
+
+fn parse_text_shadow(value: &str, font_size: f32, default_color: Rgba) -> Option<Vec<BoxShadow>> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return Some(Vec::new());
+    }
+
+    let mut shadows = Vec::new();
+    for shadow in split_css_top_level_list(value, ',') {
+        let mut lengths = Vec::new();
+        let mut color = None;
+        for token in css_top_level_whitespace_tokens(shadow) {
+            if let Some(parsed_color) = parse_color(&token) {
+                color = Some(parsed_color);
+                continue;
+            }
+            if let Some(length) = parse_css_length(&token, font_size, true) {
+                lengths.push(length);
+            }
+        }
+        if lengths.len() < 2 {
+            continue;
+        }
+        shadows.push(BoxShadow {
+            offset_x: lengths[0],
+            offset_y: lengths[1],
+            blur_radius: lengths.get(2).copied().unwrap_or(0.0).max(0.0),
+            spread: 0.0,
+            color: color.unwrap_or(default_color),
+            inset: false,
         });
     }
 
@@ -6299,6 +6427,8 @@ fn text_coverage_scale(style: &Style) -> f32 {
     let family = family.to_ascii_lowercase();
     if family.contains("merriweather") {
         1.10
+    } else if family.contains("helvetica") && !family.contains("helvetica neue") {
+        1.25
     } else if uses_default_text_coverage(&family) {
         1.0
     } else {
@@ -6308,6 +6438,29 @@ fn text_coverage_scale(style: &Style) -> f32 {
 
 fn uses_default_text_coverage(family: &str) -> bool {
     family.contains("work sans") || (family.contains("serif") && !family.contains("sans-serif"))
+}
+
+fn rich_text_baseline_leading_offset(spans: &[TextSpan], style: &Style) -> f32 {
+    let max_span_size = spans
+        .iter()
+        .map(|span| span.style.font_size)
+        .fold(0.0, f32::max);
+    if max_span_size >= style.font_size - 0.5 {
+        return 0.0;
+    }
+    ((style.line_height - style.font_size).max(0.0) * 0.5).round()
+}
+
+fn text_origin_x_offset(style: &Style) -> f32 {
+    let Some(family) = style.font_family.as_deref() else {
+        return 0.0;
+    };
+    let family = family.to_ascii_lowercase();
+    if family.contains("helvetica neue") {
+        1.0
+    } else {
+        0.0
+    }
 }
 
 fn text_origin_y_offset(style: &Style) -> f32 {
@@ -7125,6 +7278,18 @@ mod tests {
     }
 
     #[test]
+    fn inlines_text_shadow_for_rendering() {
+        let html = build_document(
+            "<a class=\"x\">Hello</a>",
+            Some(".x { text-shadow: 0 1px 0 white; }"),
+            None,
+            600,
+        );
+        let inlined = inline_css(&html, 600).unwrap();
+        assert!(inlined.contains("text-shadow: 0 1px 0 white"));
+    }
+
+    #[test]
     fn inliner_ignores_hidden_mso_conditional_styles() {
         let html = build_document(
             r#"<style>.x { color: red; }</style><!--[if mso]><style>.x { color: blue; }</style><![endif]--><p class="x">Hello</p>"#,
@@ -7228,8 +7393,41 @@ mod tests {
         style.font_family = Some("Work Sans".to_string());
         assert!((text_coverage_scale(&style) - 1.0).abs() < 0.01);
 
-        style.font_family = Some("Helvetica".to_string());
+        style.font_family = Some("Arial".to_string());
         assert!((text_coverage_scale(&style) - SANS_TEXT_COVERAGE_SCALE).abs() < 0.01);
+    }
+
+    #[test]
+    fn helvetica_uses_blink_matched_text_coverage() {
+        let mut style = Style::initial();
+        style.font_family = Some("Helvetica".to_string());
+        assert!((text_coverage_scale(&style) - 1.25).abs() < 0.01);
+    }
+
+    #[test]
+    fn helvetica_neue_uses_blink_matched_x_origin_offset() {
+        let mut style = Style::initial();
+        style.font_family = Some("Helvetica Neue".to_string());
+        assert!((text_origin_x_offset(&style) - 1.0).abs() < 0.01);
+
+        style.font_family = Some("Helvetica".to_string());
+        assert!((text_origin_x_offset(&style) - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn rich_text_smaller_inline_uses_parent_leading_for_baseline() {
+        let mut parent = Style::initial();
+        parent.set_font_size(30.0);
+        parent.apply_declaration("line-height", "1.8");
+
+        let mut child = parent.clone();
+        child.set_font_size(20.0);
+        let spans = vec![TextSpan::from_style("RestoBar".to_string(), &child)];
+
+        assert!((rich_text_baseline_leading_offset(&spans, &parent) - 12.0).abs() < 0.01);
+
+        let same_size = vec![TextSpan::from_style("RestoBar".to_string(), &parent)];
+        assert_eq!(rich_text_baseline_leading_offset(&same_size, &parent), 0.0);
     }
 
     #[test]
@@ -7515,6 +7713,24 @@ mod tests {
         assert_eq!(shadow.spread, 0.0);
         assert_eq!(shadow.color, Rgba::with_alpha(0, 0, 0, 41));
         assert!(!shadow.inset);
+    }
+
+    #[test]
+    fn parses_inherited_text_shadow() {
+        let mut style = Style::initial();
+        style.color = Rgba::rgb(0x11, 0x22, 0x33);
+        style.apply_declaration("text-shadow", "0 1px 0 white, 2px 3px #000");
+        assert_eq!(style.text_shadows.len(), 2);
+        assert_eq!(style.text_shadows[0].offset_y, 1.0);
+        assert_eq!(style.text_shadows[0].color, Rgba::WHITE);
+        assert_eq!(style.text_shadows[1].offset_x, 2.0);
+        assert_eq!(style.text_shadows[1].color, Rgba::BLACK);
+
+        let inherited = Style::from_parent_for_tag(&style, "span");
+        assert_eq!(inherited.text_shadows, style.text_shadows);
+
+        style.apply_declaration("text-shadow", "none");
+        assert!(style.text_shadows.is_empty());
     }
 
     #[test]
@@ -8663,6 +8879,26 @@ mod tests {
 
         assert!((first.rect.height - 20.0).abs() < 0.1);
         assert!((second.rect.y - 35.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn trailing_child_margin_collapses_with_parent_bottom_margin() {
+        let layout = layout_for_test(
+            r##"<div style="margin:0 0 16px"><p style="margin:0 0 16px;font-size:16px;line-height:20px">A</p></div><p style="margin:16px 0 0;font-size:16px;line-height:20px">B</p>"##,
+            300,
+        );
+        let first_text = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "A"),
+        )
+        .expect("first text");
+        let second_text = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "B"),
+        )
+        .expect("second text");
+
+        assert!((second_text.rect.y - (first_text.rect.y + 36.0)).abs() < 0.1);
     }
 
     #[test]

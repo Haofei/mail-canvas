@@ -89,6 +89,18 @@ fn main() -> anyhow::Result<()> {
 `RustEmailRenderer` and `ServoEmailRenderer` remain as compatibility aliases for
 older local experiments.
 
+### Project Shape
+
+- `src/lib.rs`: renderer API, layout tree, email-oriented layout rules, and
+  painting.
+- `src/css.rs`: CSS inlining helpers, `lightningcss` declaration parsing,
+  active media extraction, and `@font-face` extraction.
+- `src/resource.rs`: bounded local, data URL, and opt-in remote resource loading.
+- `src/document.rs`: document wrapping and head injection helpers.
+- `src/main.rs`: CLI wrapper around the library API.
+- `scripts/`: Chromium comparison, layout dump, template corpus, and Blink
+  reference helpers.
+
 ### Fidelity Workflow
 
 Run the fixed Playwright regression set:
@@ -139,6 +151,10 @@ the smallest email-relevant rule in Rust.
 - Remote resources are disabled by default and must be enabled explicitly.
 - Pixel fidelity is measured against Chromium, but some templates still differ
   because font rasterization and long-tail layout rules are not fully matched.
+- The fixed Playwright regression suite currently passes. Several templates are
+  already below 2% total pixel diff; the larger remaining diffs are dominated by
+  text rasterization differences between Chromium/Skia and the pure Rust text
+  stack.
 
 ### Development Checks
 
@@ -230,6 +246,16 @@ fn main() -> anyhow::Result<()> {
 
 `RustEmailRenderer` 和 `ServoEmailRenderer` 暂时保留为兼容别名。
 
+### 项目结构
+
+- `src/lib.rs`: renderer API、layout tree、邮件布局规则和绘制逻辑。
+- `src/css.rs`: CSS inlining、`lightningcss` declaration 解析、active media
+  提取和 `@font-face` 提取。
+- `src/resource.rs`: 带限制的本地资源、data URL、可选远程资源加载。
+- `src/document.rs`: HTML document 包装和 head 注入。
+- `src/main.rs`: 基于库 API 的 CLI。
+- `scripts/`: Chromium 对比、布局 dump、模板语料和 Blink 参考代码工具。
+
 ### 对比和调试
 
 固定回归集：
@@ -276,6 +302,8 @@ scripts/fetch_blink_reference.sh
   painting 都不在当前范围内。
 - 远程资源默认关闭，需要显式开启。
 - 像素效果以 Chromium 为参考，但字体栅格化和长尾布局规则还没有完全对齐。
+- 固定 Playwright 回归集目前可以通过。部分模板总像素差已经低于 2%；剩余较大
+  差距主要来自 Chromium/Skia 和纯 Rust 文本栈之间的字体栅格化差异。
 
 ### 开发检查
 
