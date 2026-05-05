@@ -489,6 +489,13 @@ fn load_web_fonts_from_html(
             if !font_face_covers_basic_latin(&declarations) {
                 continue;
             }
+            if declaration_value(&declarations, "font-style")
+                .map(parse_font_style)
+                .unwrap_or(FontStyle::Normal)
+                != FontStyle::Normal
+            {
+                continue;
+            }
             let family = declaration_value(&declarations, "font-family")
                 .map(unquote_css_value)
                 .unwrap_or_else(|| "unknown".to_string());
@@ -2052,17 +2059,12 @@ impl<'a> LayoutEngine<'a> {
         }))
     }
 
-    fn layout_hr(&mut self, mut style: Style, x: f32, y: f32, containing_width: f32) -> FlowBox {
+    fn layout_hr(&mut self, style: Style, x: f32, y: f32, containing_width: f32) -> FlowBox {
         let width = style
             .resolve_width(containing_width)
             .unwrap_or(containing_width);
-        let height = style
-            .resolve_height(0.0)
-            .unwrap_or_else(|| style.border.max_width().max(1.0))
-            .max(1.0);
-        if style.background.is_none() {
-            style.background = Some(style.border_color);
-        }
+        let content_height = style.resolve_height(0.0).unwrap_or(0.0).max(0.0);
+        let height = (content_height + style.border.vertical()).max(1.0);
 
         let collapsible_margin_bottom = style.margin.bottom;
         FlowBox {
@@ -3147,7 +3149,8 @@ impl Style {
                 style.margin.top = 8.0;
                 style.margin.bottom = 8.0;
                 style.border = Edges::all(1.0);
-                style.border_color = Rgba::rgb(0xcb, 0xcc, 0xcf);
+                style.border_color = Rgba::rgb(0x80, 0x80, 0x80);
+                style.border_style = BorderLineStyle::Inset;
             }
             "strong" | "b" => style.font_weight = FontWeight::BOLD,
             "em" | "i" => style.font_style = FontStyle::Italic,
@@ -3474,8 +3477,8 @@ impl Style {
             "border" => apply_border(self, value),
             "border-radius" => self.border_radius = parse_radius(value).unwrap_or(0.0).max(0.0),
             "border-style" => {
-                if parse_border_line_style(value) == Some(BorderLineStyle::Dashed) {
-                    self.border_style = BorderLineStyle::Dashed;
+                if let Some(border_style) = parse_border_line_style(value) {
+                    self.border_style = border_style;
                 }
             }
             "border-width" => {
@@ -3502,8 +3505,8 @@ impl Style {
             | "border-right-style"
             | "border-bottom-style"
             | "border-left-style" => {
-                if parse_border_line_style(value) == Some(BorderLineStyle::Dashed) {
-                    self.border_style = BorderLineStyle::Dashed;
+                if let Some(border_style) = parse_border_line_style(value) {
+                    self.border_style = border_style;
                 }
             }
             "border-top" => apply_border_side(self, BorderSide::Top, value),
@@ -4059,6 +4062,7 @@ enum BorderCollapse {
 enum BorderLineStyle {
     Solid,
     Dashed,
+    Inset,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -5312,8 +5316,8 @@ fn apply_border(style: &mut Style, value: &str) {
         style.border = Edges::ZERO;
         return;
     }
-    if parse_border_line_style(value) == Some(BorderLineStyle::Dashed) {
-        style.border_style = BorderLineStyle::Dashed;
+    if let Some(border_style) = parse_border_line_style(value) {
+        style.border_style = border_style;
     }
 
     let mut saw_width = false;
@@ -5345,8 +5349,10 @@ fn apply_border_side(style: &mut Style, side: BorderSide, value: &str) {
         set_border_side(&mut style.border, side, 0.0);
         return;
     }
-    if parse_border_line_style(value) == Some(BorderLineStyle::Dashed) {
-        style.border_style = BorderLineStyle::Dashed;
+    if let Some(border_style) =
+        parse_border_line_style(value).filter(|style| !matches!(style, BorderLineStyle::Solid))
+    {
+        style.border_style = border_style;
     }
 
     let mut saw_width = false;
@@ -5369,6 +5375,7 @@ fn parse_border_line_style(value: &str) -> Option<BorderLineStyle> {
     for token in value.split_whitespace() {
         match token.to_ascii_lowercase().as_str() {
             "dashed" | "dotted" => return Some(BorderLineStyle::Dashed),
+            "inset" | "groove" => return Some(BorderLineStyle::Inset),
             "solid" => return Some(BorderLineStyle::Solid),
             _ => {}
         }
@@ -6260,6 +6267,10 @@ fn stroke_style_border(
         stroke_dashed_border(pixmap, scale, rect, border, color);
         return;
     }
+    if style == BorderLineStyle::Inset {
+        stroke_inset_border(pixmap, scale, rect, border, color);
+        return;
+    }
 
     if border.top == border.right
         && border.top == border.bottom
@@ -6312,6 +6323,69 @@ fn stroke_style_border(
             color,
         );
     }
+}
+
+fn stroke_inset_border(pixmap: &mut Pixmap, scale: f32, rect: Rect, border: Edges, color: Rgba) {
+    let dark = inset_border_edge_color(color, true);
+    let light = inset_border_edge_color(color, false);
+    if border.top > 0.0 {
+        fill_rect(
+            pixmap,
+            scale,
+            Rect::new(rect.x, rect.y, rect.width, border.top),
+            dark,
+        );
+    }
+    if border.left > 0.0 {
+        fill_rect(
+            pixmap,
+            scale,
+            Rect::new(rect.x, rect.y, border.left, rect.height),
+            dark,
+        );
+    }
+    if border.bottom > 0.0 {
+        fill_rect(
+            pixmap,
+            scale,
+            Rect::new(
+                rect.x,
+                rect.y + rect.height - border.bottom,
+                rect.width,
+                border.bottom,
+            ),
+            light,
+        );
+    }
+    if border.right > 0.0 {
+        fill_rect(
+            pixmap,
+            scale,
+            Rect::new(
+                rect.x + rect.width - border.right,
+                rect.y,
+                border.right,
+                rect.height,
+            ),
+            light,
+        );
+    }
+}
+
+fn inset_border_edge_color(color: Rgba, dark_edge: bool) -> Rgba {
+    let mix = if dark_edge { 0.2 } else { 0.86 };
+    Rgba::with_alpha(
+        mix_channel(color.r, 255, mix),
+        mix_channel(color.g, 255, mix),
+        mix_channel(color.b, 255, mix),
+        color.a,
+    )
+}
+
+fn mix_channel(from: u8, to: u8, amount: f32) -> u8 {
+    (f32::from(from) + (f32::from(to) - f32::from(from)) * amount)
+        .round()
+        .clamp(0.0, 255.0) as u8
 }
 
 fn stroke_dashed_border(pixmap: &mut Pixmap, scale: f32, rect: Rect, border: Edges, color: Rgba) {
@@ -7678,6 +7752,9 @@ mod tests {
         assert_eq!(style.border.right, 18.0);
         assert_eq!(style.border_color, Rgba::rgb(0x22, 0xbc, 0x66));
         assert_eq!(style.border_style, BorderLineStyle::Dashed);
+
+        style.apply_declaration("border-style", "inset");
+        assert_eq!(style.border_style, BorderLineStyle::Inset);
     }
 
     #[test]
@@ -8449,6 +8526,8 @@ mod tests {
             find_layout(&layout, |child| matches!(child.kind, LayoutKind::Text(_))).expect("text");
 
         assert!(rule.rect.height >= 1.0);
+        assert_eq!(rule.style.border_color, Rgba::rgb(0x80, 0x80, 0x80));
+        assert_eq!(rule.style.border_style, BorderLineStyle::Inset);
         assert!(text.rect.y > rule.rect.y + rule.rect.height);
     }
 
