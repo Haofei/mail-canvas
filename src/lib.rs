@@ -284,6 +284,24 @@ struct WebFontFace {
     weight: FontWeight,
 }
 
+#[derive(Debug, Clone)]
+struct LoadedFontSource {
+    url: String,
+    actual_family: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FontCssSource {
+    InlineOrImport,
+    LinkedStylesheet,
+}
+
+#[derive(Debug, Clone)]
+struct FontCssBlock {
+    css: String,
+    source: FontCssSource,
+}
+
 pub type ServoEmailRenderer = RustEmailRenderer;
 
 impl EmailRenderer for RustEmailRenderer {
@@ -388,15 +406,48 @@ fn load_web_fonts_from_html(
     db: &mut fontdb::Database,
     warnings: &mut Vec<ConsoleMessage>,
 ) -> Vec<WebFontFace> {
-    let mut css_blocks: Vec<String> = style_blocks(html)
+    let mut css_blocks: Vec<FontCssBlock> = style_blocks(html)
         .into_iter()
-        .map(ToString::to_string)
+        .map(|css| FontCssBlock {
+            css: css.to_string(),
+            source: FontCssSource::InlineOrImport,
+        })
         .collect();
     let mut imported_urls = Vec::new();
+
+    for stylesheet_url in stylesheet_link_urls(html) {
+        if imported_urls.len() >= MAX_WEB_FONT_IMPORTS {
+            break;
+        }
+        if imported_urls
+            .iter()
+            .any(|loaded: &String| loaded.eq_ignore_ascii_case(&stylesheet_url))
+        {
+            continue;
+        }
+        imported_urls.push(stylesheet_url.clone());
+        match load_stylesheet(&stylesheet_url, policy) {
+            Ok(css) => {
+                if linked_stylesheet_fonts_are_supported(&css) {
+                    css_blocks.push(FontCssBlock {
+                        css,
+                        source: FontCssSource::LinkedStylesheet,
+                    });
+                }
+            }
+            Err(error) => push_console_message(
+                warnings,
+                "warn",
+                &format!("failed to load stylesheet {stylesheet_url}: {error}"),
+            ),
+        }
+    }
+
     let mut index = 0usize;
 
     while index < css_blocks.len() && imported_urls.len() < MAX_WEB_FONT_IMPORTS {
-        for import_url in css_import_urls(&css_blocks[index]) {
+        let source = css_blocks[index].source;
+        for import_url in css_import_urls(&css_blocks[index].css) {
             if imported_urls
                 .iter()
                 .any(|loaded: &String| loaded.eq_ignore_ascii_case(&import_url))
@@ -404,10 +455,8 @@ fn load_web_fonts_from_html(
                 continue;
             }
             imported_urls.push(import_url.clone());
-            match load_resource_bytes(&import_url, policy)
-                .and_then(|bytes| String::from_utf8(bytes).context("stylesheet is not UTF-8"))
-            {
-                Ok(css) => css_blocks.push(css),
+            match load_stylesheet(&import_url, policy) {
+                Ok(css) => css_blocks.push(FontCssBlock { css, source }),
                 Err(error) => push_console_message(
                     warnings,
                     "warn",
@@ -421,11 +470,12 @@ fn load_web_fonts_from_html(
         index += 1;
     }
 
-    let mut loaded_font_urls = Vec::new();
+    let mut loaded_font_sources: Vec<LoadedFontSource> = Vec::new();
     let mut loaded_fonts = 0usize;
     let mut web_font_faces = Vec::new();
-    for css in css_blocks {
-        for declarations in font_face_declarations(&css) {
+    for block in css_blocks {
+        let preserve_descriptors = block.source == FontCssSource::LinkedStylesheet;
+        for declarations in font_face_declarations(&block.css) {
             if loaded_fonts >= MAX_WEB_FONTS {
                 push_console_message(
                     warnings,
@@ -447,10 +497,20 @@ fn load_web_fonts_from_html(
             let Some(candidate) = choose_font_source(src) else {
                 continue;
             };
-            if loaded_font_urls
+            let descriptor_weight = declaration_value(&declarations, "font-weight")
+                .and_then(parse_font_face_weight)
+                .unwrap_or(FontWeight::NORMAL);
+            if let Some(source) = loaded_font_sources
                 .iter()
-                .any(|loaded: &String| loaded.eq_ignore_ascii_case(&candidate.url))
+                .find(|loaded| loaded.url.eq_ignore_ascii_case(&candidate.url))
             {
+                if preserve_descriptors {
+                    web_font_faces.push(WebFontFace {
+                        css_family: family.clone(),
+                        actual_family: source.actual_family.clone(),
+                        weight: descriptor_weight,
+                    });
+                }
                 continue;
             }
 
@@ -469,12 +529,24 @@ fn load_web_fonts_from_html(
                                     .unwrap_or_else(|| family.clone());
                                 web_font_faces.push(WebFontFace {
                                     css_family: family.clone(),
-                                    actual_family,
-                                    weight: face.weight,
+                                    actual_family: actual_family.clone(),
+                                    weight: if preserve_descriptors {
+                                        descriptor_weight
+                                    } else {
+                                        face.weight
+                                    },
                                 });
+                                if !loaded_font_sources
+                                    .iter()
+                                    .any(|source| source.url.eq_ignore_ascii_case(&candidate.url))
+                                {
+                                    loaded_font_sources.push(LoadedFontSource {
+                                        url: candidate.url.clone(),
+                                        actual_family,
+                                    });
+                                }
                             }
                         }
-                        loaded_font_urls.push(candidate.url);
                         loaded_fonts += 1;
                     } else {
                         push_console_message(
@@ -497,6 +569,47 @@ fn load_web_fonts_from_html(
     }
 
     web_font_faces
+}
+
+fn load_stylesheet(url: &str, policy: &ResourcePolicy) -> Result<String> {
+    load_resource_bytes(url, policy)
+        .and_then(|bytes| String::from_utf8(bytes).context("stylesheet is not UTF-8"))
+}
+
+fn stylesheet_link_urls(html: &str) -> Vec<String> {
+    let document = kuchiki::parse_html().one(html.to_string());
+    let Ok(links) = document.select("link") else {
+        return Vec::new();
+    };
+
+    let mut urls = Vec::new();
+    for link in links {
+        let attrs = link.attributes.borrow();
+        let rel = attrs.get("rel").unwrap_or_default();
+        let is_stylesheet = rel
+            .split_ascii_whitespace()
+            .any(|token| token.eq_ignore_ascii_case("stylesheet"));
+        let is_alternate = rel
+            .split_ascii_whitespace()
+            .any(|token| token.eq_ignore_ascii_case("alternate"));
+        if !is_stylesheet || is_alternate {
+            continue;
+        }
+        let Some(href) = attrs.get("href") else {
+            continue;
+        };
+        urls.push(normalize_resource_url(href));
+    }
+    urls
+}
+
+fn linked_stylesheet_fonts_are_supported(css: &str) -> bool {
+    font_face_declarations(css).into_iter().all(|declarations| {
+        declaration_value(&declarations, "font-style")
+            .map(parse_font_style)
+            .unwrap_or(FontStyle::Normal)
+            == FontStyle::Normal
+    })
 }
 
 fn css_import_urls(css: &str) -> Vec<String> {
@@ -528,6 +641,16 @@ fn declaration_value<'a>(declarations: &'a [(String, String)], name: &str) -> Op
         .iter()
         .find(|(declaration_name, _)| declaration_name == name)
         .map(|(_, value)| value.as_str())
+}
+
+fn parse_font_face_weight(value: &str) -> Option<FontWeight> {
+    value
+        .split_whitespace()
+        .find_map(|token| match token.to_ascii_lowercase().as_str() {
+            "normal" => Some(FontWeight::NORMAL),
+            "bold" => Some(FontWeight::BOLD),
+            raw => raw.parse::<u16>().ok().map(FontWeight),
+        })
 }
 
 fn font_face_covers_basic_latin(declarations: &[(String, String)]) -> bool {
@@ -2398,9 +2521,12 @@ impl LayoutPainter<'_> {
             self.scale,
             rect,
             image,
-            style.background_repeat,
-            style.background_size,
-            style.background_position,
+            BackgroundImagePaint {
+                repeat: style.background_repeat,
+                size: style.background_size,
+                position: style.background_position,
+                radius: style.border_radius,
+            },
         );
     }
 }
@@ -3648,6 +3774,14 @@ enum BackgroundSize {
 struct BackgroundPosition {
     x: PositionAxis,
     y: PositionAxis,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BackgroundImagePaint {
+    repeat: BackgroundRepeat,
+    size: BackgroundSize,
+    position: BackgroundPosition,
+    radius: f32,
 }
 
 impl Default for BackgroundPosition {
@@ -5851,25 +5985,23 @@ fn draw_background_image(
     scale: f32,
     rect: Rect,
     image: &ImageData,
-    repeat: BackgroundRepeat,
-    size: BackgroundSize,
-    position: BackgroundPosition,
+    paint: BackgroundImagePaint,
 ) {
     if image.width == 0 || image.height == 0 || rect.width <= 0.0 || rect.height <= 0.0 {
         return;
     }
-    let (tile_width, tile_height) = background_tile_size(rect, image, size);
-    let tile_x = positioned_offset(rect.x, rect.width, tile_width, position.x);
-    let tile_y = positioned_offset(rect.y, rect.height, tile_height, position.y);
+    let (tile_width, tile_height) = background_tile_size(rect, image, paint.size);
+    let tile_x = positioned_offset(rect.x, rect.width, tile_width, paint.position.x);
+    let tile_y = positioned_offset(rect.y, rect.height, tile_height, paint.position.y);
 
-    if repeat == BackgroundRepeat::NoRepeat || size != BackgroundSize::Auto {
+    if paint.repeat == BackgroundRepeat::NoRepeat || paint.size != BackgroundSize::Auto {
         draw_image_clipped(
             pixmap,
             scale,
             Rect::new(tile_x, tile_y, tile_width, tile_height),
             image,
             Some(rect),
-            0.0,
+            paint.radius,
         );
         return;
     }
@@ -5886,7 +6018,7 @@ fn draw_background_image(
                 Rect::new(tile_x, tile_y, tile_width, tile_height),
                 image,
                 Some(rect),
-                0.0,
+                paint.radius,
             );
             tile_x += tile_width.max(1.0);
         }
@@ -5971,6 +6103,7 @@ fn draw_image_clipped(
     let source_pixel_height = image.height as f32 / (rect.height * scale);
     let downscaling = source_pixel_width > 1.2 || source_pixel_height > 1.2;
     let pixel_area = 1.0 / (scale * scale);
+    let radius_rect = clip.unwrap_or(rect);
 
     for py in start_y..end_y {
         let pixel_top = py as f32 / scale;
@@ -6003,7 +6136,7 @@ fn draw_image_clipped(
                 / pixel_area)
                 .clamp(0.0, 1.0);
             coverage *= rounded_rect_coverage(
-                rect,
+                radius_rect,
                 radius,
                 paint_left,
                 paint_top,
@@ -6595,6 +6728,50 @@ mod tests {
                 .expect("font family");
         assert_eq!(selection.family, "Merriweather");
         assert_eq!(selection.forced_weight, Some(FontWeight(250)));
+    }
+
+    #[test]
+    fn repeated_web_font_descriptors_keep_family_weight_matching_open() {
+        let faces = vec![
+            WebFontFace {
+                css_family: "Work Sans".to_string(),
+                actual_family: "Work Sans".to_string(),
+                weight: FontWeight(200),
+            },
+            WebFontFace {
+                css_family: "Work Sans".to_string(),
+                actual_family: "Work Sans".to_string(),
+                weight: FontWeight(700),
+            },
+        ];
+        let selection =
+            parse_font_family_selection(r#""Work Sans", Arial, sans-serif"#, &[], &faces)
+                .expect("font family");
+        assert_eq!(selection.family, "Work Sans");
+        assert_eq!(selection.forced_weight, None);
+    }
+
+    #[test]
+    fn parses_stylesheet_link_urls() {
+        let urls = stylesheet_link_urls(
+            r#"<html><head>
+                <link rel="preload" href="ignore.css">
+                <link rel="stylesheet" href="fonts.css">
+                <link rel="alternate stylesheet" href="theme.css">
+              </head></html>"#,
+        );
+
+        assert_eq!(urls, vec!["fonts.css"]);
+    }
+
+    #[test]
+    fn linked_stylesheet_font_filter_requires_normal_style_faces() {
+        assert!(linked_stylesheet_fonts_are_supported(
+            r#"@font-face { font-family: Work; font-style: normal; font-weight: 400; src: url(work.woff2); }"#
+        ));
+        assert!(!linked_stylesheet_fonts_are_supported(
+            r#"@font-face { font-family: Playfair; font-style: italic; font-weight: 400; src: url(playfair.woff2); }"#
+        ));
     }
 
     #[test]
@@ -7590,6 +7767,33 @@ mod tests {
         assert_eq!(&data[4..8], &[255, 0, 0, 255]);
         assert_eq!(&data[8..12], &[128, 0, 0, 128]);
         assert_eq!(&data[12..16], &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn background_images_are_clipped_by_border_radius() {
+        let image = ImageData {
+            width: 1,
+            height: 1,
+            rgba: vec![255, 0, 0, 255],
+        };
+        let mut pixmap = Pixmap::new(3, 3).expect("pixmap");
+
+        draw_background_image(
+            &mut pixmap,
+            1.0,
+            Rect::new(0.0, 0.0, 3.0, 3.0),
+            &image,
+            BackgroundImagePaint {
+                repeat: BackgroundRepeat::NoRepeat,
+                size: BackgroundSize::Cover,
+                position: BackgroundPosition::default(),
+                radius: 1.5,
+            },
+        );
+
+        let data = pixmap.data();
+        assert!(data[3] < 255);
+        assert_eq!(&data[16..20], &[255, 0, 0, 255]);
     }
 
     #[test]
