@@ -356,3 +356,92 @@ export const TEMPLATES = [
     'https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/notification-email-ormes.html',
   ],
 ];
+
+const TEMPLATE_METADATA = {
+  'sendgrid-dynamic-receipt': {
+    status: 'known-warning',
+    expectedWarnings: 1,
+    reason: 'contains unresolved {{this.image}} template data',
+  },
+  'colorlib-template-2': {
+    status: 'known-warning',
+    expectedWarnings: 3,
+    reason: 'upstream fixture references images missing from the repository',
+  },
+  'colorlib-template-5': {
+    status: 'known-warning',
+    expectedWarnings: 3,
+    reason: 'upstream fixture references images missing from the repository',
+  },
+  'codedmails-welcome-aleos': {
+    status: 'known-warning',
+    expectedWarnings: 5,
+    reason: 'upstream fixture uses relative image URLs that resolve outside the repository',
+  },
+  'codedmails-reset-dineos': {
+    status: 'known-warning',
+    expectedWarnings: 1,
+    reason: 'upstream fixture uses relative image URLs that resolve outside the repository',
+  },
+  'codedmails-receipt-faedra': {
+    status: 'known-warning',
+    expectedWarnings: 3,
+    reason: 'upstream fixture uses relative image URLs that resolve outside the repository',
+  },
+  'codedmails-notification-ormes': {
+    status: 'known-warning',
+    expectedWarnings: 5,
+    reason: 'upstream fixture uses relative image URLs that resolve outside the repository',
+  },
+};
+
+export const TEMPLATE_CORPUS = TEMPLATES.map(([name, url]) => ({
+  name,
+  url,
+  provider: templateProvider(name),
+  category: templateCategory(name),
+  status: 'active',
+  expectedWarnings: 0,
+  reason: '',
+  ...(TEMPLATE_METADATA[name] ?? {}),
+}));
+
+function templateProvider(name) {
+  if (name.startsWith('waypoint-')) return 'waypoint';
+  if (name.startsWith('postmark-')) return 'postmark';
+  if (name.startsWith('mailersend-')) return 'mailersend';
+  if (name.startsWith('mailpace-')) return 'mailpace';
+  if (name.startsWith('sendgrid-')) return 'sendgrid';
+  if (name.startsWith('mailgun-')) return 'mailgun';
+  if (name.startsWith('ckissi-')) return 'ckissi';
+  if (name.startsWith('colorlib-')) return 'colorlib';
+  if (name.startsWith('codedmails-')) return 'codedmails';
+  if (name.startsWith('emailoctopus-')) return 'emailoctopus';
+  if (name.startsWith('davidamunga-')) return 'davidamunga';
+  return name.split('-')[0] || 'unknown';
+}
+
+function templateCategory(name) {
+  if (name.includes('receipt') || name.includes('invoice') || name.includes('billing')) {
+    return 'receipt';
+  }
+  if (name.includes('password') || name.includes('reset') || name.includes('otp')) {
+    return 'account-security';
+  }
+  if (name.includes('welcome') || name.includes('invite') || name.includes('confirmation')) {
+    return 'onboarding';
+  }
+  if (name.includes('trial') || name.includes('dunning') || name.includes('payment')) {
+    return 'lifecycle';
+  }
+  if (name.includes('ecommerce') || name.includes('order') || name.includes('delivery')) {
+    return 'commerce';
+  }
+  if (name.includes('marketplace')) {
+    return 'marketplace';
+  }
+  if (name.includes('social')) {
+    return 'social';
+  }
+  return 'general';
+}

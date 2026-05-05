@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import pixelmatch from 'pixelmatch';
 import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
-import { TEMPLATES } from './templates.mjs';
+import { TEMPLATE_CORPUS } from './templates.mjs';
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_WORK_DIR = '/tmp/mail-canvas-playwright-compare';
@@ -20,7 +20,7 @@ function parseArgs(argv) {
     width: DEFAULT_WIDTH,
     workDir: DEFAULT_WORK_DIR,
     timeoutMs: DEFAULT_TIMEOUT_MS,
-    limit: TEMPLATES.length,
+    limit: TEMPLATE_CORPUS.length,
     only: [],
     all: false,
     allowRemote: true,
@@ -107,11 +107,11 @@ async function main() {
     throw new Error(`no templates matched --only: ${args.only.join(', ')}`);
   }
   const downloaded = [];
-  for (const [name, url] of templates) {
-    const html = await download(url, args.timeoutMs);
-    const htmlPath = path.join(dirs.html, `${name}.html`);
+  for (const template of templates) {
+    const html = await download(template.url, args.timeoutMs);
+    const htmlPath = path.join(dirs.html, `${template.name}.html`);
     await writeFile(htmlPath, html);
-    downloaded.push({ name, url, htmlPath });
+    downloaded.push({ ...template, htmlPath });
   }
 
   const browser = await chromium.launch({ headless: true });
@@ -155,13 +155,13 @@ function selectTemplates(args, expectations) {
     args.only.length > 0
       ? args.only
       : args.all
-        ? TEMPLATES.slice(0, args.limit).map(([name]) => name)
+        ? TEMPLATE_CORPUS.slice(0, args.limit).map((template) => template.name)
       : expectedNames.length > 0
         ? expectedNames
-        : TEMPLATES.slice(0, args.limit).map(([name]) => name);
+        : TEMPLATE_CORPUS.slice(0, args.limit).map((template) => template.name);
   const wantedSet = new Set(wanted);
-  const templates = TEMPLATES.filter(([name]) => wantedSet.has(name));
-  const found = new Set(templates.map(([name]) => name));
+  const templates = TEMPLATE_CORPUS.filter((template) => wantedSet.has(template.name));
+  const found = new Set(templates.map((template) => template.name));
   const missing = wanted.filter((name) => !found.has(name));
   if (missing.length > 0) {
     throw new Error(`unknown template names: ${missing.join(', ')}`);
@@ -256,6 +256,11 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
   return {
     name: template.name,
     url: template.url,
+    provider: template.provider,
+    category: template.category,
+    corpusStatus: template.status,
+    corpusReason: template.reason,
+    expectedWarnings: template.expectedWarnings,
     browserPng: browserPath,
     rustPng: rustPath,
     diffPng: diffPath,
@@ -647,15 +652,22 @@ function validationSummary(results, failures, expectations) {
   const passed = checked - failedNames.size;
   const mode =
     expectations.validationMode === 'semantic' ? 'semantic validation' : 'pixel validation';
-  const skipped = skippedNames.size > 0 ? ` (${skippedNames.size} skipped due warnings)` : '';
+  const skipped =
+    skippedNames.size > 0 ? ` (${skippedNames.size} skipped due known corpus warnings)` : '';
   return `${mode}: ${passed}/${checked} templates passed${skipped}`;
 }
 
 function semanticResultSkipped(result, expectations) {
-  if (!expectations.skipTemplatesWithWarnings || result.warningCount === 0) {
+  if (result.warningCount === 0) {
     return false;
   }
-  return !Object.prototype.hasOwnProperty.call(expectations.templates ?? {}, result.name);
+  if (Object.prototype.hasOwnProperty.call(expectations.templates ?? {}, result.name)) {
+    return false;
+  }
+  if (expectations.skipKnownWarningTemplates && result.corpusStatus === 'known-warning') {
+    return true;
+  }
+  return Boolean(expectations.skipTemplatesWithWarnings);
 }
 
 function checkSemanticExpectations(result, expectations, expected) {
@@ -862,14 +874,14 @@ function renderSemanticMarkdownReport(results, args, expectations) {
     `- Output directory: \`${args.workDir}\``,
     '- Total pixel diff is reported as an observation only unless `maxTotalDiffPercent` is set.',
     '',
-    '| Template | Status | Browser | Rust | Height Delta | Total Diff | Text Diff | Media Diff | Non-Media Non-Text Diff | Semantic Limits | Warnings | Files |',
-    '|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|',
+    '| Template | Provider | Status | Browser | Rust | Height Delta | Total Diff | Text Diff | Media Diff | Non-Media Non-Text Diff | Semantic Limits | Warnings | Files |',
+    '|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|',
   ];
 
   for (const result of results) {
     const expected = expectations?.templates?.[result.name] ?? {};
     const status = semanticResultSkipped(result, expectations)
-      ? 'skipped: warnings'
+      ? `skipped: ${result.corpusReason || 'known corpus warning'}`
       : semanticResultStatus(result, expectations, expected);
     const heightDeltaPx = Math.abs(result.rust.height - result.browser.height);
     const heightDeltaPercent = heightDeltaPx / Math.max(1, result.browser.height);
@@ -878,12 +890,12 @@ function renderSemanticMarkdownReport(results, args, expectations) {
     const textPercent = result.text.areaPixels > 0 ? formatPercent(result.text.diffRatio) : '';
     const limits = semanticLimitSummary(expectations, expected);
     lines.push(
-      `| ${result.name} | ${status} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${heightDeltaPx}px (${formatPercent(heightDeltaPercent)}) | ${formatPercent(result.diffRatio)} | ${textPercent} | ${mediaPercent} | ${formatPercent(result.nonMediaNonText.diffRatio)} | ${limits} | ${result.warningCount} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) |`,
+      `| ${result.name} | ${result.provider} | ${status} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${heightDeltaPx}px (${formatPercent(heightDeltaPercent)}) | ${formatPercent(result.diffRatio)} | ${textPercent} | ${mediaPercent} | ${formatPercent(result.nonMediaNonText.diffRatio)} | ${limits} | ${result.warningCount} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) |`,
     );
   }
   lines.push('');
   lines.push(
-    'Notes: text and media diffs are tolerant coarse checks. They are intended to catch missing content or major placement failures, not exact font rasterization. In `--all` runs, templates with renderer warnings are skipped unless they are explicitly listed in the expectations file.',
+    'Notes: text and media diffs are tolerant coarse checks. They are intended to catch missing content or major placement failures, not exact font rasterization. In `--all` runs, known-warning corpus entries are skipped unless they are explicitly listed in the expectations file.',
   );
   return `${lines.join('\n')}\n`;
 }

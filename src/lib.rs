@@ -4046,7 +4046,11 @@ fn style_for_node_with_fonts(
             style.align_from_attribute = true;
         }
     }
-    if let Some(vertical_align) = attrs.get("valign").and_then(parse_vertical_align) {
+    if let Some(vertical_align) = attrs
+        .get("valign")
+        .or_else(|| attrs.get("vertical-align"))
+        .and_then(parse_vertical_align)
+    {
         style.vertical_align = vertical_align;
     }
     if tag == "table" {
@@ -7946,6 +7950,19 @@ mod tests {
     fn table_cell_valign_middle_centers_content_in_explicit_height() {
         let layout = layout_for_test(
             r##"<table width="200"><tr><td height="100" valign="middle"><div style="height:20px;background:#111"></div></td></tr></table>"##,
+            200,
+        );
+        let child = find_layout(&layout, |child| {
+            child.style.background == Some(Rgba::rgb(0x11, 0x11, 0x11))
+        })
+        .expect("cell child");
+        assert!((child.rect.y - 40.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn table_cell_vertical_align_attribute_alias_centers_content() {
+        let layout = layout_for_test(
+            r##"<table width="200"><tr><td height="100" vertical-align="middle"><div style="height:20px;background:#111"></div></td></tr></table>"##,
             200,
         );
         let child = find_layout(&layout, |child| {

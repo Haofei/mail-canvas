@@ -1,7 +1,7 @@
 {
   "width": 600,
   "validationMode": "semantic",
-  "skipTemplatesWithWarnings": true,
+  "skipKnownWarningTemplates": true,
   "maxWarnings": 0,
   "maxWidthDeltaPx": 0,
   "maxHeightDeltaPx": 20,

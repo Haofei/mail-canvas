@@ -124,25 +124,24 @@ pixel equality. The pass/fail checks are semantic and tolerant:
 - total pixel diff is still reported for investigation, but it is observational
   unless `maxTotalDiffPercent` is explicitly configured.
 
-Run a broader comparison:
+Run the full corpus comparison with the same semantic gate:
 
 ```sh
 npm run compare:playwright
 ```
 
-Run every template in `scripts/templates.mjs` against the same semantic gate.
-Templates with renderer warnings are skipped in this broad corpus unless they
-are explicitly listed in `scripts/playwright_expectations.json`; this keeps
-broken upstream image URLs and unfilled template-variable images out of the pass
-rate.
+The corpus lives in `scripts/templates.mjs` as structured metadata: provider,
+category, status, expected warning count, and the reason for any known warning.
+Known-warning templates are skipped in the broad corpus unless they are
+explicitly listed in `scripts/playwright_expectations.json`; this keeps broken
+upstream image URLs and unfilled template-variable images out of the pass rate.
 
 ```sh
 node scripts/playwright_compare.mjs \
   --expectations scripts/playwright_expectations.json \
   --work-dir /tmp/mail-canvas-playwright-all-semantic \
   --timeout-ms 30000 \
-  --all \
-  --limit 89
+  --all
 ```
 
 Artifacts are written under `/tmp/mail-canvas-playwright-regression` or
@@ -306,24 +305,23 @@ npm run test:playwright-regression
 - total pixel diff 仍会输出，方便排查，但除非显式配置 `maxTotalDiffPercent`，
   否则不作为失败条件。
 
-更多模板对比：
+使用同一套 semantic gate 跑完整语料：
 
 ```sh
 npm run compare:playwright
 ```
 
-对 `scripts/templates.mjs` 里的全部模板使用同一套 semantic gate。全量语料里，
-如果模板触发 renderer warning，会先跳过，除非它被显式列在
-`scripts/playwright_expectations.json`；这样上游已经失效的图片链接和模板变量图片
-不会污染通过率。
+`scripts/templates.mjs` 现在是带 metadata 的语料：provider、category、status、
+expected warning count，以及 known warning 的原因。全量语料里，known-warning
+模板会先跳过，除非它被显式列在 `scripts/playwright_expectations.json`；这样上游
+已经失效的图片链接和模板变量图片不会污染通过率。
 
 ```sh
 node scripts/playwright_compare.mjs \
   --expectations scripts/playwright_expectations.json \
   --work-dir /tmp/mail-canvas-playwright-all-semantic \
   --timeout-ms 30000 \
-  --all \
-  --limit 89
+  --all
 ```
 
 输出会在 `/tmp/mail-canvas-playwright-regression` 或
