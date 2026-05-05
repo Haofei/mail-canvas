@@ -939,12 +939,16 @@ impl<'a> LayoutEngine<'a> {
         let mut inline_row = Vec::new();
         let mut inline_row_width = 0.0;
         let mut inline_row_height = 0.0;
+        let mut last_inline_block_fallback = false;
         let parent_line_height = resolved_line_height_from_db(self.font_system.db(), style);
         let mut floats = Vec::new();
 
         for child in node.children() {
             if let Some(text_node) = child.as_text() {
                 let text_value = text_node.borrow();
+                if text_value.chars().any(|ch| !is_collapsible_whitespace(ch)) {
+                    last_inline_block_fallback = false;
+                }
                 if !inline_row.is_empty() && text_value.chars().all(is_collapsible_whitespace) {
                     continue;
                 }
@@ -971,6 +975,15 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
             if tag == "br" {
+                if last_inline_block_fallback
+                    && inline_row.is_empty()
+                    && text_spans_are_only_collapsible_whitespace(&text)
+                {
+                    text.clear();
+                    last_inline_block_fallback = false;
+                    continue;
+                }
+                last_inline_block_fallback = false;
                 if flush_inline_row(
                     &mut inline_row,
                     &mut inline_row_width,
@@ -997,11 +1010,17 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
 
+            let child_is_inline_block_fallback = child_style.display == Display::Inline
+                && tag != "img"
+                && !inline_style_has_own_box(&child_style)
+                && !inline_can_flatten(&child, &child_style);
+
             if child_style.display == Display::Inline
                 && tag != "img"
                 && !inline_style_has_own_box(&child_style)
-                && inline_can_flatten(&child, &child_style)
+                && !child_is_inline_block_fallback
             {
+                last_inline_block_fallback = false;
                 append_inline_spans(&child, &child_style, &mut text);
                 continue;
             }
@@ -1059,6 +1078,7 @@ impl<'a> LayoutEngine<'a> {
             } else {
                 None
             };
+            let flow_start_y = cursor_y;
             let flow = if let Some(marker) = list_marker {
                 self.layout_list_item(
                     &child,
@@ -1095,14 +1115,33 @@ impl<'a> LayoutEngine<'a> {
                         rect: Rect::new(occupied_x, float_y, occupied_width, occupied_height),
                     });
                     previous_margin_bottom = None;
+                    last_inline_block_fallback = child_is_inline_block_fallback;
                     children.push(flow.node);
                     continue;
                 }
                 if child_is_inline_flow {
+                    let inline_flow_width =
+                        (flow.node.rect.width + flow.node.style.margin.horizontal()).max(1.0);
+                    if inline_row_width > 0.0
+                        && inline_row_width + inline_flow_width > width + f32::EPSILON
+                    {
+                        flush_inline_row(
+                            &mut inline_row,
+                            &mut inline_row_width,
+                            &mut inline_row_height,
+                            style,
+                            width,
+                            &mut cursor_y,
+                            &mut children,
+                        );
+                    }
+                    if (cursor_y - flow_start_y).abs() > f32::EPSILON {
+                        translate_layout(&mut flow.node, 0.0, cursor_y - flow_start_y);
+                    }
                     if inline_row_width > 0.0 {
                         translate_layout(&mut flow.node, inline_row_width, 0.0);
                     }
-                    inline_row_width += flow.node.rect.width;
+                    inline_row_width += inline_flow_width;
                     let baseline_descent = if flow.node.style.vertical_align
                         == VerticalAlign::Baseline
                         && inline_flow_uses_bottom_edge_baseline(&flow.node)
@@ -1121,6 +1160,7 @@ impl<'a> LayoutEngine<'a> {
                     inline_row_height = inline_row_height.max(line_advance + baseline_descent);
                     inline_row.push(flow.node);
                     previous_margin_bottom = None;
+                    last_inline_block_fallback = false;
                     continue;
                 }
                 align_table_child_to_parent_text(&mut flow.node, style, x, width);
@@ -1138,6 +1178,7 @@ impl<'a> LayoutEngine<'a> {
                 cursor_y += flow.advance - margin_overlap;
                 previous_margin_bottom =
                     can_collapse_sibling_margin(child_display).then_some(collapsible_margin_bottom);
+                last_inline_block_fallback = child_is_inline_block_fallback;
                 children.push(flow.node);
             }
         }
@@ -1236,6 +1277,7 @@ impl<'a> LayoutEngine<'a> {
         match style.display {
             Display::None => Ok(None),
             Display::Flex => self.layout_flex(node, style, x, y, containing_width, depth),
+            Display::InlineTable => self.layout_table(node, style, x, y, containing_width, depth),
             Display::Table => self.layout_table(node, style, x, y, containing_width, depth),
             Display::Inline => {
                 if inline_style_has_own_box(&style) {
@@ -1268,6 +1310,7 @@ impl<'a> LayoutEngine<'a> {
         let max_outer_width = explicit_width
             .map(|width| style.outer_width_for_declared(width))
             .unwrap_or(containing_width - style.margin.horizontal())
+            .min(style.constrain_outer_width(f32::MAX, containing_width))
             .max(1.0);
         let max_inner_width = style.inner_width_for_outer(max_outer_width);
         let preferred_inner_width = if explicit_width.is_some() {
@@ -1281,19 +1324,24 @@ impl<'a> LayoutEngine<'a> {
                 .max(1.0)
         };
 
-        let rect_x = x + style.horizontal_offset(containing_width, max_outer_width);
+        let rect_width = if explicit_width.is_some() {
+            max_outer_width
+        } else {
+            style
+                .constrain_outer_width(
+                    preferred_inner_width + style.padding.horizontal() + style.border.horizontal(),
+                    containing_width,
+                )
+                .max(1.0)
+        };
+        let inner_width = style.inner_width_for_outer(rect_width);
+        let rect_x = x + style.horizontal_offset(containing_width, rect_width);
         let rect_y = y + style.margin.top;
         let inner_x = rect_x + style.border.left + style.padding.left;
         let inner_y = rect_y + style.border.top + style.padding.top;
         let mut content =
-            self.layout_children(node, &style, inner_x, inner_y, preferred_inner_width, depth)?;
+            self.layout_children(node, &style, inner_x, inner_y, inner_width, depth)?;
         let explicit_height = style.resolve_height(0.0).unwrap_or(0.0);
-        let rect_width = if explicit_width.is_some() {
-            max_outer_width
-        } else {
-            (preferred_inner_width + style.padding.horizontal() + style.border.horizontal())
-                .max(1.0)
-        };
         let rect_height = (content.advance + style.padding.vertical() + style.border.vertical())
             .max(explicit_height)
             .max(1.0);
@@ -1330,7 +1378,9 @@ impl<'a> LayoutEngine<'a> {
         let outer_width = style
             .resolve_width(containing_width)
             .map(|width| style.outer_width_for_declared(width))
-            .unwrap_or(containing_width - style.margin.horizontal())
+            .unwrap_or(containing_width - style.margin.horizontal());
+        let outer_width = style
+            .constrain_outer_width(outer_width, containing_width)
             .max(1.0);
         let rect_x = x + style.horizontal_offset(containing_width, outer_width);
         let rect_y = y + style.margin.top;
@@ -1384,7 +1434,9 @@ impl<'a> LayoutEngine<'a> {
         let outer_width = style
             .resolve_width(containing_width)
             .map(|width| style.outer_width_for_declared(width))
-            .unwrap_or(containing_width - style.margin.horizontal())
+            .unwrap_or(containing_width - style.margin.horizontal());
+        let outer_width = style
+            .constrain_outer_width(outer_width, containing_width)
             .max(1.0);
         let rect_x = x + style.horizontal_offset(containing_width, outer_width);
         let rect_y = y + style.margin.top;
@@ -1550,8 +1602,10 @@ impl<'a> LayoutEngine<'a> {
         } else {
             self.preferred_table_outer_width(&grid, &style, max_table_width, spacing)?
                 .min(max_table_width)
-        }
-        .max(1.0);
+        };
+        let table_width = style
+            .constrain_outer_width(table_width, containing_width)
+            .max(1.0);
         let rect_x = x + style.horizontal_offset(containing_width, table_width);
         let rect_y = y + style.margin.top;
         let content_x = rect_x + style.border.left + style.padding.left;
@@ -1584,10 +1638,11 @@ impl<'a> LayoutEngine<'a> {
 
                 let cell_x = content_x + column_offset(&column_widths, cell.col, spacing);
                 let cell_width = spanned_width(&column_widths, cell.col, cell.colspan, spacing);
-                let cell_inner_x = cell_x + cell_style.border.left + cell_style.padding.left;
-                let cell_inner_y = row_y + cell_style.border.top + cell_style.padding.top;
+                let cell_padding = cell_style.resolved_padding(cell_width);
+                let cell_inner_x = cell_x + cell_style.border.left + cell_padding.left;
+                let cell_inner_y = row_y + cell_style.border.top + cell_padding.top;
                 let cell_inner_width =
-                    (cell_width - cell_style.padding.horizontal() - cell_style.border.horizontal())
+                    (cell_width - cell_padding.horizontal() - cell_style.border.horizontal())
                         .max(1.0);
                 let content = self.layout_children(
                     &cell.node,
@@ -1599,7 +1654,7 @@ impl<'a> LayoutEngine<'a> {
                 )?;
                 let explicit_height = cell_style.resolve_height(0.0).unwrap_or(0.0);
                 let natural_cell_height = (content.advance
-                    + cell_style.padding.vertical()
+                    + cell_padding.vertical()
                     + cell_style.border.vertical())
                 .max(1.0);
                 let cell_height = natural_cell_height.max(explicit_height).max(1.0);
@@ -1829,10 +1884,17 @@ impl<'a> LayoutEngine<'a> {
     ) -> Result<Vec<f32>> {
         let count = grid.column_count.max(1);
         let available = (table_width - spacing * count.saturating_sub(1) as f32).max(count as f32);
+        if count == 1 {
+            return Ok(vec![available]);
+        }
         let mut widths = vec![None; count];
+        let mut preferreds = vec![0.0_f32; count];
         let mut minimums = vec![0.0_f32; count];
         for (col, width) in grid.col_widths.iter().enumerate().take(count) {
-            if let Some(width) = width.and_then(|width| width.resolve(available)) {
+            if let Some(width) = width
+                .filter(length_is_intrinsic_fixed)
+                .and_then(|width| width.resolve(available))
+            {
                 let width = width.max(1.0);
                 widths[col] = Some(width);
             }
@@ -1880,66 +1942,89 @@ impl<'a> LayoutEngine<'a> {
                     continue;
                 }
                 style.apply_table_cell_padding(table_style.cell_padding);
-                if let Some(width) = style.width.and_then(|width| width.resolve(available)) {
-                    let outer_width = style.outer_width_for_declared(width);
-                    let per_col = ((outer_width - spacing * cell.colspan.saturating_sub(1) as f32)
-                        / cell.colspan as f32)
-                        .max(1.0);
+                let preferred =
+                    if let Some(width) = style.width.and_then(|width| width.resolve(available)) {
+                        let outer_width = style.outer_width_for_declared(width);
+                        outer_width
+                    } else {
+                        self.preferred_content_width(&cell.node, &style, available)?
+                            + style.padding.horizontal()
+                            + style.border.horizontal()
+                    }
+                    .max(0.0);
+                let per_col = ((preferred - spacing * cell.colspan.saturating_sub(1) as f32)
+                    / cell.colspan as f32)
+                    .max(0.0);
+                let uses_intrinsic_fixed_width = style
+                    .width
+                    .as_ref()
+                    .is_some_and(length_is_intrinsic_fixed)
+                    || table_cell_is_spacer(&cell.node)
+                    || style.wrap == TextWrap::None
+                    || cell_contains_only_intrinsic_fixed_replaced_content(&cell.node, &style);
+                if uses_intrinsic_fixed_width {
                     for col in cell.col..cell.col + cell.colspan {
                         if col < widths.len() {
-                            widths[col] = Some(widths[col].unwrap_or(0.0).max(per_col));
+                            widths[col] = Some(widths[col].unwrap_or(0.0).max(per_col.max(1.0)));
                         }
                     }
-                } else if table_cell_is_spacer(&cell.node) {
-                    let preferred = (self
-                        .preferred_content_width(&cell.node, &style, available)?
-                        + style.padding.horizontal()
-                        + style.border.horizontal())
-                    .max(0.0);
-                    let per_col = ((preferred - spacing * cell.colspan.saturating_sub(1) as f32)
-                        / cell.colspan as f32)
-                        .max(0.0);
-                    for col in cell.col..cell.col + cell.colspan {
-                        if col < minimums.len() {
-                            minimums[col] = minimums[col].max(per_col);
-                        }
+                }
+                for col in cell.col..cell.col + cell.colspan {
+                    if col < preferreds.len() {
+                        preferreds[col] = preferreds[col].max(per_col);
+                    }
+                    if table_cell_is_spacer(&cell.node) && col < minimums.len() {
+                        minimums[col] = minimums[col].max(per_col);
                     }
                 }
             }
         }
 
-        let mut fixed_total: f32 = widths.iter().flatten().sum();
+        let mut resolved: Vec<f32> = widths
+            .iter()
+            .zip(preferreds.iter().zip(&minimums))
+            .map(|(width, (preferred, minimum))| {
+                width.unwrap_or_else(|| preferred.max(*minimum)).max(1.0)
+            })
+            .collect();
+
+        let explicit_total: f32 = widths.iter().flatten().sum();
         let flexible_minimum: f32 = widths
             .iter()
-            .zip(&minimums)
-            .filter_map(|(width, minimum)| width.is_none().then_some(*minimum))
+            .zip(resolved.iter())
+            .filter_map(|(width, resolved)| width.is_none().then_some(*resolved))
             .sum();
 
-        if fixed_total + flexible_minimum > available && fixed_total > 0.0 {
-            let target_fixed = (available - flexible_minimum).max(0.0);
-            let scale = target_fixed / fixed_total;
-            for width in widths.iter_mut().flatten() {
-                *width = (*width * scale).max(1.0);
+        if explicit_total + flexible_minimum > available {
+            let target_flexible = (available - explicit_total).max(0.0);
+            if target_flexible > 0.0 && flexible_minimum > 0.0 {
+                let scale = target_flexible / flexible_minimum;
+                for (index, width) in widths.iter().enumerate() {
+                    if width.is_none() {
+                        resolved[index] = (resolved[index] * scale).max(1.0);
+                    }
+                }
+            } else {
+                let scale = available / (explicit_total + flexible_minimum).max(1.0);
+                for width in &mut resolved {
+                    *width = (*width * scale).max(1.0);
+                }
+            }
+            return Ok(resolved);
+        }
+
+        let resolved_total: f32 = resolved.iter().sum();
+        let flexible = widths.iter().filter(|width| width.is_none()).count();
+        if flexible > 0 && resolved_total < available {
+            let extra = (available - resolved_total) / flexible as f32;
+            for (index, width) in widths.iter().enumerate() {
+                if width.is_none() {
+                    resolved[index] += extra;
+                }
             }
         }
 
-        fixed_total = widths.iter().flatten().sum();
-        let flexible = widths.iter().filter(|width| width.is_none()).count();
-        let flexible_width = if flexible > 0 {
-            ((available - fixed_total).max(flexible as f32)) / flexible as f32
-        } else {
-            0.0
-        };
-
-        Ok(widths
-            .into_iter()
-            .zip(minimums)
-            .map(|(width, minimum)| {
-                width
-                    .unwrap_or_else(|| flexible_width.max(minimum))
-                    .max(1.0)
-            })
-            .collect())
+        Ok(resolved)
     }
 
     fn layout_image(
@@ -2215,11 +2300,26 @@ impl<'a> LayoutEngine<'a> {
         containing_width: f32,
     ) -> Result<f32> {
         let mut max_width: f32 = 0.0;
-        let mut inline_text = String::new();
+        let mut inline_spans: Vec<TextSpan> = Vec::new();
+
+        let flush_inline_spans =
+            |renderer: &mut Self, spans: &mut Vec<TextSpan>, max_width: &mut f32| {
+                let normalized = normalize_text_spans(spans);
+                spans.clear();
+                if normalized.is_empty() {
+                    return;
+                }
+                let width = if text_spans_match_style(&normalized, style) {
+                    renderer.measure_text_width(&spans_text(&normalized), style)
+                } else {
+                    renderer.measure_rich_text_width(&normalized, style)
+                };
+                *max_width = max_width.max(width);
+            };
 
         for child in node.children() {
             if let Some(text_node) = child.as_text() {
-                append_text(&mut inline_text, &text_node.borrow());
+                append_text_span(&mut inline_spans, &text_node.borrow(), style);
                 continue;
             }
 
@@ -2230,14 +2330,7 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
             if tag == "br" {
-                let text = normalize_text(&inline_text);
-                inline_text.clear();
-                if !text.is_empty() {
-                    max_width = max_width.max(self.measure_text_width(
-                        &apply_text_transform(&text, style.text_transform),
-                        style,
-                    ));
-                }
+                flush_inline_spans(self, &mut inline_spans, &mut max_width);
                 continue;
             }
 
@@ -2250,19 +2343,11 @@ impl<'a> LayoutEngine<'a> {
                 && tag != "img"
                 && inline_can_flatten(&child, &child_style)
             {
-                append_text(&mut inline_text, &text_content(&child));
+                append_inline_spans(&child, &child_style, &mut inline_spans);
                 continue;
             }
 
-            let text = normalize_text(&inline_text);
-            inline_text.clear();
-            if !text.is_empty() {
-                max_width =
-                    max_width.max(self.measure_text_width(
-                        &apply_text_transform(&text, style.text_transform),
-                        style,
-                    ));
-            }
+            flush_inline_spans(self, &mut inline_spans, &mut max_width);
 
             let child_width = if tag == "img" {
                 self.preferred_image_width(&child, &child_style, containing_width)
@@ -2270,6 +2355,24 @@ impl<'a> LayoutEngine<'a> {
                 self.preferred_content_width(&child, &child_style, containing_width)?
                     + child_style.padding.horizontal()
                     + child_style.border.horizontal()
+            } else if matches!(child_style.display, Display::Table | Display::InlineTable) {
+                let grid = build_table_grid(&child, self.limits.max_table_cells)?;
+                let spacing = if child_style.border_collapse == BorderCollapse::Collapse {
+                    0.0
+                } else {
+                    child_style.cell_spacing.max(0.0)
+                };
+                if let Some(width) = child_style.resolve_width(containing_width) {
+                    child_style.outer_width_for_declared(width)
+                } else {
+                    self.preferred_table_outer_width(
+                        &grid,
+                        &child_style,
+                        containing_width,
+                        spacing,
+                    )?
+                    .min(containing_width)
+                }
             } else {
                 child_style
                     .resolve_width(containing_width)
@@ -2283,12 +2386,7 @@ impl<'a> LayoutEngine<'a> {
             max_width = max_width.max(child_width);
         }
 
-        let text = normalize_text(&inline_text);
-        if !text.is_empty() {
-            max_width = max_width.max(
-                self.measure_text_width(&apply_text_transform(&text, style.text_transform), style),
-            );
-        }
+        flush_inline_spans(self, &mut inline_spans, &mut max_width);
         Ok(max_width.max(1.0))
     }
 
@@ -2438,6 +2536,7 @@ fn taffy_dimension(length: Option<Length>) -> TaffyDimension {
     match length {
         Some(Length::Px(value)) => taffy_length(value),
         Some(Length::Percent(value)) => taffy_percent(value),
+        Some(Length::Inherit) => taffy_percent(1.0),
         None => taffy_auto(),
     }
 }
@@ -2901,6 +3000,7 @@ struct Style {
     margin_top_em: Option<f32>,
     margin_bottom_em: Option<f32>,
     padding: Edges,
+    padding_percent: RelativeEdges,
     padding_explicit: EdgeFlags,
     background: Option<Rgba>,
     background_image: Option<ImageData>,
@@ -2976,6 +3076,7 @@ impl Style {
             margin_top_em: None,
             margin_bottom_em: None,
             padding: Edges::ZERO,
+            padding_percent: RelativeEdges::NONE,
             padding_explicit: EdgeFlags::NONE,
             background: None,
             background_image: None,
@@ -3051,6 +3152,7 @@ impl Style {
             margin_top_em: None,
             margin_bottom_em: None,
             padding: Edges::ZERO,
+            padding_percent: RelativeEdges::NONE,
             padding_explicit: EdgeFlags::NONE,
             background: None,
             background_image: None,
@@ -3201,6 +3303,63 @@ impl Style {
         self.margin.bottom = self.font_size * bottom;
     }
 
+    fn resolved_padding(&self, basis: f32) -> Edges {
+        Edges {
+            top: self
+                .padding_percent
+                .top
+                .map(|percent| basis.max(0.0) * percent)
+                .unwrap_or(self.padding.top),
+            right: self
+                .padding_percent
+                .right
+                .map(|percent| basis.max(0.0) * percent)
+                .unwrap_or(self.padding.right),
+            bottom: self
+                .padding_percent
+                .bottom
+                .map(|percent| basis.max(0.0) * percent)
+                .unwrap_or(self.padding.bottom),
+            left: self
+                .padding_percent
+                .left
+                .map(|percent| basis.max(0.0) * percent)
+                .unwrap_or(self.padding.left),
+        }
+    }
+
+    fn set_padding_edge(&mut self, edge: &str, value: &str) {
+        let parsed = parse_box_length(value, self.font_size, true);
+        let (absolute, percent) = match parsed {
+            Some(Length::Percent(value)) => (0.0, Some(value)),
+            Some(Length::Px(value)) => (value, None),
+            Some(Length::Inherit) | None => (0.0, None),
+        };
+        match edge {
+            "top" => {
+                self.padding.top = absolute;
+                self.padding_percent.top = percent;
+                self.padding_explicit.top = true;
+            }
+            "right" => {
+                self.padding.right = absolute;
+                self.padding_percent.right = percent;
+                self.padding_explicit.right = true;
+            }
+            "bottom" => {
+                self.padding.bottom = absolute;
+                self.padding_percent.bottom = percent;
+                self.padding_explicit.bottom = true;
+            }
+            "left" => {
+                self.padding.left = absolute;
+                self.padding_percent.left = percent;
+                self.padding_explicit.left = true;
+            }
+            _ => {}
+        }
+    }
+
     fn apply_declaration(&mut self, name: &str, value: &str) {
         let value = strip_important(value);
         match name {
@@ -3249,27 +3408,26 @@ impl Style {
                 self.margin.left = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
             }
             "padding" => {
-                if let Some(edges) = parse_edges_with_font(value, self.font_size) {
-                    self.padding = edges;
+                if let Some(edges) = parse_edge_lengths_with_font(value, self.font_size, true) {
+                    self.padding = Edges {
+                        top: absolute_length_or_zero(edges.top),
+                        right: absolute_length_or_zero(edges.right),
+                        bottom: absolute_length_or_zero(edges.bottom),
+                        left: absolute_length_or_zero(edges.left),
+                    };
+                    self.padding_percent = RelativeEdges {
+                        top: percent_length(edges.top),
+                        right: percent_length(edges.right),
+                        bottom: percent_length(edges.bottom),
+                        left: percent_length(edges.left),
+                    };
                     self.padding_explicit = EdgeFlags::ALL;
                 }
             }
-            "padding-top" => {
-                self.padding.top = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
-                self.padding_explicit.top = true;
-            }
-            "padding-right" => {
-                self.padding.right = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
-                self.padding_explicit.right = true;
-            }
-            "padding-bottom" => {
-                self.padding.bottom = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
-                self.padding_explicit.bottom = true;
-            }
-            "padding-left" => {
-                self.padding.left = parse_css_length(value, self.font_size, true).unwrap_or(0.0);
-                self.padding_explicit.left = true;
-            }
+            "padding-top" => self.set_padding_edge("top", value),
+            "padding-right" => self.set_padding_edge("right", value),
+            "padding-bottom" => self.set_padding_edge("bottom", value),
+            "padding-left" => self.set_padding_edge("left", value),
             "background" => {
                 if let Some(color) = parse_color(value) {
                     self.background = Some(color);
@@ -3564,6 +3722,23 @@ impl Style {
         width
     }
 
+    fn constrain_outer_width(&self, outer_width: f32, containing_width: f32) -> f32 {
+        let mut outer_width = outer_width;
+        if let Some(min_width) = self
+            .min_width
+            .and_then(|width| width.resolve(containing_width))
+        {
+            outer_width = outer_width.max(self.outer_width_for_declared(min_width));
+        }
+        if let Some(max_width) = self
+            .max_width
+            .and_then(|width| width.resolve(containing_width))
+        {
+            outer_width = outer_width.min(self.outer_width_for_declared(max_width));
+        }
+        outer_width
+    }
+
     fn resolve_height(&self, basis: f32) -> Option<f32> {
         let mut height = self.height.and_then(|height| height.resolve(basis));
         if let Some(min_height) = self.min_height.and_then(|height| height.resolve(basis)) {
@@ -3656,6 +3831,7 @@ enum Display {
     Block,
     Inline,
     InlineBlock,
+    InlineTable,
     Flex,
     Table,
     TableRow,
@@ -3737,6 +3913,7 @@ struct PlacedFloat {
 enum Length {
     Px(f32),
     Percent(f32),
+    Inherit,
 }
 
 impl Length {
@@ -3745,6 +3922,8 @@ impl Length {
             Self::Px(value) => Some(value),
             Self::Percent(value) if basis.is_finite() && basis > 0.0 => Some(basis * value),
             Self::Percent(_) => None,
+            Self::Inherit if basis.is_finite() && basis > 0.0 => Some(basis),
+            Self::Inherit => None,
         }
     }
 }
@@ -3789,6 +3968,31 @@ impl Edges {
     fn is_zero(self) -> bool {
         self.top == 0.0 && self.right == 0.0 && self.bottom == 0.0 && self.left == 0.0
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+struct RelativeEdges {
+    top: Option<f32>,
+    right: Option<f32>,
+    bottom: Option<f32>,
+    left: Option<f32>,
+}
+
+impl RelativeEdges {
+    const NONE: Self = Self {
+        top: None,
+        right: None,
+        bottom: None,
+        left: None,
+    };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResolvedEdgeLengths {
+    top: Length,
+    right: Length,
+    bottom: Length,
+    left: Length,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4155,6 +4359,7 @@ fn parse_display(value: &str) -> Option<Display> {
         "block" => Some(Display::Block),
         "inline" => Some(Display::Inline),
         "inline-block" => Some(Display::InlineBlock),
+        "inline-table" => Some(Display::InlineTable),
         "flex" | "inline-flex" => Some(Display::Flex),
         "table" => Some(Display::Table),
         "table-row" => Some(Display::TableRow),
@@ -4333,6 +4538,9 @@ fn parse_length(value: &str) -> Option<Length> {
     if value.eq_ignore_ascii_case("auto") || value.is_empty() {
         return None;
     }
+    if matches!(value.to_ascii_lowercase().as_str(), "inherit" | "unset") {
+        return Some(Length::Inherit);
+    }
     if let Some(percent) = value.strip_suffix('%') {
         return percent
             .trim()
@@ -4449,6 +4657,64 @@ fn parse_edges_with_font(value: &str, font_size: f32) -> Option<Edges> {
             left: *left,
         }),
         _ => None,
+    }
+}
+
+fn parse_edge_lengths_with_font(
+    value: &str,
+    font_size: f32,
+    allow_unitless: bool,
+) -> Option<ResolvedEdgeLengths> {
+    let values: Vec<Length> = value
+        .split_whitespace()
+        .filter_map(|token| parse_box_length(token, font_size, allow_unitless))
+        .collect();
+
+    let expanded = match values.as_slice() {
+        [all] => [*all, *all, *all, *all],
+        [vertical, horizontal] => [*vertical, *horizontal, *vertical, *horizontal],
+        [top, horizontal, bottom] => [*top, *horizontal, *bottom, *horizontal],
+        [top, right, bottom, left, ..] => [*top, *right, *bottom, *left],
+        _ => return None,
+    };
+
+    Some(ResolvedEdgeLengths {
+        top: expanded[0],
+        right: expanded[1],
+        bottom: expanded[2],
+        left: expanded[3],
+    })
+}
+
+fn parse_box_length(value: &str, font_size: f32, allow_unitless: bool) -> Option<Length> {
+    let value = value.trim().trim_matches('"').trim_matches('\'');
+    if value.eq_ignore_ascii_case("auto") || value.is_empty() {
+        return None;
+    }
+    if matches!(value.to_ascii_lowercase().as_str(), "inherit" | "unset") {
+        return Some(Length::Inherit);
+    }
+    if let Some(percent) = value.strip_suffix('%') {
+        return percent
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .map(|value| Length::Percent(value / 100.0));
+    }
+    parse_css_length(value, font_size, allow_unitless).map(Length::Px)
+}
+
+fn absolute_length_or_zero(length: Length) -> f32 {
+    match length {
+        Length::Px(value) => value,
+        Length::Percent(_) | Length::Inherit => 0.0,
+    }
+}
+
+fn percent_length(length: Length) -> Option<f32> {
+    match length {
+        Length::Percent(value) => Some(value),
+        Length::Px(_) | Length::Inherit => None,
     }
 }
 
@@ -5350,6 +5616,10 @@ fn collect_col_widths_inner(node: &NodeRef, widths: &mut Vec<Option<Length>>) {
     }
 }
 
+fn length_is_intrinsic_fixed(length: &Length) -> bool {
+    matches!(length, Length::Px(_) | Length::Inherit)
+}
+
 fn parse_span_attr(node: &NodeRef, attr_name: &str) -> usize {
     attr(node, attr_name)
         .and_then(|value| value.parse::<usize>().ok())
@@ -5412,7 +5682,7 @@ fn translate_layout(layout: &mut LayoutBox, dx: f32, dy: f32) {
 }
 
 fn is_inline_flow(tag: &str, style: &Style) -> bool {
-    matches!(style.display, Display::InlineBlock)
+    matches!(style.display, Display::InlineBlock | Display::InlineTable)
         || (style.display == Display::Inline && (tag == "img" || inline_style_has_own_box(style)))
 }
 
@@ -5437,7 +5707,9 @@ fn inline_flow_line_advance(
         Display::Inline if layout_contains_line_box(layout) => {
             resolved_line_height_from_db(db, &layout.style)
         }
-        Display::InlineBlock if !matches!(layout.kind, LayoutKind::Image(_)) => {
+        Display::InlineBlock | Display::InlineTable
+            if !matches!(layout.kind, LayoutKind::Image(_)) =>
+        {
             layout.style.margin.vertical() + layout.rect.height.max(parent_line_height)
         }
         _ => advance,
@@ -5595,6 +5867,56 @@ fn table_cell_is_spacer(node: &NodeRef) -> bool {
             .all(|ch| ch == '\u{00a0}' || is_collapsible_whitespace(ch))
 }
 
+fn cell_contains_only_intrinsic_fixed_replaced_content(node: &NodeRef, style: &Style) -> bool {
+    let mut saw_replaced = false;
+    cell_contains_only_intrinsic_fixed_replaced_content_inner(node, style, &mut saw_replaced)
+        && saw_replaced
+}
+
+fn cell_contains_only_intrinsic_fixed_replaced_content_inner(
+    node: &NodeRef,
+    style: &Style,
+    saw_replaced: &mut bool,
+) -> bool {
+    for child in node.children() {
+        if let Some(text) = child.as_text() {
+            if !text.borrow().chars().all(is_collapsible_whitespace) {
+                return false;
+            }
+            continue;
+        }
+
+        let Some(tag) = element_tag(&child) else {
+            continue;
+        };
+        if is_metadata_tag(&tag) || tag == "br" {
+            continue;
+        }
+        let child_style = style_for_node(&child, style);
+        if child_style.display == Display::None {
+            continue;
+        }
+        if tag == "img" {
+            *saw_replaced = true;
+            if child_style.width.is_some_and(|width| matches!(width, Length::Percent(_))) {
+                return false;
+            }
+            continue;
+        }
+        if !matches!(child_style.display, Display::Inline) {
+            return false;
+        }
+        if !cell_contains_only_intrinsic_fixed_replaced_content_inner(
+            &child,
+            &child_style,
+            saw_replaced,
+        ) {
+            return false;
+        }
+    }
+    true
+}
+
 fn inline_can_flatten(node: &NodeRef, style: &Style) -> bool {
     for child in node.children() {
         if child.as_text().is_some() {
@@ -5621,6 +5943,7 @@ fn inline_can_flatten(node: &NodeRef, style: &Style) -> bool {
             }
             Display::Block
             | Display::InlineBlock
+            | Display::InlineTable
             | Display::Flex
             | Display::Table
             | Display::TableRow
@@ -5634,6 +5957,13 @@ fn append_text_span(out: &mut Vec<TextSpan>, text: &str, style: &Style) {
     if !text.is_empty() {
         out.push(TextSpan::from_style(text.to_string(), style));
     }
+}
+
+fn text_spans_are_only_collapsible_whitespace(spans: &[TextSpan]) -> bool {
+    spans.is_empty()
+        || spans
+            .iter()
+            .all(|span| span.text.chars().all(is_collapsible_whitespace))
 }
 
 fn append_inline_spans(node: &NodeRef, style: &Style, out: &mut Vec<TextSpan>) {
@@ -5675,6 +6005,7 @@ fn append_inline_spans(node: &NodeRef, style: &Style, out: &mut Vec<TextSpan>) {
     }
 }
 
+#[cfg(test)]
 fn normalize_text(text: &str) -> String {
     let style = Style::initial();
     spans_text(&normalize_text_spans(&[TextSpan::from_style(
@@ -7120,6 +7451,39 @@ mod tests {
     }
 
     #[test]
+    fn media_rule_overrides_table_width_attribute() {
+        let html = build_document(
+            r#"<table class="floater" width="280"><tr><td>Hello</td></tr></table>"#,
+            Some("@media all and (max-width: 600px) { .floater { width: 320px !important; } }"),
+            None,
+            600,
+        );
+        let inlined = inline_css(&html, 600).unwrap();
+        assert!(inlined.contains("width: 320px"));
+    }
+
+    #[test]
+    fn active_media_rule_can_stack_inline_tables() {
+        let layout = layout_for_test(
+            r#"
+            <style>
+              @media all and (max-width: 600px) { .floater { width: 320px !important; } }
+            </style>
+            <div style="font-size:0">
+              <table class="floater" style="display:inline-table" width="280"><tr><td>A</td></tr></table>
+              <table class="floater" style="display:inline-table" width="280"><tr><td>B</td></tr></table>
+            </div>
+            "#,
+            600,
+        );
+        let tables: Vec<&LayoutBox> = collect_layouts(&layout, &|child| {
+            matches!(child.kind, LayoutKind::Table) && (child.rect.width - 320.0).abs() < 0.1
+        });
+        assert_eq!(tables.len(), 2);
+        assert!(tables[1].rect.y >= tables[0].rect.y + tables[0].rect.height - 0.1);
+    }
+
+    #[test]
     fn parses_unitless_line_height_as_font_multiplier() {
         let unitless = parse_line_height_declaration("1.625", 16.0).unwrap();
         assert!((unitless.height - 26.0).abs() < 0.1);
@@ -8069,6 +8433,128 @@ mod tests {
     }
 
     #[test]
+    fn auto_width_table_honors_min_width() {
+        let layout = layout_for_test(
+            r#"<table style="min-width:120px"><tr><td>Go</td></tr></table>"#,
+            200,
+        );
+        let table =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+        assert!(table.rect.width >= 120.0);
+    }
+
+    #[test]
+    fn auto_width_table_honors_max_width() {
+        let layout = layout_for_test(
+            r#"<table style="max-width:100px"><tr><td style="white-space:nowrap">Alpha Beta Gamma</td></tr></table>"#,
+            200,
+        );
+        let table =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+        assert!(table.rect.width <= 100.1);
+    }
+
+    #[test]
+    fn auto_width_table_measures_flattened_inline_child_style() {
+        let layout = layout_for_test(
+            r#"<table><tr><td style="padding:12px 24px"><a style="font-size:17px;line-height:120%">View on GitHub</a></td></tr></table>"#,
+            240,
+        );
+        let table =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+        assert!(table.rect.width > 150.0);
+    }
+
+    #[test]
+    fn inline_table_participates_in_inline_flow() {
+        let layout = layout_for_test(
+            r#"<div><table style="display:inline-table" width="80"><tr><td>A</td></tr></table><table style="display:inline-table" width="80"><tr><td>B</td></tr></table></div>"#,
+            240,
+        );
+        let tables: Vec<&LayoutBox> = collect_layouts(&layout, &|child| {
+            matches!(child.kind, LayoutKind::Table) && (child.rect.width - 80.0).abs() < 0.1
+        });
+        assert_eq!(tables.len(), 2);
+        assert!(tables[1].rect.x >= tables[0].rect.x + tables[0].rect.width - 0.1);
+    }
+
+    #[test]
+    fn inline_anchor_with_block_image_and_br_does_not_insert_blank_line() {
+        let layout = layout_for_test(
+            r#"<table border="0" cellpadding="0" cellspacing="0" width="320"><tr><td align="center" valign="top" style="padding:30px 15px 0; font-size:17px; font-weight:400; line-height:160%; font-family:sans-serif; color:#000000;"><a target="_blank" style="text-decoration:none; font-size:17px; line-height:160%;" href="https://example.com"><img width="250" height="142" alt="" style="color:#000000; font-size:10px; margin:0; padding:0; outline:none; text-decoration:none; border:none; display:block; margin-bottom:8px;" /><b style="color:#0B5073; text-decoration:underline;">Gerenal template</b></a><br/>The&nbsp;perfect choice for any purpose of a&nbsp;message.</td></tr></table>"#,
+            320,
+        );
+        let cell = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Cell))
+            .expect("cell layout");
+        assert!(
+            cell.rect.height < 270.0,
+            "unexpected cell height: {}, children: {:?}",
+            cell.rect.height,
+            cell.children
+                .iter()
+                .map(|child| (&child.kind, child.rect))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn percentage_width_table_cells_do_not_shrink_single_column_tables() {
+        let layout = layout_for_test(
+            r#"<table width="600" border="0" cellpadding="0" cellspacing="0"><tr><td style="padding-left:6.25%;padding-right:6.25%;width:87.5%">Header</td></tr></table>"#,
+            600,
+        );
+        let cell = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Cell))
+            .expect("cell layout");
+        assert!((cell.rect.width - 600.0).abs() < 0.1, "cell width: {}", cell.rect.width);
+    }
+
+    #[test]
+    fn percentage_padding_in_table_cells_reduces_text_content_width() {
+        let layout = layout_for_test(
+            r#"<table width="600" border="0" cellpadding="0" cellspacing="0"><tr><td style="padding-left:6.25%;padding-right:6.25%;font-size:17px;line-height:160%;">More than 50% of total email opens occurred on a mobile device and this copy should wrap like email clients do.</td></tr></table>"#,
+            600,
+        );
+        let text = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Text(_)))
+            .expect("text layout");
+        assert!((text.rect.x - 37.5).abs() < 0.1, "text x: {}", text.rect.x);
+        assert!((text.rect.width - 525.0).abs() < 0.1, "text width: {}", text.rect.width);
+    }
+
+    #[test]
+    fn percentage_image_width_resolves_against_column_width_not_html_width_attr() {
+        let layout = layout_for_test(
+            r#"<table width="600" border="0" cellpadding="0" cellspacing="0"><tr><td style="padding-top:20px"><a style="text-decoration:none" href="https://example.com"><img width="530" alt="" style="width:88.33%;max-width:530px;display:block" /></a></td></tr></table>"#,
+            600,
+        );
+        let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
+            .expect("image layout");
+        assert!(
+            (image.rect.width - 529.98).abs() < 1.0,
+            "image width: {}",
+            image.rect.width
+        );
+    }
+
+    #[test]
+    fn hero_image_width_stays_full_after_percent_width_rows() {
+        let layout = layout_for_test(
+            r#"<table width="600" border="0" cellpadding="0" cellspacing="0">
+                <tr><td class="header" style="padding-bottom:6px;padding-left:6.25%;padding-right:6.25%;width:87.5%;font-size:30px;font-weight:700;line-height:130%">Explore responsive email templates</td></tr>
+                <tr><td class="subheader" style="padding-bottom:3px;padding-left:6.25%;padding-right:6.25%;width:87.5%;font-size:18px;font-weight:300;line-height:150%">Available on GitHub and CodePen</td></tr>
+                <tr><td class="hero" style="padding-top:20px"><a style="text-decoration:none" href="https://example.com"><img width="530" alt="" style="width:88.33%;max-width:530px;display:block" /></a></td></tr>
+            </table>"#,
+            600,
+        );
+        let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
+            .expect("image layout");
+        assert!(
+            (image.rect.width - 529.98).abs() < 1.0,
+            "image width: {}",
+            image.rect.width
+        );
+    }
+
+    #[test]
     fn percentage_width_tables_still_fill_parent() {
         let layout = layout_for_test(
             r#"<table width="100%"><tr><td>Do Something</td></tr></table>"#,
@@ -8203,6 +8689,61 @@ mod tests {
         let text =
             find_layout(&layout, |child| matches!(child.kind, LayoutKind::Text(_))).expect("text");
         assert_eq!(text.style.text_align, TextAlign::Left);
+    }
+
+    #[test]
+    fn nested_table_width_inherit_fills_parent_cell() {
+        let layout = layout_for_test(
+            r#"<table width="200"><tr><td style="padding:10px"><table style="width:inherit"><tr><td>Inner</td></tr></table></td></tr></table>"#,
+            200,
+        );
+        let nested = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::Table) && (child.rect.width - 180.0).abs() < 0.1
+        })
+        .expect("nested table");
+        assert!((nested.rect.width - 180.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn inherited_width_inner_table_keeps_expected_auto_columns() {
+        let layout = layout_for_test(
+            r#"
+            <table width="490"><tr><td>
+              <table style="width: inherit; margin: 0; padding: 0; border-collapse: collapse; border-spacing: 0;">
+                <tr>
+                  <td style="padding-top: 30px; padding-right: 20px;"><img width="50" height="50" alt=""></td>
+                  <td style="font-size: 17px; font-weight: 400; line-height: 160%; padding-top: 25px; font-family: sans-serif;">
+                    <b>Highly compatible</b><br/>Tested on the most popular email clients for web, desktop and mobile. Checklist included.
+                  </td>
+                </tr>
+              </table>
+            </td></tr></table>
+            "#,
+            490,
+        );
+        let cells: Vec<&LayoutBox> =
+            collect_layouts(&layout, &|child| matches!(child.kind, LayoutKind::Cell));
+        let cell_widths: Vec<f32> = cells.iter().map(|cell| cell.rect.width).collect();
+        let image_cell = cells
+            .iter()
+            .copied()
+            .find(|cell| cell.rect.width < 100.0)
+            .unwrap_or_else(|| panic!("image cell widths: {:?}", cell_widths));
+        let text_cell = cells
+            .iter()
+            .copied()
+            .find(|cell| cell.rect.width > 300.0 && cell.rect.width < 450.0)
+            .unwrap_or_else(|| panic!("text cell widths: {:?}", cell_widths));
+        assert!(
+            (image_cell.rect.width - 70.0).abs() < 4.0,
+            "image/text widths: {:?}",
+            cell_widths
+        );
+        assert!(
+            (text_cell.rect.width - 420.0).abs() < 4.0,
+            "image/text widths: {:?}",
+            cell_widths
+        );
     }
 
     #[test]
@@ -8952,4 +9493,27 @@ mod tests {
             .iter()
             .find_map(|child| find_layout(child, predicate))
     }
+
+    fn collect_layouts<'a>(
+        layout: &'a LayoutBox,
+        predicate: &impl Fn(&LayoutBox) -> bool,
+    ) -> Vec<&'a LayoutBox> {
+        let mut out = Vec::new();
+        collect_layouts_inner(layout, predicate, &mut out);
+        out
+    }
+
+    fn collect_layouts_inner<'a>(
+        layout: &'a LayoutBox,
+        predicate: &impl Fn(&LayoutBox) -> bool,
+        out: &mut Vec<&'a LayoutBox>,
+    ) {
+        if predicate(layout) {
+            out.push(layout);
+        }
+        for child in &layout.children {
+            collect_layouts_inner(child, predicate, out);
+        }
+    }
+
 }

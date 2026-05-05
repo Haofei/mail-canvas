@@ -155,10 +155,14 @@ function selectTemplates(args, expectations) {
     args.only.length > 0
       ? args.only
       : args.all
-        ? TEMPLATE_CORPUS.slice(0, args.limit).map((template) => template.name)
+        ? TEMPLATE_CORPUS.filter((template) => template.supportTier === 'modern-supported')
+            .slice(0, args.limit)
+            .map((template) => template.name)
       : expectedNames.length > 0
         ? expectedNames
-        : TEMPLATE_CORPUS.slice(0, args.limit).map((template) => template.name);
+        : TEMPLATE_CORPUS.filter((template) => template.supportTier === 'modern-supported')
+            .slice(0, args.limit)
+            .map((template) => template.name);
   const wantedSet = new Set(wanted);
   const templates = TEMPLATE_CORPUS.filter((template) => wantedSet.has(template.name));
   const found = new Set(templates.map((template) => template.name));
@@ -260,6 +264,8 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     url: template.url,
     provider: template.provider,
     category: template.category,
+    supportTier: template.supportTier,
+    supportReason: template.supportReason,
     corpusStatus: template.status,
     corpusReason: template.reason,
     expectedWarnings: template.expectedWarnings,
@@ -667,13 +673,16 @@ function validationSummary(results, failures, expectations) {
   const mode =
     expectations.validationMode === 'semantic' ? 'semantic validation' : 'pixel validation';
   const skipped =
-    skippedNames.size > 0 ? ` (${skippedNames.size} skipped due known corpus issues)` : '';
+    skippedNames.size > 0 ? ` (${skippedNames.size} skipped due corpus scope/issues)` : '';
   return `${mode}: ${passed}/${checked} templates passed${skipped}`;
 }
 
 function semanticResultSkipped(result, expectations) {
   if (Object.prototype.hasOwnProperty.call(expectations.templates ?? {}, result.name)) {
     return false;
+  }
+  if (result.supportTier !== 'modern-supported') {
+    return true;
   }
   if (expectations.skipKnownWarningTemplates && result.corpusStatus === 'known-warning') {
     return true;
@@ -889,14 +898,14 @@ function renderSemanticMarkdownReport(results, args, expectations) {
     `- Output directory: \`${args.workDir}\``,
     '- Total pixel diff is reported as an observation only unless `maxTotalDiffPercent` is set.',
     '',
-    '| Template | Provider | Status | Browser | Rust | Height Delta | Total Diff | Text Diff | Media Diff | Non-Media Non-Text Diff | Semantic Limits | Warnings | Assets | Files |',
-    '|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|---|',
+    '| Template | Provider | Support | Status | Browser | Rust | Height Delta | Total Diff | Text Diff | Media Diff | Non-Media Non-Text Diff | Semantic Limits | Warnings | Assets | Files |',
+    '|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|---|',
   ];
 
   for (const result of results) {
     const expected = expectations?.templates?.[result.name] ?? {};
     const status = semanticResultSkipped(result, expectations)
-      ? `skipped: ${result.corpusReason || 'known corpus warning'}`
+      ? `skipped: ${result.supportTier !== 'modern-supported' ? result.supportReason : result.corpusReason || 'known corpus warning'}`
       : semanticResultStatus(result, expectations, expected);
     const heightDeltaPx = Math.abs(result.rust.height - result.browser.height);
     const heightDeltaPercent = heightDeltaPx / Math.max(1, result.browser.height);
@@ -906,12 +915,12 @@ function renderSemanticMarkdownReport(results, args, expectations) {
     const limits = semanticLimitSummary(expectations, expected);
     const assets = `${result.assetSummary.loaded}/${result.assetSummary.blocked}/${result.assetSummary.failed}`;
     lines.push(
-      `| ${result.name} | ${result.provider} | ${status} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${heightDeltaPx}px (${formatPercent(heightDeltaPercent)}) | ${formatPercent(result.diffRatio)} | ${textPercent} | ${mediaPercent} | ${formatPercent(result.nonMediaNonText.diffRatio)} | ${limits} | ${result.warningCount} | ${assets} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) [diagnostics](${result.diagnosticsJson}) |`,
+      `| ${result.name} | ${result.provider} | ${result.supportTier} | ${status} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${heightDeltaPx}px (${formatPercent(heightDeltaPercent)}) | ${formatPercent(result.diffRatio)} | ${textPercent} | ${mediaPercent} | ${formatPercent(result.nonMediaNonText.diffRatio)} | ${limits} | ${result.warningCount} | ${assets} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) [diagnostics](${result.diagnosticsJson}) |`,
     );
   }
   lines.push('');
   lines.push(
-    'Notes: text and media diffs are tolerant coarse checks. They are intended to catch missing content or major placement failures, not exact font rasterization. In `--all` runs, known-warning corpus entries are skipped unless they are explicitly listed in the expectations file.',
+    'Notes: text and media diffs are tolerant coarse checks. They are intended to catch missing content or major placement failures, not exact font rasterization. By default the semantic corpus only treats `modern-supported` templates as in scope. Legacy hacks and malformed HTML are skipped unless explicitly listed.',
   );
   return `${lines.join('\n')}\n`;
 }

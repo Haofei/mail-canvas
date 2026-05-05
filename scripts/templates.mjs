@@ -376,6 +376,10 @@ export const TEMPLATES = [
     'https://raw.githubusercontent.com/konsav/email-templates/master/promotional.html',
   ],
   [
+    'konsav-explorational',
+    'https://raw.githubusercontent.com/konsav/email-templates/master/explorational.html',
+  ],
+  [
     'inkandthunder-notification',
     'https://raw.githubusercontent.com/inkandthunder/email-templates/master/notification.html',
   ],
@@ -399,38 +403,52 @@ const TEMPLATE_METADATA = {
   },
   'codedmails-welcome-aleos': {
     status: 'known-warning',
+    supportTier: 'legacy-hacks',
     expectedWarnings: 5,
     reason: 'upstream fixture uses relative image URLs that resolve outside the repository',
+    supportReason: 'uses older email-hack patterns outside the modern support target',
   },
   'codedmails-reset-dineos': {
     status: 'known-warning',
+    supportTier: 'legacy-hacks',
     expectedWarnings: 1,
     reason: 'upstream fixture uses relative image URLs that resolve outside the repository',
+    supportReason: 'uses older email-hack patterns outside the modern support target',
   },
   'codedmails-receipt-faedra': {
     status: 'known-warning',
+    supportTier: 'legacy-hacks',
     expectedWarnings: 3,
     reason: 'upstream fixture uses relative image URLs that resolve outside the repository',
+    supportReason: 'uses older email-hack patterns outside the modern support target',
   },
   'codedmails-notification-ormes': {
     status: 'known-warning',
+    supportTier: 'legacy-hacks',
     expectedWarnings: 5,
     reason: 'upstream fixture uses relative image URLs that resolve outside the repository',
+    supportReason: 'uses older email-hack patterns outside the modern support target',
   },
   'cerberus-fluid': {
     status: 'known-warning',
+    supportTier: 'legacy-hacks',
     expectedWarnings: 4,
     reason: 'upstream fixture depends on placeholder.com hero images that currently fail to load in corpus runs',
+    supportReason: 'Cerberus relies on legacy hybrid/fluid email compatibility techniques outside the modern support target',
   },
   'cerberus-hybrid': {
     status: 'known-warning',
+    supportTier: 'legacy-hacks',
     expectedWarnings: 9,
     reason: 'upstream fixture depends on placeholder.com hero images and currently exceeds semantic layout thresholds',
+    supportReason: 'Cerberus relies on legacy hybrid/fluid email compatibility techniques outside the modern support target',
   },
   'cerberus-responsive': {
     status: 'known-warning',
+    supportTier: 'legacy-hacks',
     expectedWarnings: 9,
     reason: 'upstream fixture depends on placeholder.com hero images and currently exceeds semantic layout thresholds',
+    supportReason: 'Cerberus relies on legacy hybrid/fluid email compatibility techniques outside the modern support target',
   },
   'konsav-general': {
     status: 'known-warning',
@@ -442,10 +460,17 @@ const TEMPLATE_METADATA = {
     expectedWarnings: 0,
     reason: 'real remote-asset fixture currently exceeds semantic layout thresholds',
   },
-  'inkandthunder-notification': {
+  'konsav-explorational': {
     status: 'known-warning',
     expectedWarnings: 0,
+    reason: 'real remote-asset marketing fixture currently exceeds semantic layout thresholds',
+  },
+  'inkandthunder-notification': {
+    status: 'known-warning',
+    supportTier: 'invalid-structure',
+    expectedWarnings: 0,
     reason: 'real remote-asset fixture currently exceeds semantic layout thresholds',
+    supportReason: 'contains malformed table structure and browser-dependent DOM repair outside the supported HTML subset',
   },
 };
 
@@ -454,6 +479,8 @@ export const TEMPLATE_CORPUS = TEMPLATES.map(([name, url]) => ({
   url,
   provider: templateProvider(name),
   category: templateCategory(name),
+  supportTier: 'modern-supported',
+  supportReason: '',
   status: 'active',
   expectedWarnings: 0,
   reason: '',
