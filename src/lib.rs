@@ -201,9 +201,9 @@ fn set_generic_font_families(db: &mut fontdb::Database) {
     let sans = first_available_family(
         db,
         &[
-            "Helvetica Neue",
-            "Helvetica",
             "Arial",
+            "Helvetica",
+            "Helvetica Neue",
             "Avenir",
             "Segoe UI",
             "Roboto",
@@ -216,12 +216,12 @@ fn set_generic_font_families(db: &mut fontdb::Database) {
     let serif = first_available_family(
         db,
         &[
-            "Iowan Old Style",
-            "Palatino Linotype",
-            "Palatino",
-            "Georgia",
-            "Times New Roman",
             "Times",
+            "Times New Roman",
+            "Georgia",
+            "Palatino",
+            "Palatino Linotype",
+            "Iowan Old Style",
             "DejaVu Serif",
             "Noto Serif",
         ],
@@ -230,10 +230,10 @@ fn set_generic_font_families(db: &mut fontdb::Database) {
     let mono = first_available_family(
         db,
         &[
+            "Courier New",
             "Menlo",
             "Monaco",
             "Consolas",
-            "Courier New",
             "DejaVu Sans Mono",
             "Noto Sans Mono",
         ],
@@ -4844,6 +4844,10 @@ fn parse_font_family_selection(
     available_font_families: &[String],
     web_font_faces: &[WebFontFace],
 ) -> Option<FontFamilySelection> {
+    if font_family_value_has_invalid_unquoted_colon(value) {
+        return None;
+    }
+
     let candidates = parse_font_family_candidates(value);
 
     if let Some(first) = candidates.first() {
@@ -4893,6 +4897,29 @@ fn parse_font_family_selection(
             family,
             forced_weight: None,
         })
+}
+
+fn font_family_value_has_invalid_unquoted_colon(value: &str) -> bool {
+    let mut quote = None;
+    let mut escaped = false;
+    for ch in value.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        match quote {
+            Some(current) if ch == current => quote = None,
+            Some(_) => {}
+            None if ch == '"' || ch == '\'' => quote = Some(ch),
+            None if ch == ':' => return true,
+            None => {}
+        }
+    }
+    false
 }
 
 fn web_font_selection_for_family(
@@ -6919,6 +6946,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(family, "Nunito Sans");
+    }
+
+    #[test]
+    fn invalid_font_family_declaration_is_ignored() {
+        assert!(
+            parse_font_family(r#"" undefined: IowanOldStyle" undefined: , P052, serif"#).is_none()
+        );
+        assert_eq!(
+            parse_font_family(r#""Iowan Old Style", "Times New Roman", serif"#).as_deref(),
+            Some("Times New Roman")
+        );
     }
 
     #[test]
