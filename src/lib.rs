@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use cosmic_text::{
-    Align as TextAlignMode, Attrs, Buffer, Color as TextColor, Family as FontFamily, FontSystem,
-    Metrics, Shaping, Style as FontStyle, SwashCache, Weight as FontWeight, Wrap,
+    Align as TextAlignMode, Attrs, Buffer, CacheKeyFlags, Color as TextColor, Family as FontFamily,
+    FontSystem, Metrics, Shaping, Style as FontStyle, SwashCache, Weight as FontWeight, Wrap,
 };
 use kuchiki::{NodeRef, traits::TendrilSink as _};
 use pdf_writer::{Content, Name, Pdf, Rect as PdfRect, Ref};
@@ -844,8 +844,15 @@ impl<'a> LayoutEngine<'a> {
     fn layout_document(&mut self, document: &NodeRef, width: u32) -> Result<LayoutBox> {
         let root_node = find_first_tag(document, "body").unwrap_or_else(|| document.clone());
         let initial = Style::initial();
+        let parent_style = if element_tag(&root_node).as_deref() == Some("body") {
+            find_first_tag(document, "html")
+                .map(|html| self.style_for_node(&html, &initial))
+                .unwrap_or_else(|| initial.clone())
+        } else {
+            initial.clone()
+        };
         let root_style = if root_node.as_element().is_some() {
-            self.style_for_node(&root_node, &initial)
+            self.style_for_node(&root_node, &parent_style)
         } else {
             initial
         };
@@ -2480,24 +2487,30 @@ impl LayoutPainter<'_> {
         );
         set_text(&mut buffer, self.font_system);
 
-        let origin_x = (rect.x * self.scale).round() as i32;
-        let origin_y = (rect.y * self.scale).round() as i32;
+        let origin_x = rect.x * self.scale;
+        let origin_y = rect.y * self.scale;
         let color = TextColor::rgba(style.color.r, style.color.g, style.color.b, style.color.a);
-        buffer.draw(
-            self.font_system,
-            self.swash_cache,
-            color,
-            |x, y, width, height, color| {
-                blend_text_rect(
-                    self.pixmap,
-                    origin_x + x,
-                    origin_y + y,
-                    width,
-                    height,
-                    color,
+        for run in buffer.layout_runs() {
+            for glyph in run.glyphs {
+                let physical_glyph = glyph.physical((origin_x, origin_y + run.line_y), 1.0);
+                let glyph_color = glyph.color_opt.map_or(color, |some| some);
+                self.swash_cache.with_pixels(
+                    self.font_system,
+                    physical_glyph.cache_key,
+                    glyph_color,
+                    |x, y, color| {
+                        blend_text_rect(
+                            self.pixmap,
+                            physical_glyph.x + x,
+                            physical_glyph.y + y,
+                            1,
+                            1,
+                            color,
+                        );
+                    },
                 );
-            },
-        );
+            }
+        }
     }
 
     fn paint_image_placeholder(&mut self, rect: Rect) {
@@ -2512,7 +2525,14 @@ impl LayoutPainter<'_> {
     }
 
     fn paint_image(&mut self, rect: Rect, style: &Style, image: &ImageData) {
-        draw_image(self.pixmap, self.scale, rect, image, style.border_radius);
+        draw_image_with_fit(
+            self.pixmap,
+            self.scale,
+            rect,
+            image,
+            style.object_fit,
+            style.border_radius,
+        );
     }
 
     fn paint_background_image(&mut self, rect: Rect, style: &Style, image: &ImageData) {
@@ -2580,6 +2600,7 @@ struct TextRunStyle {
     line_height: f32,
     line_height_factor: Option<f32>,
     line_height_normal: bool,
+    font_hinting_disabled: bool,
     letter_spacing: f32,
     text_transform: TextTransform,
 }
@@ -2596,16 +2617,20 @@ impl TextRunStyle {
             line_height: style.line_height,
             line_height_factor: style.line_height_factor,
             line_height_normal: style.line_height_normal,
+            font_hinting_disabled: style.font_hinting_disabled,
             letter_spacing: style.letter_spacing,
             text_transform: style.text_transform,
         }
     }
 
     fn text_attrs(&self) -> Attrs<'_> {
-        let attrs = Attrs::new()
+        let mut attrs = Attrs::new()
             .family(cosmic_font_family(self.font_family.as_deref()))
             .weight(self.font_face_weight.unwrap_or(self.font_weight))
             .style(self.font_style);
+        if self.font_hinting_disabled {
+            attrs = attrs.cache_key_flags(CacheKeyFlags::DISABLE_HINTING);
+        }
         if self.letter_spacing == 0.0 {
             attrs
         } else {
@@ -2674,6 +2699,7 @@ struct Style {
     background_repeat: BackgroundRepeat,
     background_size: BackgroundSize,
     background_position: BackgroundPosition,
+    object_fit: ObjectFit,
     opacity: f32,
     color: Rgba,
     box_shadows: Vec<BoxShadow>,
@@ -2685,6 +2711,7 @@ struct Style {
     line_height: f32,
     line_height_factor: Option<f32>,
     line_height_normal: bool,
+    font_hinting_disabled: bool,
     letter_spacing: f32,
     text_align: TextAlign,
     align_from_attribute: bool,
@@ -2745,6 +2772,7 @@ impl Style {
             background_repeat: BackgroundRepeat::Repeat,
             background_size: BackgroundSize::Auto,
             background_position: BackgroundPosition::default(),
+            object_fit: ObjectFit::Fill,
             opacity: 1.0,
             color: Rgba::BLACK,
             box_shadows: Vec::new(),
@@ -2756,6 +2784,7 @@ impl Style {
             line_height: normal_line_height_fallback(16.0),
             line_height_factor: None,
             line_height_normal: true,
+            font_hinting_disabled: false,
             letter_spacing: 0.0,
             text_align: TextAlign::Left,
             align_from_attribute: false,
@@ -2816,6 +2845,7 @@ impl Style {
             background_repeat: BackgroundRepeat::Repeat,
             background_size: BackgroundSize::Auto,
             background_position: BackgroundPosition::default(),
+            object_fit: ObjectFit::Fill,
             opacity: 1.0,
             color: parent.color,
             box_shadows: Vec::new(),
@@ -2827,6 +2857,7 @@ impl Style {
             line_height: parent.line_height,
             line_height_factor: parent.line_height_factor,
             line_height_normal: parent.line_height_normal,
+            font_hinting_disabled: parent.font_hinting_disabled,
             letter_spacing: parent.letter_spacing,
             text_align: if tag == "table" {
                 TextAlign::Left
@@ -3062,6 +3093,11 @@ impl Style {
                 self.background_image_src = parse_background_image(value);
                 self.background_image = None;
             }
+            "object-fit" => {
+                if let Some(object_fit) = parse_object_fit(value) {
+                    self.object_fit = object_fit;
+                }
+            }
             "opacity" => {
                 if let Ok(opacity) = value.trim().parse::<f32>() {
                     if opacity.is_finite() {
@@ -3113,6 +3149,14 @@ impl Style {
                 } else {
                     parse_css_length(value, self.font_size, true).unwrap_or(0.0)
                 };
+            }
+            "-webkit-font-smoothing" => {
+                self.font_hinting_disabled = value.trim().eq_ignore_ascii_case("antialiased");
+            }
+            "text-rendering" => {
+                if value.trim().eq_ignore_ascii_case("geometricprecision") {
+                    self.font_hinting_disabled = true;
+                }
             }
             "text-align" | "align" => {
                 if let Some(align) = parse_text_align(value) {
@@ -3353,10 +3397,13 @@ impl Style {
     }
 
     fn text_attrs(&self) -> Attrs<'_> {
-        let attrs = Attrs::new()
+        let mut attrs = Attrs::new()
             .family(cosmic_font_family(self.font_family.as_deref()))
             .weight(self.font_face_weight.unwrap_or(self.font_weight))
             .style(self.font_style);
+        if self.font_hinting_disabled {
+            attrs = attrs.cache_key_flags(CacheKeyFlags::DISABLE_HINTING);
+        }
         if self.letter_spacing == 0.0 {
             attrs
         } else {
@@ -3768,6 +3815,12 @@ enum BackgroundSize {
     Auto,
     Cover,
     Contain,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ObjectFit {
+    Fill,
+    Cover,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -4432,6 +4485,14 @@ fn parse_background_size_from_shorthand(value: &str) -> BackgroundSize {
         .split_once('/')
         .and_then(|(_, size)| parse_background_size(size))
         .unwrap_or(BackgroundSize::Auto)
+}
+
+fn parse_object_fit(value: &str) -> Option<ObjectFit> {
+    match strip_important(value).trim().to_ascii_lowercase().as_str() {
+        "fill" => Some(ObjectFit::Fill),
+        "cover" => Some(ObjectFit::Cover),
+        _ => None,
+    }
 }
 
 fn parse_background_position_from_shorthand(value: &str) -> BackgroundPosition {
@@ -5976,8 +6037,24 @@ fn blend_text_rect(pixmap: &mut Pixmap, x: i32, y: i32, width: u32, height: u32,
     }
 }
 
-fn draw_image(pixmap: &mut Pixmap, scale: f32, rect: Rect, image: &ImageData, radius: f32) {
-    draw_image_clipped(pixmap, scale, rect, image, None, radius);
+fn draw_image_with_fit(
+    pixmap: &mut Pixmap,
+    scale: f32,
+    rect: Rect,
+    image: &ImageData,
+    fit: ObjectFit,
+    radius: f32,
+) {
+    let snapped_rect = pixel_snapped_rect(rect, scale);
+    draw_image_clipped(
+        pixmap,
+        scale,
+        snapped_rect,
+        image,
+        object_fit_source_rect(rect, image, fit),
+        None,
+        radius,
+    );
 }
 
 fn draw_background_image(
@@ -6000,6 +6077,7 @@ fn draw_background_image(
             scale,
             Rect::new(tile_x, tile_y, tile_width, tile_height),
             image,
+            ImageSourceRect::full(image),
             Some(rect),
             paint.radius,
         );
@@ -6017,6 +6095,7 @@ fn draw_background_image(
                 scale,
                 Rect::new(tile_x, tile_y, tile_width, tile_height),
                 image,
+                ImageSourceRect::full(image),
                 Some(rect),
                 paint.radius,
             );
@@ -6059,11 +6138,72 @@ fn first_repeated_tile_position(positioned: f32, clip_start: f32, tile_size: f32
     position
 }
 
+fn pixel_snapped_rect(rect: Rect, scale: f32) -> Rect {
+    if scale <= 0.0 {
+        return rect;
+    }
+    let x = (rect.x * scale).round() / scale;
+    let y = (rect.y * scale).round() / scale;
+    let right = ((rect.x + rect.width) * scale).round() / scale;
+    let bottom = ((rect.y + rect.height) * scale).round() / scale;
+    Rect::new(x, y, (right - x).max(0.0), (bottom - y).max(0.0))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageSourceRect {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+}
+
+impl ImageSourceRect {
+    fn full(image: &ImageData) -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            width: image.width as f32,
+            height: image.height as f32,
+        }
+    }
+}
+
+fn object_fit_source_rect(rect: Rect, image: &ImageData, fit: ObjectFit) -> ImageSourceRect {
+    let full = ImageSourceRect::full(image);
+    if fit != ObjectFit::Cover
+        || rect.width <= 0.0
+        || rect.height <= 0.0
+        || image.width == 0
+        || image.height == 0
+    {
+        return full;
+    }
+
+    let destination_ratio = rect.width / rect.height;
+    let source_ratio = image.width as f32 / image.height as f32;
+    if source_ratio > destination_ratio {
+        let width = image.height as f32 * destination_ratio;
+        ImageSourceRect {
+            x: ((image.width as f32 - width) / 2.0).max(0.0),
+            width: width.min(image.width as f32),
+            ..full
+        }
+    } else {
+        let height = image.width as f32 / destination_ratio;
+        ImageSourceRect {
+            y: ((image.height as f32 - height) / 2.0).max(0.0),
+            height: height.min(image.height as f32),
+            ..full
+        }
+    }
+}
+
 fn draw_image_clipped(
     pixmap: &mut Pixmap,
     scale: f32,
     rect: Rect,
     image: &ImageData,
+    source: ImageSourceRect,
     clip: Option<Rect>,
     radius: f32,
 ) {
@@ -6072,6 +6212,8 @@ fn draw_image_clipped(
         || scale <= 0.0
         || image.width == 0
         || image.height == 0
+        || source.width <= 0.0
+        || source.height <= 0.0
         || image.rgba.is_empty()
     {
         return;
@@ -6099,8 +6241,8 @@ fn draw_image_clipped(
     }
 
     let data = pixmap.data_mut();
-    let source_pixel_width = image.width as f32 / (rect.width * scale);
-    let source_pixel_height = image.height as f32 / (rect.height * scale);
+    let source_pixel_width = source.width / (rect.width * scale);
+    let source_pixel_height = source.height / (rect.height * scale);
     let downscaling = source_pixel_width > 1.2 || source_pixel_height > 1.2;
     let pixel_area = 1.0 / (scale * scale);
     let radius_rect = clip.unwrap_or(rect);
@@ -6117,8 +6259,8 @@ fn draw_image_clipped(
         if paint_top >= paint_bottom {
             continue;
         }
-        let src_y0 = (paint_top - rect.y) * image.height as f32 / rect.height;
-        let src_y1 = (paint_bottom - rect.y) * image.height as f32 / rect.height;
+        let src_y0 = source.y + (paint_top - rect.y) * source.height / rect.height;
+        let src_y1 = source.y + (paint_bottom - rect.y) * source.height / rect.height;
         let src_y = (src_y0 + src_y1) / 2.0 - 0.5;
         for px in start_x..end_x {
             let pixel_left = px as f32 / scale;
@@ -6147,8 +6289,8 @@ fn draw_image_clipped(
                 continue;
             }
 
-            let src_x0 = (paint_left - rect.x) * image.width as f32 / rect.width;
-            let src_x1 = (paint_right - rect.x) * image.width as f32 / rect.width;
+            let src_x0 = source.x + (paint_left - rect.x) * source.width / rect.width;
+            let src_x1 = source.x + (paint_right - rect.x) * source.width / rect.width;
             let src_x = (src_x0 + src_x1) / 2.0 - 0.5;
             let [r, g, b, a] = if downscaling {
                 sample_image_area(image, src_x0, src_y0, src_x1, src_y1)
@@ -6648,6 +6790,21 @@ mod tests {
     }
 
     #[test]
+    fn font_smoothing_antialiased_disables_hinting() {
+        let mut style = Style::initial();
+        style.apply_declaration("-webkit-font-smoothing", "antialiased");
+
+        assert!(style.font_hinting_disabled);
+        assert!(Style::from_parent_for_tag(&style, "p").font_hinting_disabled);
+
+        style.apply_declaration("-webkit-font-smoothing", "subpixel-antialiased");
+        assert!(!style.font_hinting_disabled);
+
+        style.apply_declaration("text-rendering", "geometricPrecision");
+        assert!(style.font_hinting_disabled);
+    }
+
+    #[test]
     fn parses_em_spacing_against_current_font_size() {
         let edges = parse_edges_with_font(".4em 0 1.1875em", 16.0).unwrap();
         assert!((edges.top - 6.4).abs() < 0.1);
@@ -7141,6 +7298,14 @@ mod tests {
     }
 
     #[test]
+    fn parses_object_fit_cover() {
+        let mut style = Style::initial();
+        style.apply_declaration("object-fit", "cover");
+
+        assert_eq!(style.object_fit, ObjectFit::Cover);
+    }
+
+    #[test]
     fn parses_alpha_color_serializations() {
         assert_eq!(parse_color("#000c"), Some(Rgba::with_alpha(0, 0, 0, 0xcc)));
         assert_eq!(
@@ -7179,6 +7344,18 @@ mod tests {
         let layout = engine.layout_document(&document, 200).unwrap();
         let text = find_text_layout(&layout).expect("text");
         assert_eq!(text.style.color, Rgba::with_alpha(0, 0, 0, 102));
+    }
+
+    #[test]
+    fn body_inherits_from_html_style() {
+        let layout = layout_for_test(
+            r#"<html style="-webkit-font-smoothing:antialiased;color:#123456"><body><p>Hello</p></body></html>"#,
+            200,
+        );
+        let text = find_text_layout(&layout).expect("text");
+
+        assert!(text.style.font_hinting_disabled);
+        assert_eq!(text.style.color, Rgba::rgb(0x12, 0x34, 0x56));
     }
 
     #[test]
@@ -7752,7 +7929,7 @@ mod tests {
     }
 
     #[test]
-    fn fractional_image_rect_preserves_edge_coverage() {
+    fn image_rects_are_pixel_snapped_like_blink() {
         let image = ImageData {
             width: 1,
             height: 1,
@@ -7760,13 +7937,46 @@ mod tests {
         };
         let mut pixmap = Pixmap::new(4, 1).expect("pixmap");
 
-        draw_image(&mut pixmap, 1.0, Rect::new(0.5, 0.0, 2.0, 1.0), &image, 0.0);
+        draw_image_with_fit(
+            &mut pixmap,
+            1.0,
+            Rect::new(0.5, 0.0, 2.0, 1.0),
+            &image,
+            ObjectFit::Fill,
+            0.0,
+        );
 
         let data = pixmap.data();
-        assert_eq!(&data[0..4], &[128, 0, 0, 128]);
+        assert_eq!(&data[0..4], &[0, 0, 0, 0]);
         assert_eq!(&data[4..8], &[255, 0, 0, 255]);
-        assert_eq!(&data[8..12], &[128, 0, 0, 128]);
+        assert_eq!(&data[8..12], &[255, 0, 0, 255]);
         assert_eq!(&data[12..16], &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn object_fit_cover_crops_source_to_destination_ratio() {
+        let image = ImageData {
+            width: 4,
+            height: 2,
+            rgba: vec![
+                255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255, 255, 0, 0, 255,
+                0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+            ],
+        };
+        let mut pixmap = Pixmap::new(2, 2).expect("pixmap");
+
+        draw_image_with_fit(
+            &mut pixmap,
+            1.0,
+            Rect::new(0.0, 0.0, 2.0, 2.0),
+            &image,
+            ObjectFit::Cover,
+            0.0,
+        );
+
+        let data = pixmap.data();
+        assert_eq!(&data[0..4], &[0, 255, 0, 255]);
+        assert_eq!(&data[4..8], &[0, 0, 255, 255]);
     }
 
     #[test]
