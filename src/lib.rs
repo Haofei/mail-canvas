@@ -1061,7 +1061,16 @@ impl<'a> LayoutEngine<'a> {
                         translate_layout(&mut flow.node, inline_row_width, 0.0);
                     }
                     inline_row_width += flow.node.rect.width;
-                    inline_row_height = inline_row_height.max(flow.advance);
+                    let baseline_descent = if flow.node.style.vertical_align
+                        == VerticalAlign::Baseline
+                        && inline_flow_uses_bottom_edge_baseline(&flow.node)
+                    {
+                        blink_font_descent_from_db(self.font_system.db(), style)
+                            .unwrap_or(style.font_size * 0.25)
+                    } else {
+                        0.0
+                    };
+                    inline_row_height = inline_row_height.max(flow.advance + baseline_descent);
                     inline_row.push(flow.node);
                     previous_margin_bottom = None;
                     continue;
@@ -1544,7 +1553,7 @@ impl<'a> LayoutEngine<'a> {
             for (cell_node, cell, natural_cell_height) in &mut cell_boxes {
                 let delta = (row_height - *natural_cell_height).max(0.0);
                 let offset_y = match cell.style.vertical_align {
-                    VerticalAlign::Top => 0.0,
+                    VerticalAlign::Baseline | VerticalAlign::Top => 0.0,
                     VerticalAlign::Middle => delta / 2.0,
                     VerticalAlign::Bottom => delta,
                 };
@@ -2789,7 +2798,7 @@ impl Style {
             text_align: TextAlign::Left,
             align_from_attribute: false,
             text_transform: TextTransform::None,
-            vertical_align: VerticalAlign::Top,
+            vertical_align: VerticalAlign::Baseline,
             wrap: TextWrap::WordOrGlyph,
             list_style_type: ListStyleType::Disc,
             box_sizing: BoxSizing::ContentBox,
@@ -3454,6 +3463,22 @@ fn blink_normal_line_height_from_db(db: &fontdb::Database, style: &Style) -> Opt
     .flatten()
 }
 
+fn blink_font_descent_from_db(db: &fontdb::Database, style: &Style) -> Option<f32> {
+    let family = fontdb_family_for_style(style);
+    let families = [family];
+    let query = fontdb::Query {
+        families: &families,
+        weight: style.font_face_weight.unwrap_or(style.font_weight),
+        stretch: fontdb::Stretch::Normal,
+        style: style.font_style,
+    };
+    let id = db.query(&query)?;
+    db.with_face_data(id, |font_data, face_index| {
+        blink_font_descent_from_face(font_data, face_index, style.font_size)
+    })
+    .flatten()
+}
+
 fn blink_normal_line_height_from_run_db(
     db: &fontdb::Database,
     style: &TextRunStyle,
@@ -3508,6 +3533,18 @@ fn blink_normal_line_height_from_face(
     let line_gap = (f32::from(face.line_gap()) * scale).round();
     let line_height = ascent + descent + line_gap;
     line_height.is_finite().then_some(line_height.max(1.0))
+}
+
+fn blink_font_descent_from_face(font_data: &[u8], face_index: u32, font_size: f32) -> Option<f32> {
+    let face = ttf_parser::Face::parse(font_data, face_index).ok()?;
+    let units_per_em = f32::from(face.units_per_em());
+    if units_per_em <= 0.0 {
+        return None;
+    }
+
+    let scale = font_size.max(1.0) / units_per_em;
+    let descent = (-(f32::from(face.descender())) * scale).round();
+    descent.is_finite().then_some(descent.max(0.0))
 }
 
 fn strip_important(value: &str) -> &str {
@@ -3758,6 +3795,7 @@ enum TextTransform {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VerticalAlign {
+    Baseline,
     Top,
     Middle,
     Bottom,
@@ -3996,7 +4034,7 @@ fn default_vertical_align(tag: &str, parent: VerticalAlign) -> VerticalAlign {
     match tag {
         "thead" | "tbody" | "tfoot" | "tr" => VerticalAlign::Middle,
         "td" | "th" => parent,
-        _ => VerticalAlign::Top,
+        _ => VerticalAlign::Baseline,
     }
 }
 
@@ -4767,9 +4805,10 @@ fn parse_text_transform(value: &str) -> Option<TextTransform> {
 
 fn parse_vertical_align(value: &str) -> Option<VerticalAlign> {
     match value.trim().to_ascii_lowercase().as_str() {
+        "baseline" => Some(VerticalAlign::Baseline),
         "top" | "text-top" => Some(VerticalAlign::Top),
         "middle" => Some(VerticalAlign::Middle),
-        "bottom" | "text-bottom" | "baseline" => Some(VerticalAlign::Bottom),
+        "bottom" | "text-bottom" => Some(VerticalAlign::Bottom),
         _ => None,
     }
 }
@@ -5226,6 +5265,15 @@ fn translate_layout(layout: &mut LayoutBox, dx: f32, dy: f32) {
 fn is_inline_flow(tag: &str, style: &Style) -> bool {
     matches!(style.display, Display::InlineBlock)
         || (style.display == Display::Inline && (tag == "img" || inline_style_has_own_box(style)))
+}
+
+fn inline_flow_uses_bottom_edge_baseline(layout: &LayoutBox) -> bool {
+    matches!(layout.kind, LayoutKind::Image(_)) || !layout_contains_line_box(layout)
+}
+
+fn layout_contains_line_box(layout: &LayoutBox) -> bool {
+    matches!(layout.kind, LayoutKind::Text(_) | LayoutKind::RichText(_))
+        || layout.children.iter().any(layout_contains_line_box)
 }
 
 fn inline_style_has_own_box(style: &Style) -> bool {
@@ -8076,6 +8124,18 @@ mod tests {
         .expect("B");
         assert!((a.rect.y - b.rect.y).abs() < 0.1);
         assert!((b.rect.x - a.rect.x - 100.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn baseline_inline_block_keeps_parent_descent_space() {
+        let layout = layout_for_test(
+            r##"<table><tr><td style="padding:36px 24px"><a style="display:inline-block"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" style="display:block;width:48px;height:75px" alt=""></a></td></tr></table>"##,
+            600,
+        );
+        let cell =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Cell)).expect("cell");
+
+        assert!(cell.rect.height >= 150.0);
     }
 
     #[test]
