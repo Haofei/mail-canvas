@@ -30,6 +30,12 @@ pub(crate) struct ResourcePolicy {
     pub(crate) asset_reports: Arc<Mutex<Vec<AssetReport>>>,
 }
 
+pub(crate) trait ResourceProvider {
+    fn load_image(&self, src: &str, initiator: &'static str) -> Result<ImageData>;
+    fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Vec<u8>>;
+    fn record_asset_report(&self, report: AssetReport);
+}
+
 impl ResourcePolicy {
     pub(crate) fn from_request(request: &RenderRequest, document_base_url: Option<Url>) -> Self {
         Self {
@@ -76,6 +82,20 @@ impl ResourcePolicy {
             return;
         }
         reports.push(report);
+    }
+}
+
+impl ResourceProvider for ResourcePolicy {
+    fn load_image(&self, src: &str, initiator: &'static str) -> Result<ImageData> {
+        load_image(src, self, initiator)
+    }
+
+    fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Vec<u8>> {
+        load_resource_bytes(src, self, kind, initiator)
+    }
+
+    fn record_asset_report(&self, report: AssetReport) {
+        Self::record_asset_report(self, report);
     }
 }
 
