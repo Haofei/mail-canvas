@@ -4018,9 +4018,15 @@ fn style_for_node_with_fonts(
     if let Some(background) = attrs.get("bgcolor").and_then(parse_color) {
         style.background = Some(background);
     }
+    if let Some(border_color) = attrs.get("bordercolor").and_then(parse_color) {
+        style.border_color = border_color;
+    }
     if let Some(background_image) = attrs.get("background") {
         style.background_image_src = Some(background_image.trim().to_string());
         style.background_image = None;
+    }
+    if matches!(tag.as_str(), "td" | "th") && attrs.get("nowrap").is_some() {
+        style.wrap = TextWrap::None;
     }
     if let Some(raw_align) = attrs.get("align") {
         if tag == "table" {
@@ -4877,7 +4883,7 @@ fn parse_vertical_align(value: &str) -> Option<VerticalAlign> {
     match value.trim().to_ascii_lowercase().as_str() {
         "baseline" => Some(VerticalAlign::Baseline),
         "top" | "text-top" => Some(VerticalAlign::Top),
-        "middle" => Some(VerticalAlign::Middle),
+        "center" | "middle" => Some(VerticalAlign::Middle),
         "bottom" | "text-bottom" => Some(VerticalAlign::Bottom),
         _ => None,
     }
@@ -7937,6 +7943,41 @@ mod tests {
         })
         .expect("cell child");
         assert!((child.rect.y - 40.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn table_cell_valign_center_aliases_middle() {
+        let layout = layout_for_test(
+            r##"<table width="200"><tr><td height="100" valign="center"><div style="height:20px;background:#111"></div></td></tr></table>"##,
+            200,
+        );
+        let child = find_layout(&layout, |child| {
+            child.style.background == Some(Rgba::rgb(0x11, 0x11, 0x11))
+        })
+        .expect("cell child");
+        assert!((child.rect.y - 40.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn table_cell_nowrap_attribute_disables_wrapping() {
+        let layout = layout_for_test(
+            r#"<table width="40"><tr><td nowrap>Alpha Beta</td></tr></table>"#,
+            40,
+        );
+        let text = find_text_layout(&layout).expect("text");
+        assert_eq!(text.style.wrap, TextWrap::None);
+    }
+
+    #[test]
+    fn table_bordercolor_attribute_sets_border_color() {
+        let layout = layout_for_test(
+            r##"<table border="2" bordercolor="#123456"><tr><td>Cell</td></tr></table>"##,
+            200,
+        );
+        let table =
+            find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+        assert_eq!(table.style.border_color, Rgba::rgb(0x12, 0x34, 0x56));
+        assert_eq!(table.style.border.left, 2.0);
     }
 
     #[test]
