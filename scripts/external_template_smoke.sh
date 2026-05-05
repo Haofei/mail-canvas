@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RENDERER="${RENDERER:-$ROOT_DIR/target/debug/email-render}"
-WORK_DIR="${WORK_DIR:-/tmp/email-render-external}"
+RENDERER="${RENDERER:-$ROOT_DIR/target/debug/mail-canvas}"
+WORK_DIR="${WORK_DIR:-/tmp/mail-canvas-external}"
 
 if [[ ! -x "$RENDERER" ]]; then
   cargo build --manifest-path "$ROOT_DIR/Cargo.toml"

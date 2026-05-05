@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, ValueEnum};
-use email_render::{EmailRenderer, RenderRequest, RustEmailRenderer, build_document_from_files};
+use mail_canvas::{EmailRenderer, MailCanvasRenderer, RenderRequest, build_document_from_files};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum PdfMode {
@@ -12,7 +12,7 @@ enum PdfMode {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "email-render")]
+#[command(name = "mail-canvas")]
 #[command(about = "Render an HTML/CSS email template to a PNG")]
 struct Args {
     /// HTML file to render.
@@ -125,7 +125,7 @@ fn main() -> Result<()> {
         max_decoded_pixels: args.max_decoded_pixels,
     };
 
-    let mut renderer = RustEmailRenderer::with_fonts(
+    let mut renderer = MailCanvasRenderer::with_fonts(
         request.width,
         request.viewport_height,
         request.scale,

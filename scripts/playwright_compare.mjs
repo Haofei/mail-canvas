@@ -11,7 +11,7 @@ import { PNG } from 'pngjs';
 import { TEMPLATES } from './templates.mjs';
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DEFAULT_WORK_DIR = '/tmp/email-render-playwright-compare';
+const DEFAULT_WORK_DIR = '/tmp/mail-canvas-playwright-compare';
 const DEFAULT_WIDTH = 600;
 const DEFAULT_TIMEOUT_MS = 15000;
 
@@ -161,7 +161,7 @@ function selectTemplates(args, expectations) {
 }
 
 async function ensureRenderer() {
-  const renderer = path.join(ROOT_DIR, 'target', 'debug', 'email-render');
+  const renderer = path.join(ROOT_DIR, 'target', 'debug', 'mail-canvas');
   const build = spawnSync('cargo', ['build'], {
     cwd: ROOT_DIR,
     encoding: 'utf8',

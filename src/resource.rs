@@ -5,10 +5,16 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use data_url::DataUrl;
-use image::{ImageReader, Limits};
+use image::{DynamicImage, ImageDecoder, ImageReader, Limits};
 use url::Url;
 
 use crate::RenderRequest;
+
+const BLINK_RESOURCE_USER_AGENT: &str = concat!(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ",
+    "AppleWebKit/537.36 (KHTML, like Gecko) ",
+    "HeadlessChrome/147.0.7727.15 Safari/537.36"
+);
 
 #[derive(Debug, Clone)]
 pub(crate) struct ResourcePolicy {
@@ -128,10 +134,8 @@ fn load_remote_url_once(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
         .new_agent();
     let mut response = agent
         .get(url.as_str())
-        .header(
-            "User-Agent",
-            "Mozilla/5.0 AppleWebKit/537.36 Chrome/120 Safari/537.36",
-        )
+        .header("User-Agent", BLINK_RESOURCE_USER_AGENT)
+        .header("Accept-Language", "en-US,en;q=0.9")
         .call()
         .with_context(|| format!("failed to fetch {url}"))?;
     let bytes = response
@@ -186,11 +190,16 @@ fn decode_image_bytes(bytes: &[u8], policy: &ResourcePolicy) -> Result<ImageData
     limits.max_image_height = Some(max_side);
     limits.max_alloc = Some(policy.max_decoded_pixels.saturating_mul(4));
     reader.limits(limits);
-    let image = reader
+    let mut decoder = reader
         .with_guessed_format()
         .context("failed to guess image format")?
-        .decode()
-        .context("failed to decode image")?;
+        .into_decoder()
+        .context("failed to create image decoder")?;
+    let orientation = decoder
+        .orientation()
+        .context("failed to read image orientation")?;
+    let mut image = DynamicImage::from_decoder(decoder).context("failed to decode image")?;
+    image.apply_orientation(orientation);
     let rgba = image.to_rgba8();
     let (width, height) = rgba.dimensions();
     let pixels = u64::from(width).saturating_mul(u64::from(height));
@@ -205,4 +214,62 @@ fn decode_image_bytes(bytes: &[u8], policy: &ResourcePolicy) -> Result<ImageData
         height,
         rgba: rgba.into_raw(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use image::{ColorType, codecs::jpeg::JpegEncoder};
+
+    use super::*;
+
+    fn test_policy() -> ResourcePolicy {
+        ResourcePolicy {
+            base_url: None,
+            allow_remote: false,
+            https_only: true,
+            timeout: Duration::from_secs(1),
+            max_image_bytes: 1024 * 1024,
+            max_decoded_pixels: 1024,
+        }
+    }
+
+    #[test]
+    fn decode_applies_exif_orientation_like_blink() {
+        let mut jpeg = Vec::new();
+        JpegEncoder::new(&mut jpeg)
+            .encode(&[255, 0, 0, 0, 255, 0], 1, 2, ColorType::Rgb8.into())
+            .expect("encode jpeg");
+        let oriented = jpeg_with_exif_orientation(jpeg, 6);
+
+        let image = decode_image_bytes(&oriented, &test_policy()).expect("decode");
+
+        assert_eq!((image.width, image.height), (2, 1));
+    }
+
+    fn jpeg_with_exif_orientation(jpeg: Vec<u8>, orientation: u16) -> Vec<u8> {
+        assert_eq!(&jpeg[0..2], &[0xff, 0xd8]);
+        let mut exif = Vec::new();
+        exif.extend_from_slice(b"Exif\0\0");
+        exif.extend_from_slice(b"MM");
+        exif.extend_from_slice(&42u16.to_be_bytes());
+        exif.extend_from_slice(&8u32.to_be_bytes());
+        exif.extend_from_slice(&1u16.to_be_bytes());
+        exif.extend_from_slice(&0x0112u16.to_be_bytes());
+        exif.extend_from_slice(&3u16.to_be_bytes());
+        exif.extend_from_slice(&1u32.to_be_bytes());
+        exif.extend_from_slice(&orientation.to_be_bytes());
+        exif.extend_from_slice(&0u16.to_be_bytes());
+        exif.extend_from_slice(&0u32.to_be_bytes());
+
+        let segment_len = u16::try_from(exif.len() + 2).expect("segment length");
+        let mut out = Vec::new();
+        out.extend_from_slice(&jpeg[0..2]);
+        out.extend_from_slice(&[0xff, 0xe1]);
+        out.extend_from_slice(&segment_len.to_be_bytes());
+        out.extend_from_slice(&exif);
+        out.extend_from_slice(&jpeg[2..]);
+        out
+    }
 }

@@ -86,7 +86,7 @@ async function main() {
   const source = await loadSource(args);
   const preparedHtml = buildBrowserDocument(source.html, source.baseUrl, args.width);
   const preparedPath = path.join(
-    '/tmp/email-render-layout-dump',
+    '/tmp/mail-canvas-layout-dump',
     `${source.name}-${args.width}.html`,
   );
   await mkdir(path.dirname(preparedPath), { recursive: true });

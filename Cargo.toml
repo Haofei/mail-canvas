@@ -1,8 +1,11 @@
 [package]
-name = "email-render"
+name = "mail-canvas"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.86"
+description = "Chrome-free HTML/CSS email template renderer for PNG and raster PDF output."
+license = "MIT"
+repository = "https://github.com/Haofei/mail-canvas"
 
 [dependencies]
 anyhow = "1"
