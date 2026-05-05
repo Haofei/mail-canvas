@@ -71,6 +71,11 @@ Important options:
 - `--timeout-ms`: resource timeout in milliseconds.
 - `--max-image-bytes`: encoded image byte limit.
 - `--max-decoded-pixels`: decoded image pixel limit.
+- `--max-dom-nodes`: maximum DOM nodes accepted before rendering.
+- `--max-layout-depth`: maximum nested layout depth before truncating nested
+  content with a structured warning.
+- `--max-table-cells`: maximum expanded table cell slots accepted during table
+  layout.
 - `--font-file` / `--font-dir`: load explicit fonts instead of scanning system
   fonts.
 
@@ -184,7 +189,9 @@ the smallest email-relevant rule in Rust.
   web font, and layout-limit issues.
 - JavaScript, forms, video, canvas, full positioning, full flex/grid, and full
   browser painting are out of scope.
-- Remote resources are disabled by default and must be enabled explicitly.
+- Remote resources are disabled by default and must be enabled explicitly. DOM,
+  layout depth, table cell, encoded byte, and decoded pixel limits are enforced
+  by default.
 - Visual fidelity is measured against Chromium with semantic tolerances. Strict
   total pixel equality is not required because text rasterization differs between
   Chromium/Skia and the pure Rust text stack.
@@ -266,6 +273,10 @@ cargo run -- \
 - `--timeout-ms`: 资源加载超时，单位毫秒。
 - `--max-image-bytes`: 编码后图片字节限制。
 - `--max-decoded-pixels`: 解码后图片像素数限制。
+- `--max-dom-nodes`: 渲染前允许的最大 DOM node 数。
+- `--max-layout-depth`: 最大嵌套 layout 深度，超过后截断嵌套内容并输出结构化
+  warning。
+- `--max-table-cells`: table layout 中允许展开的最大 cell slot 数。
 - `--font-file` / `--font-dir`: 使用指定字体，避免扫描系统字体。
 
 ### Rust API
@@ -367,7 +378,8 @@ scripts/fetch_blink_reference.sh
   结构化 renderer warnings 已覆盖资源、web font 和 layout limit 问题。
 - JavaScript、form、video、canvas、完整 positioning、完整 flex/grid、完整浏览器
   painting 都不在当前范围内。
-- 远程资源默认关闭，需要显式开启。
+- 远程资源默认关闭，需要显式开启。DOM、layout depth、table cell、编码字节数和
+  解码像素数限制默认开启。
 - 视觉效果以 Chromium 为参考，但采用语义化容差；由于 Chromium/Skia 和纯 Rust
   文本栈的文字栅格化不同，不要求 total pixel diff 完全一致。
 - 固定 Playwright 回归集目前可以通过。total pixel diff 作为诊断信号保留，gate

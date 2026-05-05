@@ -9,6 +9,9 @@ pub(crate) const MAX_CONSOLE_MESSAGE_LEN: usize = 2048;
 pub(crate) const MAX_RENDER_WARNINGS: usize = 100;
 pub(crate) const DEFAULT_MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 pub(crate) const DEFAULT_MAX_DECODED_PIXELS: u64 = 16_000_000;
+pub(crate) const DEFAULT_MAX_DOM_NODES: usize = 100_000;
+pub(crate) const DEFAULT_MAX_LAYOUT_DEPTH: usize = 64;
+pub(crate) const DEFAULT_MAX_TABLE_CELLS: usize = 100_000;
 
 #[derive(Debug, Clone)]
 pub struct RenderRequest {
@@ -25,6 +28,9 @@ pub struct RenderRequest {
     pub https_only: bool,
     pub max_image_bytes: usize,
     pub max_decoded_pixels: u64,
+    pub max_dom_nodes: usize,
+    pub max_layout_depth: usize,
+    pub max_table_cells: usize,
 }
 
 impl RenderRequest {
@@ -43,6 +49,9 @@ impl RenderRequest {
             https_only: true,
             max_image_bytes: DEFAULT_MAX_IMAGE_BYTES,
             max_decoded_pixels: DEFAULT_MAX_DECODED_PIXELS,
+            max_dom_nodes: DEFAULT_MAX_DOM_NODES,
+            max_layout_depth: DEFAULT_MAX_LAYOUT_DEPTH,
+            max_table_cells: DEFAULT_MAX_TABLE_CELLS,
         }
     }
 }

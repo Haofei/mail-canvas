@@ -94,6 +94,18 @@ struct Args {
     #[arg(long, default_value_t = 16_000_000)]
     max_decoded_pixels: u64,
 
+    /// Maximum DOM nodes accepted before rendering.
+    #[arg(long, default_value_t = 100_000)]
+    max_dom_nodes: usize,
+
+    /// Maximum nested layout depth before nested content is truncated.
+    #[arg(long, default_value_t = 64)]
+    max_layout_depth: usize,
+
+    /// Maximum expanded table cell slots accepted during table layout.
+    #[arg(long, default_value_t = 100_000)]
+    max_table_cells: usize,
+
     /// Font files to load instead of scanning system fonts.
     #[arg(long = "font-file")]
     font_files: Vec<PathBuf>,
@@ -130,6 +142,9 @@ fn main() -> Result<()> {
         https_only: !args.allow_http,
         max_image_bytes: args.max_image_bytes,
         max_decoded_pixels: args.max_decoded_pixels,
+        max_dom_nodes: args.max_dom_nodes,
+        max_layout_depth: args.max_layout_depth,
+        max_table_cells: args.max_table_cells,
     };
 
     let mut renderer = MailCanvasRenderer::with_fonts(

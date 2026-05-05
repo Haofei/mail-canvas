@@ -58,7 +58,6 @@ use text::{
 };
 
 const MAX_RENDER_PIXELS_PER_AXIS: u32 = 16_384;
-const MAX_LAYOUT_DEPTH: usize = 64;
 const MAX_WEB_FONT_IMPORTS: usize = 16;
 const MAX_WEB_FONTS: usize = 32;
 const HARD_BREAK: char = '\u{000B}';
@@ -243,7 +242,9 @@ impl EmailRenderer for MailCanvasRenderer {
 
         let render_html = strip_hidden_conditional_comments(&request.html);
         let source_document = kuchiki::parse_html().one(render_html.clone());
+        ensure_dom_node_limit(&source_document, request.max_dom_nodes)?;
         let resources = ResourcePolicy::from_request(&request, document_base_url(&source_document));
+        let limits = RenderLimits::from_request(&request);
         let mut diagnostics = RenderDiagnostics::default();
         let web_font_faces = load_web_fonts_from_html(
             &render_html,
@@ -260,6 +261,7 @@ impl EmailRenderer for MailCanvasRenderer {
             resources,
             available_font_families,
             web_font_faces,
+            limits,
         );
         let mut layout = engine.layout_document(&document, request.width)?;
         for warning in std::mem::take(&mut engine.warnings) {
@@ -743,6 +745,24 @@ fn document_base_url(document: &NodeRef) -> Option<Url> {
     Url::parse(&href).ok()
 }
 
+fn ensure_dom_node_limit(document: &NodeRef, max_nodes: usize) -> Result<usize> {
+    fn visit(node: &NodeRef, count: &mut usize, max_nodes: usize) -> Result<()> {
+        *count = (*count).saturating_add(1);
+        if *count > max_nodes {
+            let current = *count;
+            bail!("document node count exceeds max-dom-nodes: {current} > {max_nodes}");
+        }
+        for child in node.children() {
+            visit(&child, count, max_nodes)?;
+        }
+        Ok(())
+    }
+
+    let mut count = 0usize;
+    visit(document, &mut count, max_nodes)?;
+    Ok(count)
+}
+
 fn normalize_resource_url(url: &str) -> String {
     let url = url.trim();
     if url.starts_with("//") {
@@ -752,9 +772,35 @@ fn normalize_resource_url(url: &str) -> String {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct RenderLimits {
+    max_layout_depth: usize,
+    max_table_cells: usize,
+}
+
+impl RenderLimits {
+    fn from_request(request: &RenderRequest) -> Self {
+        Self {
+            max_layout_depth: request.max_layout_depth,
+            max_table_cells: request.max_table_cells,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Default for RenderLimits {
+    fn default() -> Self {
+        Self {
+            max_layout_depth: api::DEFAULT_MAX_LAYOUT_DEPTH,
+            max_table_cells: api::DEFAULT_MAX_TABLE_CELLS,
+        }
+    }
+}
+
 struct LayoutEngine<'a> {
     font_system: &'a mut FontSystem,
     resources: ResourcePolicy,
+    limits: RenderLimits,
     available_font_families: Vec<String>,
     web_font_faces: Vec<WebFontFace>,
     warnings: Vec<RenderWarning>,
@@ -766,10 +812,12 @@ impl<'a> LayoutEngine<'a> {
         resources: ResourcePolicy,
         available_font_families: Vec<String>,
         web_font_faces: Vec<WebFontFace>,
+        limits: RenderLimits,
     ) -> Self {
         Self {
             font_system,
             resources,
+            limits,
             available_font_families,
             web_font_faces,
             warnings: Vec::new(),
@@ -839,7 +887,7 @@ impl<'a> LayoutEngine<'a> {
         width: f32,
         depth: usize,
     ) -> Result<LayoutChildren> {
-        if depth > MAX_LAYOUT_DEPTH {
+        if depth > self.limits.max_layout_depth {
             self.push_warning(RenderWarning::new(
                 RenderWarningCode::LayoutLimitReached,
                 "maximum layout depth reached; truncated nested content",
@@ -1451,7 +1499,7 @@ impl<'a> LayoutEngine<'a> {
         containing_width: f32,
         depth: usize,
     ) -> Result<Option<FlowBox>> {
-        let grid = build_table_grid(node);
+        let grid = build_table_grid(node, self.limits.max_table_cells)?;
         if grid.rows.is_empty() {
             return self.layout_block(node, style, x, y, containing_width, depth);
         }
@@ -5182,11 +5230,12 @@ struct TableCell {
     colspan: usize,
 }
 
-fn build_table_grid(table: &NodeRef) -> TableGrid {
+fn build_table_grid(table: &NodeRef, max_table_cells: usize) -> Result<TableGrid> {
     let rows = collect_rows(table);
     let mut active_rowspans: Vec<usize> = Vec::new();
     let mut grid_rows = Vec::with_capacity(rows.len());
     let mut column_count = 0usize;
+    let mut occupied_slots = 0usize;
 
     for row in rows {
         let mut col = 0usize;
@@ -5199,6 +5248,12 @@ fn build_table_grid(table: &NodeRef) -> TableGrid {
 
             let colspan = parse_span_attr(&cell, "colspan");
             let rowspan = parse_span_attr(&cell, "rowspan");
+            occupied_slots = occupied_slots.saturating_add(colspan.saturating_mul(rowspan));
+            if occupied_slots > max_table_cells {
+                bail!(
+                    "table cell slots exceed max-table-cells: {occupied_slots} > {max_table_cells}"
+                );
+            }
             if active_rowspans.len() < col + colspan {
                 active_rowspans.resize(col + colspan, 0);
             }
@@ -5228,11 +5283,11 @@ fn build_table_grid(table: &NodeRef) -> TableGrid {
         col_widths.resize(column_count, None);
     }
 
-    TableGrid {
+    Ok(TableGrid {
         rows: grid_rows,
         column_count,
         col_widths,
-    }
+    })
 }
 
 fn collect_col_widths(table: &NodeRef) -> Vec<Option<Length>> {
@@ -6797,6 +6852,12 @@ fn validate_request(request: &RenderRequest) -> Result<()> {
     if request.viewport_height == 0 {
         bail!("viewport-height must be greater than zero");
     }
+    if request.max_dom_nodes == 0 {
+        bail!("max-dom-nodes must be greater than zero");
+    }
+    if request.max_table_cells == 0 {
+        bail!("max-table-cells must be greater than zero");
+    }
     validate_scale(request.scale)?;
     let _ = scaled_dimension(request.width, request.scale, "width")?;
     let _ = scaled_dimension(request.viewport_height, request.scale, "viewport-height")?;
@@ -6879,6 +6940,7 @@ fn layout_for_test(html: &str, width: u32) -> LayoutBox {
         resource_policy_for_test(),
         Vec::new(),
         Vec::new(),
+        RenderLimits::default(),
     );
     engine.layout_document(&document, width).unwrap()
 }
@@ -7712,6 +7774,7 @@ mod tests {
             resource_policy_for_test(),
             Vec::new(),
             Vec::new(),
+            RenderLimits::default(),
         );
         let layout = engine.layout_document(&document, 200).unwrap();
         let text = find_text_layout(&layout).expect("text");
@@ -8714,6 +8777,51 @@ mod tests {
         let mut renderer = MailCanvasRenderer::new(160, 120, 1.0).unwrap();
         let error = renderer.render_png(request).unwrap_err();
         assert!(error.to_string().contains("max-height"));
+    }
+
+    #[test]
+    fn rejects_document_over_max_dom_nodes() {
+        let html = build_document("<p>Hello</p>", None, None, 160);
+        let mut request = RenderRequest::defaults_for_html(html, 160, 120, 1.0);
+        request.max_dom_nodes = 1;
+        let mut renderer = MailCanvasRenderer::new(160, 120, 1.0).unwrap();
+        let error = renderer.render_png(request).unwrap_err();
+        assert!(error.to_string().contains("max-dom-nodes"));
+    }
+
+    #[test]
+    fn rejects_table_over_max_table_cells() {
+        let html = build_document(
+            "<table><tr><td>A</td><td>B</td></tr></table>",
+            None,
+            None,
+            160,
+        );
+        let mut request = RenderRequest::defaults_for_html(html, 160, 120, 1.0);
+        request.max_table_cells = 1;
+        let mut renderer = MailCanvasRenderer::new(160, 120, 1.0).unwrap();
+        let error = renderer.render_png(request).unwrap_err();
+        assert!(error.to_string().contains("max-table-cells"));
+    }
+
+    #[test]
+    fn layout_depth_limit_emits_structured_warning() {
+        let html = build_document(
+            "<table><tr><td><p>Nested</p></td></tr></table>",
+            None,
+            None,
+            160,
+        );
+        let mut request = RenderRequest::defaults_for_html(html, 160, 120, 1.0);
+        request.max_layout_depth = 0;
+        let mut renderer = MailCanvasRenderer::new(160, 120, 1.0).unwrap();
+        let image = renderer.render_png(request).unwrap();
+        assert!(
+            image
+                .warnings
+                .iter()
+                .any(|warning| warning.code == RenderWarningCode::LayoutLimitReached)
+        );
     }
 
     #[test]
