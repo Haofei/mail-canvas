@@ -13,7 +13,6 @@ use cosmic_text::{
     Align as TextAlignMode, Attrs, Buffer, Color as TextColor, Family as FontFamily, FontSystem,
     Metrics, Shaping, Style as FontStyle, SwashCache, Weight as FontWeight, Wrap,
 };
-use image::{RgbaImage, imageops::FilterType};
 use kuchiki::{NodeRef, traits::TendrilSink as _};
 use pdf_writer::{Content, Name, Pdf, Rect as PdfRect, Ref};
 use taffy::geometry::{Rect as TaffyRect, Size as TaffySize};
@@ -5844,77 +5843,7 @@ fn blend_text_rect(pixmap: &mut Pixmap, x: i32, y: i32, width: u32, height: u32,
 }
 
 fn draw_image(pixmap: &mut Pixmap, scale: f32, rect: Rect, image: &ImageData, radius: f32) {
-    if radius <= 0.0 && draw_resized_image(pixmap, scale, rect, image, None, FilterType::Triangle) {
-        return;
-    }
     draw_image_clipped(pixmap, scale, rect, image, None, radius);
-}
-
-fn draw_resized_image(
-    pixmap: &mut Pixmap,
-    scale: f32,
-    rect: Rect,
-    image: &ImageData,
-    clip: Option<Rect>,
-    filter: FilterType,
-) -> bool {
-    if rect.width <= 0.0
-        || rect.height <= 0.0
-        || image.width == 0
-        || image.height == 0
-        || image.rgba.is_empty()
-    {
-        return false;
-    }
-    let target_width = (rect.width * scale).round().max(1.0) as u32;
-    let target_height = (rect.height * scale).round().max(1.0) as u32;
-    if target_width == image.width && target_height == image.height {
-        return false;
-    }
-    let Some(source) = RgbaImage::from_raw(image.width, image.height, image.rgba.clone()) else {
-        return false;
-    };
-    let resized = image::imageops::resize(&source, target_width, target_height, filter);
-    let pixmap_width = pixmap.width() as i32;
-    let pixmap_height = pixmap.height() as i32;
-    let data = pixmap.data_mut();
-    let x0 = (rect.x * scale).round() as i32;
-    let y0 = (rect.y * scale).round() as i32;
-    let mut start_x = x0.max(0);
-    let mut start_y = y0.max(0);
-    let mut end_x = x0.saturating_add(target_width as i32).min(pixmap_width);
-    let mut end_y = y0.saturating_add(target_height as i32).min(pixmap_height);
-    if let Some(clip) = clip {
-        let clip_x0 = (clip.x * scale).round() as i32;
-        let clip_y0 = (clip.y * scale).round() as i32;
-        let clip_x1 = ((clip.x + clip.width) * scale).round() as i32;
-        let clip_y1 = ((clip.y + clip.height) * scale).round() as i32;
-        start_x = start_x.max(clip_x0);
-        start_y = start_y.max(clip_y0);
-        end_x = end_x.min(clip_x1);
-        end_y = end_y.min(clip_y1);
-    }
-
-    if start_x >= end_x || start_y >= end_y {
-        return false;
-    }
-
-    for dst_y in start_y..end_y {
-        let py = dst_y - y0;
-        for dst_x in start_x..end_x {
-            let px = dst_x - x0;
-            let pixel = resized.get_pixel(px as u32, py as u32).0;
-            let dst_index = ((dst_y as u32 * pixmap_width as u32 + dst_x as u32) * 4) as usize;
-            composite_pixel(
-                &mut data[dst_index..dst_index + 4],
-                pixel[0],
-                pixel[1],
-                pixel[2],
-                pixel[3],
-            );
-        }
-    }
-    true
 }
 
 fn draw_background_image(
@@ -5934,16 +5863,6 @@ fn draw_background_image(
     let tile_y = positioned_offset(rect.y, rect.height, tile_height, position.y);
 
     if repeat == BackgroundRepeat::NoRepeat || size != BackgroundSize::Auto {
-        if draw_resized_image(
-            pixmap,
-            scale,
-            Rect::new(tile_x, tile_y, tile_width, tile_height),
-            image,
-            Some(rect),
-            FilterType::Triangle,
-        ) {
-            return;
-        }
         draw_image_clipped(
             pixmap,
             scale,
@@ -6018,6 +5937,7 @@ fn draw_image_clipped(
 ) {
     if rect.width <= 0.0
         || rect.height <= 0.0
+        || scale <= 0.0
         || image.width == 0
         || image.height == 0
         || image.rgba.is_empty()
@@ -6025,63 +5945,122 @@ fn draw_image_clipped(
         return;
     }
 
-    let x0 = (rect.x * scale).round() as i32;
-    let y0 = (rect.y * scale).round() as i32;
-    let target_width = (rect.width * scale).round().max(1.0) as i32;
-    let target_height = (rect.height * scale).round().max(1.0) as i32;
-    let x1 = x0.saturating_add(target_width);
-    let y1 = y0.saturating_add(target_height);
-
     let pixmap_width = pixmap.width() as i32;
     let pixmap_height = pixmap.height() as i32;
-    let data = pixmap.data_mut();
+    let image_right = rect.x + rect.width;
+    let image_bottom = rect.y + rect.height;
+    let (mut start_x, mut end_x) = pixel_bounds(rect.x, image_right, scale, pixmap_width);
+    let (mut start_y, mut end_y) = pixel_bounds(rect.y, image_bottom, scale, pixmap_height);
 
-    let start_x = x0.max(0);
-    let start_y = y0.max(0);
-    let mut start_x = start_x;
-    let mut start_y = start_y;
-    let mut end_x = x1.min(pixmap_width);
-    let mut end_y = y1.min(pixmap_height);
     if let Some(clip) = clip {
-        let clip_x0 = (clip.x * scale).round() as i32;
-        let clip_y0 = (clip.y * scale).round() as i32;
-        let clip_x1 = ((clip.x + clip.width) * scale).round() as i32;
-        let clip_y1 = ((clip.y + clip.height) * scale).round() as i32;
-        start_x = start_x.max(clip_x0);
-        start_y = start_y.max(clip_y0);
-        end_x = end_x.min(clip_x1);
-        end_y = end_y.min(clip_y1);
+        let (clip_start_x, clip_end_x) =
+            pixel_bounds(clip.x, clip.x + clip.width, scale, pixmap_width);
+        let (clip_start_y, clip_end_y) =
+            pixel_bounds(clip.y, clip.y + clip.height, scale, pixmap_height);
+        start_x = start_x.max(clip_start_x);
+        start_y = start_y.max(clip_start_y);
+        end_x = end_x.min(clip_end_x);
+        end_y = end_y.min(clip_end_y);
     }
     if start_x >= end_x || start_y >= end_y {
         return;
     }
 
-    let source_pixel_width = image.width as f32 / target_width as f32;
-    let source_pixel_height = image.height as f32 / target_height as f32;
+    let data = pixmap.data_mut();
+    let source_pixel_width = image.width as f32 / (rect.width * scale);
+    let source_pixel_height = image.height as f32 / (rect.height * scale);
     let downscaling = source_pixel_width > 1.2 || source_pixel_height > 1.2;
+    let pixel_area = 1.0 / (scale * scale);
 
     for py in start_y..end_y {
-        let css_y = (py as f32 + 0.5) / scale;
-        let src_y0 = (py - y0) as f32 * image.height as f32 / target_height as f32;
-        let src_y1 = (py - y0 + 1) as f32 * image.height as f32 / target_height as f32;
+        let pixel_top = py as f32 / scale;
+        let pixel_bottom = (py as f32 + 1.0) / scale;
+        let paint_top = pixel_top
+            .max(rect.y)
+            .max(clip.map_or(f32::NEG_INFINITY, |clip| clip.y));
+        let paint_bottom = pixel_bottom
+            .min(image_bottom)
+            .min(clip.map_or(f32::INFINITY, |clip| clip.y + clip.height));
+        if paint_top >= paint_bottom {
+            continue;
+        }
+        let src_y0 = (paint_top - rect.y) * image.height as f32 / rect.height;
+        let src_y1 = (paint_bottom - rect.y) * image.height as f32 / rect.height;
         let src_y = (src_y0 + src_y1) / 2.0 - 0.5;
         for px in start_x..end_x {
-            let css_x = (px as f32 + 0.5) / scale;
-            if !point_in_rounded_rect(css_x, css_y, rect, radius) {
+            let pixel_left = px as f32 / scale;
+            let pixel_right = (px as f32 + 1.0) / scale;
+            let paint_left = pixel_left
+                .max(rect.x)
+                .max(clip.map_or(f32::NEG_INFINITY, |clip| clip.x));
+            let paint_right = pixel_right
+                .min(image_right)
+                .min(clip.map_or(f32::INFINITY, |clip| clip.x + clip.width));
+            if paint_left >= paint_right {
                 continue;
             }
-            let src_x0 = (px - x0) as f32 * image.width as f32 / target_width as f32;
-            let src_x1 = (px - x0 + 1) as f32 * image.width as f32 / target_width as f32;
+            let mut coverage = ((paint_right - paint_left) * (paint_bottom - paint_top)
+                / pixel_area)
+                .clamp(0.0, 1.0);
+            coverage *= rounded_rect_coverage(
+                rect,
+                radius,
+                paint_left,
+                paint_top,
+                paint_right,
+                paint_bottom,
+            );
+            if coverage <= 0.0 {
+                continue;
+            }
+
+            let src_x0 = (paint_left - rect.x) * image.width as f32 / rect.width;
+            let src_x1 = (paint_right - rect.x) * image.width as f32 / rect.width;
             let src_x = (src_x0 + src_x1) / 2.0 - 0.5;
             let [r, g, b, a] = if downscaling {
                 sample_image_area(image, src_x0, src_y0, src_x1, src_y1)
             } else {
                 sample_image_bilinear(image, src_x, src_y)
             };
+            let a = (a as f32 * coverage).round().clamp(0.0, 255.0) as u8;
+            if a == 0 {
+                continue;
+            }
             let dst_index = ((py as u32 * pixmap_width as u32 + px as u32) * 4) as usize;
             composite_pixel(&mut data[dst_index..dst_index + 4], r, g, b, a);
         }
     }
+}
+
+fn pixel_bounds(start: f32, end: f32, scale: f32, limit: i32) -> (i32, i32) {
+    let start = (start * scale).floor() as i32;
+    let end = (end * scale).ceil() as i32;
+    (start.max(0), end.min(limit))
+}
+
+fn rounded_rect_coverage(
+    rect: Rect,
+    radius: f32,
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+) -> f32 {
+    if radius <= 0.0 {
+        return 1.0;
+    }
+
+    let sample_points = [(0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)];
+    let mut inside = 0;
+    for (x_factor, y_factor) in sample_points {
+        let x = left + (right - left) * x_factor;
+        let y = top + (bottom - top) * y_factor;
+        if point_in_rounded_rect(x, y, rect, radius) {
+            inside += 1;
+        }
+    }
+
+    inside as f32 / sample_points.len() as f32
 }
 
 fn point_in_rounded_rect(x: f32, y: f32, rect: Rect, radius: f32) -> bool {
@@ -7593,6 +7572,24 @@ mod tests {
         let sampled = sample_image_area(&image, 0.0, 0.0, 2.0, 2.0);
 
         assert_eq!(sampled, [139, 139, 139, 255]);
+    }
+
+    #[test]
+    fn fractional_image_rect_preserves_edge_coverage() {
+        let image = ImageData {
+            width: 1,
+            height: 1,
+            rgba: vec![255, 0, 0, 255],
+        };
+        let mut pixmap = Pixmap::new(4, 1).expect("pixmap");
+
+        draw_image(&mut pixmap, 1.0, Rect::new(0.5, 0.0, 2.0, 1.0), &image, 0.0);
+
+        let data = pixmap.data();
+        assert_eq!(&data[0..4], &[128, 0, 0, 128]);
+        assert_eq!(&data[4..8], &[255, 0, 0, 255]);
+        assert_eq!(&data[8..12], &[128, 0, 0, 128]);
+        assert_eq!(&data[12..16], &[0, 0, 0, 0]);
     }
 
     #[test]
