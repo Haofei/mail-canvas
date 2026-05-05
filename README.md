@@ -91,8 +91,10 @@ older local experiments.
 
 ### Project Shape
 
-- `src/lib.rs`: renderer API, layout tree, email-oriented layout rules, and
-  painting.
+- `src/api.rs`: public renderer request, result, console message, and trait
+  types.
+- `src/lib.rs`: renderer implementation, layout tree, email-oriented layout
+  rules, and painting.
 - `src/text.rs`: text metrics, Blink-style line-height helpers, and rich inline
   text helpers.
 - `src/css.rs`: CSS inlining helpers, `lightningcss` declaration parsing,
@@ -277,7 +279,8 @@ fn main() -> anyhow::Result<()> {
 
 ### 项目结构
 
-- `src/lib.rs`: renderer API、layout tree、邮件布局规则和绘制逻辑。
+- `src/api.rs`: public renderer request、result、console message 和 trait 类型。
+- `src/lib.rs`: renderer 实现、layout tree、邮件布局规则和绘制逻辑。
 - `src/text.rs`: 文字度量、Blink 风格 line-height 辅助逻辑，以及 rich inline
   text 辅助逻辑。
 - `src/css.rs`: CSS inlining、`lightningcss` declaration 解析、active media
