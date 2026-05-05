@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::Cursor;
 use std::net::IpAddr;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
@@ -8,7 +9,9 @@ use data_url::DataUrl;
 use image::{DynamicImage, ImageDecoder, ImageReader, Limits};
 use url::Url;
 
-use crate::RenderRequest;
+use crate::{
+    AssetKind, AssetReport, AssetSource, AssetStatus, RenderRequest, api::MAX_ASSET_REPORTS,
+};
 
 const BLINK_RESOURCE_USER_AGENT: &str = concat!(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ",
@@ -24,6 +27,7 @@ pub(crate) struct ResourcePolicy {
     pub(crate) timeout: Duration,
     pub(crate) max_image_bytes: usize,
     pub(crate) max_decoded_pixels: u64,
+    pub(crate) asset_reports: Arc<Mutex<Vec<AssetReport>>>,
 }
 
 impl ResourcePolicy {
@@ -39,7 +43,39 @@ impl ResourcePolicy {
             },
             max_image_bytes: request.max_image_bytes.max(1),
             max_decoded_pixels: request.max_decoded_pixels.max(1),
+            asset_reports: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    pub(crate) fn take_asset_reports(&self) -> Vec<AssetReport> {
+        let mut reports = self
+            .asset_reports
+            .lock()
+            .expect("asset report mutex poisoned");
+        std::mem::take(&mut *reports)
+    }
+
+    pub(crate) fn record_asset_report(&self, report: AssetReport) {
+        self.push_asset_report(report);
+    }
+
+    fn push_asset_report(&self, report: AssetReport) {
+        let mut reports = self
+            .asset_reports
+            .lock()
+            .expect("asset report mutex poisoned");
+        if let Some(existing) = reports.iter_mut().find(|existing| {
+            existing.kind == report.kind
+                && existing.request_url == report.request_url
+                && existing.initiator == report.initiator
+        }) {
+            existing.merge_from(report);
+            return;
+        }
+        if reports.len() >= MAX_ASSET_REPORTS {
+            return;
+        }
+        reports.push(report);
     }
 }
 
@@ -50,20 +86,116 @@ pub(crate) struct ImageData {
     pub(crate) rgba: Vec<u8>,
 }
 
-pub(crate) fn load_image(src: &str, policy: &ResourcePolicy) -> Result<ImageData> {
-    let bytes = load_resource_bytes(src, policy)?;
-    decode_image_bytes(&bytes, policy)
+struct LoadedResourceBytes {
+    resolved_url: Option<String>,
+    source: AssetSource,
+    bytes: Vec<u8>,
 }
 
-pub(crate) fn load_resource_bytes(src: &str, policy: &ResourcePolicy) -> Result<Vec<u8>> {
+pub(crate) fn load_image(
+    src: &str,
+    policy: &ResourcePolicy,
+    initiator: &'static str,
+) -> Result<ImageData> {
+    let loaded = match load_resource_bytes_inner(src, policy, AssetKind::Image, initiator, false) {
+        Ok(loaded) => loaded,
+        Err(error) => return Err(error),
+    };
+    match decode_image_bytes(&loaded.bytes, policy) {
+        Ok(image) => {
+            policy.push_asset_report(
+                asset_report(AssetKind::Image, AssetStatus::Loaded, src)
+                    .with_source(loaded.source)
+                    .with_initiator(initiator)
+                    .with_bytes(loaded.bytes.len())
+                    .with_optional_resolved_url(loaded.resolved_url),
+            );
+            Ok(image)
+        }
+        Err(error) => {
+            policy.push_asset_report(
+                asset_report(AssetKind::Image, AssetStatus::Failed, src)
+                    .with_source(loaded.source)
+                    .with_initiator(initiator)
+                    .with_bytes(loaded.bytes.len())
+                    .with_detail(error.to_string())
+                    .with_optional_resolved_url(loaded.resolved_url),
+            );
+            Err(error)
+        }
+    }
+}
+
+pub(crate) fn load_resource_bytes(
+    src: &str,
+    policy: &ResourcePolicy,
+    kind: AssetKind,
+    initiator: &'static str,
+) -> Result<Vec<u8>> {
+    let loaded = load_resource_bytes_inner(src, policy, kind, initiator, true)?;
+    Ok(loaded.bytes)
+}
+
+fn load_resource_bytes_inner(
+    src: &str,
+    policy: &ResourcePolicy,
+    kind: AssetKind,
+    initiator: &'static str,
+    record_loaded: bool,
+) -> Result<LoadedResourceBytes> {
     if src.trim_start().starts_with("data:") {
-        let data_url =
-            DataUrl::process(src).map_err(|error| anyhow!("invalid data URL: {error}"))?;
-        let (bytes, _) = data_url
+        let data_url = match DataUrl::process(src) {
+            Ok(data_url) => data_url,
+            Err(error) => {
+                let error = anyhow!("invalid data URL: {error}");
+                policy.push_asset_report(
+                    asset_report(kind, AssetStatus::Failed, src)
+                        .with_source(AssetSource::DataUrl)
+                        .with_initiator(initiator)
+                        .with_detail(error.to_string()),
+                );
+                return Err(error);
+            }
+        };
+        let (bytes, _) = match data_url
             .decode_to_vec()
-            .map_err(|error| anyhow!("invalid data URL body: {error:?}"))?;
-        ensure_resource_size(bytes.len(), policy.max_image_bytes)?;
-        return Ok(bytes);
+            .map_err(|error| anyhow!("invalid data URL body: {error:?}"))
+        {
+            Ok(decoded) => decoded,
+            Err(error) => {
+                policy.push_asset_report(
+                    asset_report(kind, AssetStatus::Failed, src)
+                        .with_source(AssetSource::DataUrl)
+                        .with_initiator(initiator)
+                        .with_detail(error.to_string()),
+                );
+                return Err(error);
+            }
+        };
+        if let Err(error) = ensure_resource_size(bytes.len(), policy.max_image_bytes) {
+            policy.push_asset_report(
+                asset_report(kind, AssetStatus::Failed, src)
+                    .with_source(AssetSource::DataUrl)
+                    .with_initiator(initiator)
+                    .with_bytes(bytes.len())
+                    .with_detail(error.to_string()),
+            );
+            return Err(error);
+        }
+        let loaded = LoadedResourceBytes {
+            resolved_url: None,
+            source: AssetSource::DataUrl,
+            bytes,
+        };
+        if record_loaded {
+            policy.push_asset_report(
+                asset_report(kind, AssetStatus::Loaded, src)
+                    .with_source(AssetSource::DataUrl)
+                    .with_initiator(initiator)
+                    .with_bytes(loaded.bytes.len()),
+            );
+        }
+        return Ok(loaded);
     }
 
     let url = Url::parse(src)
@@ -74,12 +206,103 @@ pub(crate) fn load_resource_bytes(src: &str, policy: &ResourcePolicy) -> Result<
                 .ok_or(url::ParseError::RelativeUrlWithoutBase)
                 .and_then(|base| base.join(src))
         })
-        .with_context(|| format!("failed to resolve resource URL {src}"))?;
+        .with_context(|| format!("failed to resolve resource URL {src}"));
+    let url = match url {
+        Ok(url) => url,
+        Err(error) => {
+            policy.push_asset_report(
+                asset_report(kind, AssetStatus::Failed, src)
+                    .with_initiator(initiator)
+                    .with_detail(error.to_string()),
+            );
+            return Err(error);
+        }
+    };
+    let resolved_url = Some(url.to_string());
 
     match url.scheme() {
-        "file" => load_file_url(&url, policy),
-        "https" | "http" => load_remote_url(&url, policy),
-        scheme => bail!("unsupported resource URL scheme: {scheme}"),
+        "file" => match load_file_url(&url, policy) {
+            Ok(bytes) => {
+                if record_loaded {
+                    policy.push_asset_report(
+                        asset_report(kind, AssetStatus::Loaded, src)
+                            .with_source(AssetSource::File)
+                            .with_initiator(initiator)
+                            .with_bytes(bytes.len())
+                            .with_optional_resolved_url(resolved_url.clone()),
+                    );
+                }
+                Ok(LoadedResourceBytes {
+                    resolved_url,
+                    source: AssetSource::File,
+                    bytes,
+                })
+            }
+            Err(error) => {
+                policy.push_asset_report(
+                    asset_report(kind, resource_error_status(&error), src)
+                        .with_source(AssetSource::File)
+                        .with_initiator(initiator)
+                        .with_detail(error.to_string())
+                        .with_optional_resolved_url(resolved_url),
+                );
+                Err(error)
+            }
+        },
+        "https" | "http" => match load_remote_url(&url, policy) {
+            Ok(bytes) => {
+                if record_loaded {
+                    policy.push_asset_report(
+                        asset_report(kind, AssetStatus::Loaded, src)
+                            .with_source(AssetSource::Remote)
+                            .with_initiator(initiator)
+                            .with_bytes(bytes.len())
+                            .with_optional_resolved_url(resolved_url.clone()),
+                    );
+                }
+                Ok(LoadedResourceBytes {
+                    resolved_url,
+                    source: AssetSource::Remote,
+                    bytes,
+                })
+            }
+            Err(error) => {
+                policy.push_asset_report(
+                    asset_report(kind, resource_error_status(&error), src)
+                        .with_source(AssetSource::Remote)
+                        .with_initiator(initiator)
+                        .with_detail(error.to_string())
+                        .with_optional_resolved_url(resolved_url),
+                );
+                Err(error)
+            }
+        },
+        scheme => {
+            let error = anyhow!("unsupported resource URL scheme: {scheme}");
+            policy.push_asset_report(
+                asset_report(kind, AssetStatus::Failed, src)
+                    .with_initiator(initiator)
+                    .with_detail(error.to_string())
+                    .with_optional_resolved_url(resolved_url),
+            );
+            Err(error)
+        }
+    }
+}
+
+fn asset_report(kind: AssetKind, status: AssetStatus, request_url: &str) -> AssetReport {
+    AssetReport::new(kind, status, request_url.to_string())
+}
+
+fn resource_error_status(error: &anyhow::Error) -> AssetStatus {
+    let message = error.to_string();
+    if message.contains("disabled")
+        || message.contains("rejected")
+        || message.contains("outside the base directory")
+    {
+        AssetStatus::Blocked
+    } else {
+        AssetStatus::Failed
     }
 }
 
@@ -232,6 +455,7 @@ mod tests {
             timeout: Duration::from_secs(1),
             max_image_bytes: 1024 * 1024,
             max_decoded_pixels: 1024,
+            asset_reports: Arc::new(Mutex::new(Vec::new())),
         }
     }
 

@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, ValueEnum};
 use mail_canvas::{
-    ConsoleMessage, EmailRenderer, MailCanvasRenderer, RenderRequest, RenderWarning,
+    AssetReport, ConsoleMessage, EmailRenderer, MailCanvasRenderer, RenderRequest, RenderWarning,
     build_document_from_files,
 };
 
@@ -163,7 +163,12 @@ fn main() -> Result<()> {
         .with_context(|| format!("failed to write {}", args.output.display()))?;
 
     if let Some(path) = &args.warnings_json {
-        write_warnings_json(path, &image.warnings, &image.console_messages)?;
+        write_warnings_json(
+            path,
+            &image.warnings,
+            &image.assets,
+            &image.console_messages,
+        )?;
     }
 
     eprintln!(
@@ -207,12 +212,14 @@ fn main() -> Result<()> {
 #[derive(serde::Serialize)]
 struct DiagnosticsReport<'a> {
     warnings: &'a [RenderWarning],
+    assets: &'a [AssetReport],
     console_messages: &'a [ConsoleMessage],
 }
 
 fn write_warnings_json(
     path: &std::path::Path,
     warnings: &[RenderWarning],
+    assets: &[AssetReport],
     console_messages: &[ConsoleMessage],
 ) -> Result<()> {
     if let Some(parent) = path.parent() {
@@ -221,6 +228,7 @@ fn write_warnings_json(
     }
     let report = DiagnosticsReport {
         warnings,
+        assets,
         console_messages,
     };
     let json = serde_json::to_vec_pretty(&report).context("failed to serialize warnings JSON")?;

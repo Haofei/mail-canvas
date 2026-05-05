@@ -61,7 +61,7 @@ Important options:
 - `--min-height`: minimum final CSS height.
 - `--max-height`: fail if rendered content exceeds this CSS height.
 - `--warnings-json`: optional JSON diagnostics output path for structured
-  renderer warnings.
+  renderer warnings and asset reports.
 - `--pdf-output`: optional raster PDF output path.
 - `--base-url`: base URL for relative assets; defaults to the HTML file
   directory.
@@ -78,6 +78,13 @@ Important options:
   layout.
 - `--font-file` / `--font-dir`: load explicit fonts instead of scanning system
   fonts.
+
+The diagnostics JSON currently includes:
+
+- `warnings`: machine-readable renderer warnings
+- `assets`: every attempted stylesheet, image, and web font load with final
+  status
+- `console_messages`: the compatibility stderr messages printed by the CLI
 
 ### Rust API
 
@@ -186,7 +193,8 @@ the smallest email-relevant rule in Rust.
   selectable or searchable.
 - CSS support is intentionally narrow and tied to email templates. Unsupported
   declarations are ignored today; structured renderer warnings report resource,
-  web font, and layout-limit issues.
+  web font, and layout-limit issues. Diagnostics JSON also includes per-asset
+  load results.
 - JavaScript, forms, video, canvas, full positioning, full flex/grid, and full
   browser painting are out of scope.
 - Remote resources are disabled by default and must be enabled explicitly. DOM,
@@ -265,7 +273,7 @@ cargo run -- \
 - `--min-height`: 最小 CSS 输出高度。
 - `--max-height`: 内容超过该 CSS 高度时失败。
 - `--warnings-json`: 可选的 JSON diagnostics 输出，包含结构化 renderer
-  warnings。
+  warnings 和 asset report。
 - `--pdf-output`: 可选的栅格 PDF 输出路径。
 - `--base-url`: 相对资源的 base URL，默认是 HTML 文件目录。
 - `--allow-remote`: 允许远程 `http(s)` 图片和字体。
@@ -278,6 +286,12 @@ cargo run -- \
   warning。
 - `--max-table-cells`: table layout 中允许展开的最大 cell slot 数。
 - `--font-file` / `--font-dir`: 使用指定字体，避免扫描系统字体。
+
+当前 diagnostics JSON 包含：
+
+- `warnings`: 机器可读的 renderer warning
+- `assets`: 每一次 stylesheet、image、web font 加载的最终状态
+- `console_messages`: CLI 为兼容性保留的 stderr 文本消息
 
 ### Rust API
 
@@ -376,6 +390,7 @@ scripts/fetch_blink_reference.sh
 - PNG 是主要输出；PDF 目前是栅格 PDF，文字不可选中、不可搜索。
 - CSS 支持是邮件模板导向的子集；暂时不支持的 declaration 会被忽略，
   结构化 renderer warnings 已覆盖资源、web font 和 layout limit 问题。
+  diagnostics JSON 还会输出逐个 asset 的加载结果。
 - JavaScript、form、video、canvas、完整 positioning、完整 flex/grid、完整浏览器
   painting 都不在当前范围内。
 - 远程资源默认关闭，需要显式开启。DOM、layout depth、table cell、编码字节数和

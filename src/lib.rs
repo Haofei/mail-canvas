@@ -35,8 +35,8 @@ mod text;
 #[cfg(test)]
 use api::DEFAULT_MAX_IMAGE_BYTES;
 pub use api::{
-    ConsoleMessage, EmailRenderer, RenderRequest, RenderWarning, RenderWarningCode, RenderedImage,
-    RenderedPdf,
+    AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, EmailRenderer, RenderRequest,
+    RenderWarning, RenderWarningCode, RenderedImage, RenderedPdf,
 };
 use api::{DEFAULT_MAX_DECODED_PIXELS, RenderDiagnostics};
 use css::{
@@ -244,6 +244,7 @@ impl EmailRenderer for MailCanvasRenderer {
         let source_document = kuchiki::parse_html().one(render_html.clone());
         ensure_dom_node_limit(&source_document, request.max_dom_nodes)?;
         let resources = ResourcePolicy::from_request(&request, document_base_url(&source_document));
+        let asset_reports = resources.clone();
         let limits = RenderLimits::from_request(&request);
         let mut diagnostics = RenderDiagnostics::default();
         let web_font_faces = load_web_fonts_from_html(
@@ -268,6 +269,7 @@ impl EmailRenderer for MailCanvasRenderer {
             diagnostics.push_warning(warning);
         }
         drop(engine);
+        let assets = asset_reports.take_asset_reports();
 
         let css_height = clamp_css_height(
             ceil_to_u32(layout.rect.height)?,
@@ -309,6 +311,7 @@ impl EmailRenderer for MailCanvasRenderer {
             content_css_width: ceil_to_u32(layout.rect.width)?,
             console_messages: diagnostics.console_messages,
             warnings: diagnostics.warnings,
+            assets,
         })
     }
 
@@ -324,6 +327,7 @@ impl EmailRenderer for MailCanvasRenderer {
             scale: rendered.scale,
             console_messages: rendered.console_messages,
             warnings: rendered.warnings,
+            assets: rendered.assets,
         })
     }
 }
@@ -466,9 +470,20 @@ fn load_web_fonts_from_html(
                 continue;
             }
 
-            match load_resource_bytes(&candidate.url, policy)
-                .and_then(|bytes| decode_font_resource(&bytes, &candidate))
-            {
+            match load_resource_bytes(&candidate.url, policy, AssetKind::WebFont, "@font-face")
+                .and_then(|bytes| {
+                    decode_font_resource(&bytes, &candidate).inspect_err(|error| {
+                        policy.record_asset_report(
+                            AssetReport::new(
+                                AssetKind::WebFont,
+                                AssetStatus::Failed,
+                                candidate.url.clone(),
+                            )
+                            .with_initiator("@font-face")
+                            .with_detail(error.to_string()),
+                        );
+                    })
+                }) {
                 Ok(font_data) => {
                     let ids = db.load_font_source(fontdb::Source::Binary(Arc::new(font_data)));
                     if !ids.is_empty() {
@@ -501,6 +516,17 @@ fn load_web_fonts_from_html(
                         }
                         loaded_fonts += 1;
                     } else {
+                        policy.record_asset_report(
+                            AssetReport::new(
+                                AssetKind::WebFont,
+                                AssetStatus::Failed,
+                                candidate.url.clone(),
+                            )
+                            .with_initiator("@font-face")
+                            .with_detail(format!(
+                                "web font {family} did not contain a loadable face"
+                            )),
+                        );
                         diagnostics.push_warning(
                             RenderWarning::new(
                                 RenderWarningCode::WebFontLoadFailed,
@@ -532,8 +558,17 @@ fn load_web_fonts_from_html(
 }
 
 fn load_stylesheet(url: &str, policy: &ResourcePolicy) -> Result<String> {
-    load_resource_bytes(url, policy)
-        .and_then(|bytes| String::from_utf8(bytes).context("stylesheet is not UTF-8"))
+    load_resource_bytes(url, policy, AssetKind::Stylesheet, "stylesheet").and_then(|bytes| {
+        String::from_utf8(bytes)
+            .inspect_err(|error| {
+                policy.record_asset_report(
+                    AssetReport::new(AssetKind::Stylesheet, AssetStatus::Failed, url.to_string())
+                        .with_initiator("stylesheet")
+                        .with_detail(format!("stylesheet is not UTF-8: {error}")),
+                );
+            })
+            .context("stylesheet is not UTF-8")
+    })
 }
 
 fn stylesheet_link_urls(html: &str) -> Vec<String> {
@@ -842,7 +877,7 @@ impl<'a> LayoutEngine<'a> {
         if src.is_empty() {
             return;
         }
-        if let Ok(image) = load_image(src, &self.resources) {
+        if let Ok(image) = load_image(src, &self.resources, "background-image") {
             style.background_image = Some(image);
         }
     }
@@ -1915,20 +1950,21 @@ impl<'a> LayoutEngine<'a> {
         y: f32,
         containing_width: f32,
     ) -> FlowBox {
-        let image = attr(node, "src").and_then(|src| match load_image(&src, &self.resources) {
-            Ok(image) => Some(image),
-            Err(error) => {
-                self.push_warning(
-                    RenderWarning::new(
-                        RenderWarningCode::ImageLoadFailed,
-                        format!("failed to load image {src}: {error}; left image box empty"),
-                    )
-                    .with_node("img")
-                    .with_url(src),
-                );
-                None
-            }
-        });
+        let image =
+            attr(node, "src").and_then(|src| match load_image(&src, &self.resources, "img") {
+                Ok(image) => Some(image),
+                Err(error) => {
+                    self.push_warning(
+                        RenderWarning::new(
+                            RenderWarningCode::ImageLoadFailed,
+                            format!("failed to load image {src}: {error}; left image box empty"),
+                        )
+                        .with_node("img")
+                        .with_url(src),
+                    );
+                    None
+                }
+            });
         let natural_width = image.as_ref().map_or(0.0, |image| image.width as f32);
         let natural_height = image.as_ref().map_or(0.0, |image| image.height as f32);
         let min_size = if image.is_some() { 1.0 } else { 0.0 };
@@ -2266,7 +2302,7 @@ impl<'a> LayoutEngine<'a> {
             })
             .unwrap_or_else(|| {
                 attr(node, "src")
-                    .and_then(|src| load_image(&src, &self.resources).ok())
+                    .and_then(|src| load_image(&src, &self.resources, "img").ok())
                     .map_or(0.0, |image| image.width as f32)
                     .min(containing_width)
             })
@@ -6933,6 +6969,7 @@ fn resource_policy_for_test() -> ResourcePolicy {
         timeout: Duration::from_secs(30),
         max_image_bytes: DEFAULT_MAX_IMAGE_BYTES,
         max_decoded_pixels: DEFAULT_MAX_DECODED_PIXELS,
+        asset_reports: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
     }
 }
 
@@ -8764,6 +8801,11 @@ mod tests {
         let image = renderer.render_png(request).unwrap();
         assert!(image.console_messages.is_empty());
         assert!(image.warnings.is_empty());
+        assert_eq!(image.assets.len(), 1);
+        assert_eq!(image.assets[0].kind, AssetKind::Image);
+        assert_eq!(image.assets[0].status, AssetStatus::Loaded);
+        assert_eq!(image.assets[0].source, Some(AssetSource::DataUrl));
+        assert_eq!(image.assets[0].initiator.as_deref(), Some("img"));
         let decoded = image::load_from_memory(&image.png).unwrap().to_rgba8();
         assert_ne!(decoded.get_pixel(5, 5).0, [255, 255, 255, 255]);
     }
@@ -8792,6 +8834,32 @@ mod tests {
             image.warnings[0].url.as_deref(),
             Some("https://example.com/pixel.png")
         );
+        assert_eq!(image.assets.len(), 1);
+        assert_eq!(image.assets[0].kind, AssetKind::Image);
+        assert_eq!(image.assets[0].status, AssetStatus::Blocked);
+        assert_eq!(image.assets[0].source, Some(AssetSource::Remote));
+        assert_eq!(image.assets[0].initiator.as_deref(), Some("img"));
+    }
+
+    #[test]
+    fn blocked_stylesheet_is_reported_in_assets() {
+        let html = build_document(
+            r#"<div>Hello</div>"#,
+            Some(r#"@import url("https://example.com/email.css");"#),
+            None,
+            200,
+        );
+        let request = RenderRequest::defaults_for_html(html, 200, 120, 1.0);
+        let mut renderer = MailCanvasRenderer::new(200, 120, 1.0).unwrap();
+        let image = renderer.render_png(request).unwrap();
+        assert_eq!(image.warnings.len(), 1);
+        assert_eq!(
+            image.warnings[0].code,
+            RenderWarningCode::StylesheetLoadFailed
+        );
+        assert_eq!(image.assets.len(), 1);
+        assert_eq!(image.assets[0].kind, AssetKind::Stylesheet);
+        assert_eq!(image.assets[0].status, AssetStatus::Blocked);
     }
 
     #[test]
@@ -8803,6 +8871,7 @@ mod tests {
         assert!(pdf.pdf.starts_with(b"%PDF-"));
         assert!(pdf.pdf.len() > 100);
         assert!(pdf.warnings.is_empty());
+        assert!(pdf.assets.is_empty());
     }
 
     #[test]

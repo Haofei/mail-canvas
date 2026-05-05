@@ -202,6 +202,7 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
   const diffPath = path.join(dirs.diff, `${template.name}.png`);
   const sideBySidePath = path.join(dirs.sideBySide, `${template.name}.png`);
   const logPath = path.join(dirs.logs, `${template.name}.log`);
+  const diagnosticsPath = path.join(dirs.logs, `${template.name}.diagnostics.json`);
   const preparedPath = path.join(dirs.prepared, `${template.name}.html`);
 
   const sourceHtml = await readFile(template.htmlPath, 'utf8');
@@ -227,6 +228,8 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     String(args.timeoutMs),
     '--base-url',
     baseUrl,
+    '--warnings-json',
+    diagnosticsPath,
   ];
   if (args.allowRemote) {
     renderArgs.push('--allow-remote');
@@ -250,9 +253,8 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     browserMetrics.textRects,
   );
   await writeTriptych([browserPath, rustPath, diffPath], sideBySidePath);
-  const warningCount = (await readFile(logPath, 'utf8'))
-    .split('\n')
-    .filter((line) => line.startsWith('console.warn:')).length;
+  const diagnostics = JSON.parse(await readFile(diagnosticsPath, 'utf8'));
+  const warningCount = diagnostics.warnings?.length ?? 0;
   return {
     name: template.name,
     url: template.url,
@@ -266,6 +268,7 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     diffPng: diffPath,
     sideBySidePng: sideBySidePath,
     log: logPath,
+    diagnosticsJson: diagnosticsPath,
     browser: comparison.browser,
     rust: comparison.rust,
     compared: comparison.compared,
@@ -277,7 +280,18 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     nonMediaText: comparison.nonMediaText,
     nonMediaNonText: comparison.nonMediaNonText,
     warningCount,
+    assetSummary: summarizeAssets(diagnostics.assets ?? []),
   };
+}
+
+function summarizeAssets(assets) {
+  const summary = { total: assets.length, loaded: 0, blocked: 0, failed: 0 };
+  for (const asset of assets) {
+    if (asset.status === 'loaded') summary.loaded += 1;
+    if (asset.status === 'blocked') summary.blocked += 1;
+    if (asset.status === 'failed') summary.failed += 1;
+  }
+  return summary;
 }
 
 async function writeTriptych(paths, outPath) {
@@ -653,19 +667,19 @@ function validationSummary(results, failures, expectations) {
   const mode =
     expectations.validationMode === 'semantic' ? 'semantic validation' : 'pixel validation';
   const skipped =
-    skippedNames.size > 0 ? ` (${skippedNames.size} skipped due known corpus warnings)` : '';
+    skippedNames.size > 0 ? ` (${skippedNames.size} skipped due known corpus issues)` : '';
   return `${mode}: ${passed}/${checked} templates passed${skipped}`;
 }
 
 function semanticResultSkipped(result, expectations) {
-  if (result.warningCount === 0) {
-    return false;
-  }
   if (Object.prototype.hasOwnProperty.call(expectations.templates ?? {}, result.name)) {
     return false;
   }
   if (expectations.skipKnownWarningTemplates && result.corpusStatus === 'known-warning') {
     return true;
+  }
+  if (result.warningCount === 0) {
+    return false;
   }
   return Boolean(expectations.skipTemplatesWithWarnings);
 }
@@ -817,8 +831,8 @@ function renderMarkdownReport(results, args, expectations) {
     `- Remote image loading in Rust renderer: ${args.allowRemote ? 'enabled' : 'disabled'}`,
     `- Output directory: \`${args.workDir}\``,
     '',
-    '| Template | Browser | Rust | Diff | Media Diff | Text Diff | Non-Media Diff | Non-Media Non-Text Diff | Diff Target | Non-Media Target | Non-Media Non-Text Target | Warnings | Files |',
-    '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
+    '| Template | Browser | Rust | Diff | Media Diff | Text Diff | Non-Media Diff | Non-Media Non-Text Diff | Diff Target | Non-Media Target | Non-Media Non-Text Target | Warnings | Assets | Files |',
+    '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|',
   ];
 
   for (const result of results) {
@@ -856,8 +870,9 @@ function renderMarkdownReport(results, args, expectations) {
       : Number.isFinite(nonMediaNonTextMax)
         ? `<= ${nonMediaNonTextMax.toFixed(2)}%`
         : '';
+    const assets = `${result.assetSummary.loaded}/${result.assetSummary.blocked}/${result.assetSummary.failed}`;
     lines.push(
-      `| ${result.name} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${percent} | ${mediaPercent} | ${textPercent} | ${nonMediaPercent} | ${nonMediaNonTextPercent} | ${targetText} | ${nonMediaTargetText} | ${nonMediaNonTextTargetText} | ${result.warningCount} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) |`,
+      `| ${result.name} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${percent} | ${mediaPercent} | ${textPercent} | ${nonMediaPercent} | ${nonMediaNonTextPercent} | ${targetText} | ${nonMediaTargetText} | ${nonMediaNonTextTargetText} | ${result.warningCount} | ${assets} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) [diagnostics](${result.diagnosticsJson}) |`,
     );
   }
   lines.push('');
@@ -874,8 +889,8 @@ function renderSemanticMarkdownReport(results, args, expectations) {
     `- Output directory: \`${args.workDir}\``,
     '- Total pixel diff is reported as an observation only unless `maxTotalDiffPercent` is set.',
     '',
-    '| Template | Provider | Status | Browser | Rust | Height Delta | Total Diff | Text Diff | Media Diff | Non-Media Non-Text Diff | Semantic Limits | Warnings | Files |',
-    '|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|',
+    '| Template | Provider | Status | Browser | Rust | Height Delta | Total Diff | Text Diff | Media Diff | Non-Media Non-Text Diff | Semantic Limits | Warnings | Assets | Files |',
+    '|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|---|',
   ];
 
   for (const result of results) {
@@ -889,8 +904,9 @@ function renderSemanticMarkdownReport(results, args, expectations) {
       result.media.areaPixels > 0 ? formatPercent(result.media.diffRatio) : '';
     const textPercent = result.text.areaPixels > 0 ? formatPercent(result.text.diffRatio) : '';
     const limits = semanticLimitSummary(expectations, expected);
+    const assets = `${result.assetSummary.loaded}/${result.assetSummary.blocked}/${result.assetSummary.failed}`;
     lines.push(
-      `| ${result.name} | ${result.provider} | ${status} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${heightDeltaPx}px (${formatPercent(heightDeltaPercent)}) | ${formatPercent(result.diffRatio)} | ${textPercent} | ${mediaPercent} | ${formatPercent(result.nonMediaNonText.diffRatio)} | ${limits} | ${result.warningCount} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) |`,
+      `| ${result.name} | ${result.provider} | ${status} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${heightDeltaPx}px (${formatPercent(heightDeltaPercent)}) | ${formatPercent(result.diffRatio)} | ${textPercent} | ${mediaPercent} | ${formatPercent(result.nonMediaNonText.diffRatio)} | ${limits} | ${result.warningCount} | ${assets} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) [diagnostics](${result.diagnosticsJson}) |`,
     );
   }
   lines.push('');

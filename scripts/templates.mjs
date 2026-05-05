@@ -355,6 +355,30 @@ export const TEMPLATES = [
     'codedmails-notification-ormes',
     'https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/notification-email-ormes.html',
   ],
+  [
+    'cerberus-fluid',
+    'https://raw.githubusercontent.com/emailmonday/Cerberus/master/cerberus-fluid.html',
+  ],
+  [
+    'cerberus-hybrid',
+    'https://raw.githubusercontent.com/emailmonday/Cerberus/master/cerberus-hybrid.html',
+  ],
+  [
+    'cerberus-responsive',
+    'https://raw.githubusercontent.com/emailmonday/Cerberus/master/cerberus-responsive.html',
+  ],
+  [
+    'konsav-general',
+    'https://raw.githubusercontent.com/konsav/email-templates/master/general.html',
+  ],
+  [
+    'konsav-promotional',
+    'https://raw.githubusercontent.com/konsav/email-templates/master/promotional.html',
+  ],
+  [
+    'inkandthunder-notification',
+    'https://raw.githubusercontent.com/inkandthunder/email-templates/master/notification.html',
+  ],
 ];
 
 const TEMPLATE_METADATA = {
@@ -393,6 +417,36 @@ const TEMPLATE_METADATA = {
     expectedWarnings: 5,
     reason: 'upstream fixture uses relative image URLs that resolve outside the repository',
   },
+  'cerberus-fluid': {
+    status: 'known-warning',
+    expectedWarnings: 4,
+    reason: 'upstream fixture depends on placeholder.com hero images that currently fail to load in corpus runs',
+  },
+  'cerberus-hybrid': {
+    status: 'known-warning',
+    expectedWarnings: 9,
+    reason: 'upstream fixture depends on placeholder.com hero images and currently exceeds semantic layout thresholds',
+  },
+  'cerberus-responsive': {
+    status: 'known-warning',
+    expectedWarnings: 9,
+    reason: 'upstream fixture depends on placeholder.com hero images and currently exceeds semantic layout thresholds',
+  },
+  'konsav-general': {
+    status: 'known-warning',
+    expectedWarnings: 0,
+    reason: 'real remote-asset fixture currently exceeds semantic layout thresholds',
+  },
+  'konsav-promotional': {
+    status: 'known-warning',
+    expectedWarnings: 0,
+    reason: 'real remote-asset fixture currently exceeds semantic layout thresholds',
+  },
+  'inkandthunder-notification': {
+    status: 'known-warning',
+    expectedWarnings: 0,
+    reason: 'real remote-asset fixture currently exceeds semantic layout thresholds',
+  },
 };
 
 export const TEMPLATE_CORPUS = TEMPLATES.map(([name, url]) => ({
@@ -416,7 +470,10 @@ function templateProvider(name) {
   if (name.startsWith('ckissi-')) return 'ckissi';
   if (name.startsWith('colorlib-')) return 'colorlib';
   if (name.startsWith('codedmails-')) return 'codedmails';
+  if (name.startsWith('cerberus-')) return 'cerberus';
   if (name.startsWith('emailoctopus-')) return 'emailoctopus';
+  if (name.startsWith('inkandthunder-')) return 'inkandthunder';
+  if (name.startsWith('konsav-')) return 'konsav';
   if (name.startsWith('davidamunga-')) return 'davidamunga';
   return name.split('-')[0] || 'unknown';
 }

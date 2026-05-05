@@ -7,6 +7,7 @@ use url::Url;
 pub(crate) const MAX_CONSOLE_MESSAGES: usize = 50;
 pub(crate) const MAX_CONSOLE_MESSAGE_LEN: usize = 2048;
 pub(crate) const MAX_RENDER_WARNINGS: usize = 100;
+pub(crate) const MAX_ASSET_REPORTS: usize = 512;
 pub(crate) const DEFAULT_MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 pub(crate) const DEFAULT_MAX_DECODED_PIXELS: u64 = 16_000_000;
 pub(crate) const DEFAULT_MAX_DOM_NODES: usize = 100_000;
@@ -67,6 +68,7 @@ pub struct RenderedImage {
     pub content_css_width: u32,
     pub console_messages: Vec<ConsoleMessage>,
     pub warnings: Vec<RenderWarning>,
+    pub assets: Vec<AssetReport>,
 }
 
 #[derive(Debug, Clone)]
@@ -79,6 +81,7 @@ pub struct RenderedPdf {
     pub scale: f32,
     pub console_messages: Vec<ConsoleMessage>,
     pub warnings: Vec<RenderWarning>,
+    pub assets: Vec<AssetReport>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -96,6 +99,103 @@ pub enum RenderWarningCode {
     UnsupportedCssDeclaration,
     WebFontLimitReached,
     WebFontLoadFailed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssetKind {
+    Image,
+    Stylesheet,
+    WebFont,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssetSource {
+    DataUrl,
+    File,
+    Remote,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssetStatus {
+    Loaded,
+    Blocked,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AssetReport {
+    pub kind: AssetKind,
+    pub status: AssetStatus,
+    pub request_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<AssetSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initiator: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub attempts: u32,
+}
+
+impl AssetReport {
+    pub fn new(kind: AssetKind, status: AssetStatus, request_url: impl Into<String>) -> Self {
+        Self {
+            kind,
+            status,
+            request_url: request_url.into(),
+            resolved_url: None,
+            source: None,
+            initiator: None,
+            bytes: None,
+            detail: None,
+            attempts: 1,
+        }
+    }
+
+    pub fn with_resolved_url(mut self, resolved_url: impl Into<String>) -> Self {
+        self.resolved_url = Some(resolved_url.into());
+        self
+    }
+
+    pub fn with_optional_resolved_url(mut self, resolved_url: Option<String>) -> Self {
+        self.resolved_url = resolved_url;
+        self
+    }
+
+    pub fn with_source(mut self, source: AssetSource) -> Self {
+        self.source = Some(source);
+        self
+    }
+
+    pub fn with_initiator(mut self, initiator: impl Into<String>) -> Self {
+        self.initiator = Some(initiator.into());
+        self
+    }
+
+    pub fn with_bytes(mut self, bytes: usize) -> Self {
+        self.bytes = Some(bytes);
+        self
+    }
+
+    pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
+        self.detail = Some(detail.into());
+        self
+    }
+
+    pub(crate) fn merge_from(&mut self, newer: Self) {
+        self.attempts = self.attempts.saturating_add(newer.attempts);
+        self.status = newer.status;
+        self.bytes = newer.bytes.or(self.bytes);
+        self.detail = newer.detail.or(self.detail.clone());
+        self.source = newer.source.or(self.source);
+        self.resolved_url = newer.resolved_url.or(self.resolved_url.clone());
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
