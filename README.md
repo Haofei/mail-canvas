@@ -100,6 +100,7 @@ older local experiments.
 - `src/css.rs`: CSS inlining helpers, `lightningcss` declaration parsing,
   active media extraction, and `@font-face` extraction.
 - `src/resource.rs`: bounded local, data URL, and opt-in remote resource loading.
+- `src/pdf.rs`: raster PDF generation from rendered PNG output.
 - `src/document.rs`: document wrapping and head injection helpers.
 - `src/main.rs`: CLI wrapper around the library API.
 - `scripts/`: Chromium comparison, layout dump, template corpus, and Blink
@@ -286,6 +287,7 @@ fn main() -> anyhow::Result<()> {
 - `src/css.rs`: CSS inlining、`lightningcss` declaration 解析、active media
   提取和 `@font-face` 提取。
 - `src/resource.rs`: 带限制的本地资源、data URL、可选远程资源加载。
+- `src/pdf.rs`: 基于渲染 PNG 输出生成栅格 PDF。
 - `src/document.rs`: HTML document 包装和 head 注入。
 - `src/main.rs`: 基于库 API 的 CLI。
 - `scripts/`: Chromium 对比、布局 dump、模板语料和 Blink 参考代码工具。

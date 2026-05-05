@@ -15,7 +15,6 @@ use cosmic_text::{
     Style as FontStyle, SwashCache, Weight as FontWeight, Wrap,
 };
 use kuchiki::{NodeRef, traits::TendrilSink as _};
-use pdf_writer::{Content, Name, Pdf, Rect as PdfRect, Ref};
 use taffy::geometry::{Rect as TaffyRect, Size as TaffySize};
 use taffy::prelude::{
     AlignItems as TaffyAlignItems, AvailableSpace, Dimension as TaffyDimension,
@@ -29,6 +28,7 @@ use url::Url;
 mod api;
 mod css;
 mod document;
+mod pdf;
 mod resource;
 mod text;
 
@@ -42,6 +42,7 @@ use css::{
     style_blocks, unquote_css_value,
 };
 pub use document::{PreparedDocument, build_document, build_document_from_files};
+use pdf::raster_pdf_from_png;
 use resource::{ImageData, ResourcePolicy, load_image, load_resource_bytes};
 use text::{
     blink_font_descent_from_db, normal_line_height_fallback, parse_line_height_declaration,
@@ -6760,48 +6761,6 @@ fn composite_pixel(dst: &mut [u8], r: u8, g: u8, b: u8, a: u8) {
 
 fn premultiply(channel: u8, alpha: u8) -> u8 {
     ((u16::from(channel) * u16::from(alpha) + 127) / 255) as u8
-}
-
-fn raster_pdf_from_png(rendered: &RenderedImage) -> Result<Vec<u8>> {
-    let width = rendered.pixel_width.max(1);
-    let height = rendered.pixel_height.max(1);
-    let rgb = image::load_from_memory(&rendered.png)
-        .context("failed to decode rendered PNG for PDF output")?
-        .to_rgb8();
-    let mut pdf = Pdf::new();
-    let catalog_id = Ref::new(1);
-    let page_tree_id = Ref::new(2);
-    let page_id = Ref::new(3);
-    let image_id = Ref::new(4);
-    let content_id = Ref::new(5);
-
-    pdf.catalog(catalog_id).pages(page_tree_id);
-    pdf.pages(page_tree_id).kids([page_id]).count(1);
-
-    {
-        let mut page = pdf.page(page_id);
-        page.parent(page_tree_id);
-        page.media_box(PdfRect::new(0.0, 0.0, width as f32, height as f32));
-        page.resources().x_objects().pair(Name(b"Im1"), image_id);
-        page.contents(content_id);
-    }
-
-    {
-        let mut image = pdf.image_xobject(image_id, rgb.as_raw());
-        image.width(width as i32);
-        image.height(height as i32);
-        image.color_space().device_rgb();
-        image.bits_per_component(8);
-    }
-
-    let mut content = Content::new();
-    content.save_state();
-    content.transform([width as f32, 0.0, 0.0, height as f32, 0.0, 0.0]);
-    content.x_object(Name(b"Im1"));
-    content.restore_state();
-    pdf.stream(content_id, &content.finish());
-
-    Ok(pdf.finish())
 }
 
 fn validate_request(request: &RenderRequest) -> Result<()> {
