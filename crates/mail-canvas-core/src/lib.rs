@@ -4,7 +4,6 @@
     clippy::cast_sign_loss
 )]
 
-use std::path::PathBuf;
 #[cfg(test)]
 use std::time::Duration;
 
@@ -28,7 +27,6 @@ mod document;
 mod dom;
 mod fonts;
 mod output;
-mod pdf;
 mod resource;
 mod table;
 mod text;
@@ -44,18 +42,21 @@ use css::{
     css_declarations, first_css_url, inline_css, strip_hidden_conditional_comments,
     unquote_css_value,
 };
-pub use document::{PreparedDocument, build_document, build_document_from_files};
+pub use document::{PreparedDocument, build_document};
 use dom::{
     attr, document_base_url, element_tag, ensure_dom_node_limit, find_first_tag, is_metadata_tag,
 };
-use fonts::{FontDatabaseLoader, NativeFontDatabaseLoader, WebFontFace, load_web_fonts_from_html};
+use fonts::{WebFontFace, font_database_families, load_web_fonts_from_html};
 #[cfg(test)]
 use fonts::{
-    font_face_covers_basic_latin, linked_stylesheet_fonts_are_supported, stylesheet_link_urls,
-    system_font_database,
+    font_database_from_paths, font_face_covers_basic_latin, linked_stylesheet_fonts_are_supported,
+    stylesheet_link_urls, system_font_database,
 };
-use output::{NativeOutputBackend, OutputBackend};
-use resource::{ImageData, ResourcePolicy, ResourceProvider};
+pub use output::OutputBackend as RenderOutputBackend;
+use output::OutputBackend;
+#[cfg(test)]
+use resource::TestResourceProvider;
+pub use resource::{ImageData, ResourceProvider, ResourceProviderFactory};
 use table::{
     TableGrid, build_table_grid, column_offset, distribute_fixed_table_column_widths,
     length_is_intrinsic_fixed, spanned_width,
@@ -73,53 +74,31 @@ use text::{
 const MAX_RENDER_PIXELS_PER_AXIS: u32 = 16_384;
 const HARD_BREAK: char = '\u{000B}';
 
-pub struct MailCanvasRenderer {
+pub struct RendererCore {
     font_system: FontSystem,
     swash_cache: SwashCache,
 }
 
-impl MailCanvasRenderer {
-    pub fn new(width: u32, viewport_height: u32, scale: f32) -> Result<Self> {
-        Self::with_fonts(width, viewport_height, scale, [])
-    }
-
-    pub fn with_fonts(
-        width: u32,
-        viewport_height: u32,
-        scale: f32,
-        font_paths: impl IntoIterator<Item = PathBuf>,
-    ) -> Result<Self> {
-        validate_scale(scale)?;
-        let _ = scaled_dimension(width, scale, "width")?;
-        let _ = scaled_dimension(viewport_height.max(1), scale, "viewport-height")?;
-        let font_paths: Vec<PathBuf> = font_paths.into_iter().collect();
-        let font_loader = NativeFontDatabaseLoader;
-        let font_db = font_loader.load_database(&font_paths)?;
-        let font_system = FontSystem::new_with_locale_and_db_and_fallback(
-            "en-US".to_string(),
-            font_db,
-            cosmic_text::PlatformFallback,
-        );
-
-        Ok(Self {
+impl RendererCore {
+    pub fn new(font_system: FontSystem) -> Self {
+        Self {
             font_system,
             swash_cache: SwashCache::new(),
-        })
+        }
     }
-}
 
-pub type RustEmailRenderer = MailCanvasRenderer;
-pub type ServoEmailRenderer = MailCanvasRenderer;
-
-impl EmailRenderer for MailCanvasRenderer {
-    fn render_png(&mut self, request: RenderRequest) -> Result<RenderedImage> {
+    pub fn render_png_with<F: ResourceProviderFactory, O: OutputBackend>(
+        &mut self,
+        request: RenderRequest,
+        resource_factory: &F,
+        output: &O,
+    ) -> Result<RenderedImage> {
         validate_request(&request)?;
 
         let render_html = strip_hidden_conditional_comments(&request.html);
         let source_document = kuchiki::parse_html().one(render_html.clone());
         ensure_dom_node_limit(&source_document, request.max_dom_nodes)?;
-        let resources = ResourcePolicy::from_request(&request, document_base_url(&source_document));
-        let asset_reports = resources.clone();
+        let resources = resource_factory.create(&request, document_base_url(&source_document));
         let limits = RenderLimits::from_request(&request);
         let mut diagnostics = RenderDiagnostics::default();
         let web_font_faces = load_web_fonts_from_html(
@@ -129,13 +108,12 @@ impl EmailRenderer for MailCanvasRenderer {
             &mut diagnostics,
         );
 
-        let font_loader = NativeFontDatabaseLoader;
-        let available_font_families = font_loader.available_families(self.font_system.db());
+        let available_font_families = font_database_families(self.font_system.db());
         let html = inline_css(&render_html, request.width)?;
         let document = kuchiki::parse_html().one(html);
         let mut engine = LayoutEngine::new(
             &mut self.font_system,
-            resources,
+            resources.clone(),
             available_font_families,
             web_font_faces,
             limits,
@@ -145,7 +123,7 @@ impl EmailRenderer for MailCanvasRenderer {
             diagnostics.push_warning(warning);
         }
         drop(engine);
-        let assets = asset_reports.take_asset_reports();
+        let assets = resources.take_asset_reports();
 
         let css_height = clamp_css_height(
             ceil_to_u32(layout.rect.height)?,
@@ -175,7 +153,6 @@ impl EmailRenderer for MailCanvasRenderer {
         };
         painter.paint(&layout);
 
-        let output = NativeOutputBackend;
         let png = output.encode_png(&pixmap)?;
 
         Ok(RenderedImage {
@@ -192,9 +169,13 @@ impl EmailRenderer for MailCanvasRenderer {
         })
     }
 
-    fn render_pdf(&mut self, request: RenderRequest) -> Result<RenderedPdf> {
-        let rendered = self.render_png(request)?;
-        let output = NativeOutputBackend;
+    pub fn render_pdf_with<F: ResourceProviderFactory, O: OutputBackend>(
+        &mut self,
+        request: RenderRequest,
+        resource_factory: &F,
+        output: &O,
+    ) -> Result<RenderedPdf> {
+        let rendered = self.render_png_with(request, resource_factory, output)?;
         let pdf = output.encode_pdf(&rendered)?;
         Ok(RenderedPdf {
             pdf,
@@ -207,6 +188,126 @@ impl EmailRenderer for MailCanvasRenderer {
             warnings: rendered.warnings,
             assets: rendered.assets,
         })
+    }
+
+    pub fn font_system_mut(&mut self) -> &mut FontSystem {
+        &mut self.font_system
+    }
+
+    pub fn font_system(&self) -> &FontSystem {
+        &self.font_system
+    }
+}
+
+#[cfg(test)]
+pub struct MailCanvasRenderer {
+    inner: RendererCore,
+}
+
+#[cfg(test)]
+impl MailCanvasRenderer {
+    pub fn new(width: u32, viewport_height: u32, scale: f32) -> Result<Self> {
+        Self::with_fonts(width, viewport_height, scale, [])
+    }
+
+    pub fn with_fonts(
+        width: u32,
+        viewport_height: u32,
+        scale: f32,
+        font_paths: impl IntoIterator<Item = std::path::PathBuf>,
+    ) -> Result<Self> {
+        validate_scale(scale)?;
+        let _ = scaled_dimension(width, scale, "width")?;
+        let _ = scaled_dimension(viewport_height.max(1), scale, "viewport-height")?;
+        let font_paths: Vec<std::path::PathBuf> = font_paths.into_iter().collect();
+        let font_db = if font_paths.is_empty() {
+            system_font_database()
+        } else {
+            font_database_from_paths(&font_paths)?
+        };
+        let font_system = FontSystem::new_with_locale_and_db_and_fallback(
+            "en-US".to_string(),
+            font_db,
+            cosmic_text::PlatformFallback,
+        );
+        Ok(Self {
+            inner: RendererCore::new(font_system),
+        })
+    }
+}
+
+#[cfg(test)]
+pub type RustEmailRenderer = MailCanvasRenderer;
+#[cfg(test)]
+pub type ServoEmailRenderer = MailCanvasRenderer;
+
+#[cfg(test)]
+impl EmailRenderer for MailCanvasRenderer {
+    fn render_png(&mut self, request: RenderRequest) -> Result<RenderedImage> {
+        let output = TestOutputBackend;
+        self.inner
+            .render_png_with(request, &resource::TestResourceProviderFactory, &output)
+    }
+
+    fn render_pdf(&mut self, request: RenderRequest) -> Result<RenderedPdf> {
+        let output = TestOutputBackend;
+        self.inner
+            .render_pdf_with(request, &resource::TestResourceProviderFactory, &output)
+    }
+}
+
+#[cfg(test)]
+struct TestOutputBackend;
+
+#[cfg(test)]
+impl OutputBackend for TestOutputBackend {
+    fn encode_png(&self, pixmap: &Pixmap) -> Result<Vec<u8>> {
+        pixmap.encode_png().map_err(Into::into)
+    }
+
+    fn encode_pdf(&self, rendered: &RenderedImage) -> Result<Vec<u8>> {
+        use anyhow::Context as _;
+        use pdf_writer::{Content, Name, Pdf, Rect as PdfRect, Ref};
+
+        let width = rendered.pixel_width.max(1);
+        let height = rendered.pixel_height.max(1);
+        let rgb = image::load_from_memory(&rendered.png)
+            .context("failed to decode rendered PNG for PDF output")?
+            .to_rgb8();
+        let mut pdf = Pdf::new();
+        let catalog_id = Ref::new(1);
+        let page_tree_id = Ref::new(2);
+        let page_id = Ref::new(3);
+        let image_id = Ref::new(4);
+        let content_id = Ref::new(5);
+
+        pdf.catalog(catalog_id).pages(page_tree_id);
+        pdf.pages(page_tree_id).kids([page_id]).count(1);
+
+        {
+            let mut page = pdf.page(page_id);
+            page.parent(page_tree_id);
+            page.media_box(PdfRect::new(0.0, 0.0, width as f32, height as f32));
+            page.resources().x_objects().pair(Name(b"Im1"), image_id);
+            page.contents(content_id);
+        }
+
+        {
+            let mut image = pdf.image_xobject(image_id, rgb.as_raw());
+            image.width(width as i32);
+            image.height(height as i32);
+            image.color_space().device_rgb();
+            image.bits_per_component(8);
+        }
+
+        let mut content = Content::new();
+        content.save_state();
+        content.transform([width as f32, 0.0, 0.0, height as f32, 0.0, 0.0]);
+        content.x_object(Name(b"Im1"));
+        content.restore_state();
+        pdf.stream(content_id, &content.finish());
+
+        Ok(pdf.finish())
     }
 }
 
@@ -6490,16 +6591,25 @@ fn ceil_to_u32(value: f32) -> Result<u32> {
 }
 
 #[cfg(test)]
-fn resource_policy_for_test() -> ResourcePolicy {
-    ResourcePolicy {
+fn resource_policy_for_test() -> TestResourceProvider {
+    TestResourceProvider::from_request(&RenderRequest {
+        html: String::new(),
+        width: 1,
+        viewport_height: 1,
+        min_height: 1,
+        scale: 1.0,
+        timeout: Duration::from_secs(30),
+        settle: Duration::ZERO,
         base_url: None,
+        max_height: None,
         allow_remote: false,
         https_only: true,
-        timeout: Duration::from_secs(30),
         max_image_bytes: DEFAULT_MAX_IMAGE_BYTES,
         max_decoded_pixels: DEFAULT_MAX_DECODED_PIXELS,
-        asset_reports: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-    }
+        max_dom_nodes: crate::api::DEFAULT_MAX_DOM_NODES,
+        max_layout_depth: crate::api::DEFAULT_MAX_LAYOUT_DEPTH,
+        max_table_cells: crate::api::DEFAULT_MAX_TABLE_CELLS,
+    })
 }
 
 #[cfg(test)]

@@ -4,10 +4,8 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, ValueEnum};
-use mail_canvas::{
-    AssetReport, ConsoleMessage, EmailRenderer, MailCanvasRenderer, RenderRequest, RenderWarning,
-    build_document_from_files,
-};
+use mail_canvas_core::{AssetReport, ConsoleMessage, EmailRenderer, RenderRequest, RenderWarning};
+use mail_canvas_native::{MailCanvasRenderer, build_document_from_files};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum PdfMode {

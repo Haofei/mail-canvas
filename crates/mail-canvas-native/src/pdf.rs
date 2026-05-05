@@ -1,7 +1,6 @@
 use anyhow::{Context as _, Result};
+use mail_canvas_core::RenderedImage;
 use pdf_writer::{Content, Name, Pdf, Rect as PdfRect, Ref};
-
-use crate::RenderedImage;
 
 pub(crate) fn raster_pdf_from_png(rendered: &RenderedImage) -> Result<Vec<u8>> {
     let width = rendered.pixel_width.max(1);

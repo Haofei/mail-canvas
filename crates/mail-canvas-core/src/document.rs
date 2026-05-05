@@ -1,51 +1,9 @@
-use std::fs;
-use std::path::Path;
-
-use anyhow::{Context as _, Result, anyhow};
 use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct PreparedDocument {
     pub html: String,
     pub base_url: Option<Url>,
-}
-
-pub fn build_document_from_files(
-    html_path: &Path,
-    css_path: Option<&Path>,
-    base_url: Option<&str>,
-    width: u32,
-) -> Result<PreparedDocument> {
-    let html = fs::read_to_string(html_path)
-        .with_context(|| format!("failed to read {}", html_path.display()))?;
-    let css = match css_path {
-        Some(path) => Some(
-            fs::read_to_string(path)
-                .with_context(|| format!("failed to read {}", path.display()))?,
-        ),
-        None => None,
-    };
-
-    let base = match base_url {
-        Some(raw) => Some(Url::parse(raw).with_context(|| format!("invalid --base-url {raw}"))?),
-        None => {
-            let dir = html_path.parent().unwrap_or_else(|| Path::new("."));
-            let dir = dir.canonicalize().with_context(|| {
-                format!("failed to resolve HTML parent directory: {}", dir.display())
-            })?;
-            Some(Url::from_directory_path(&dir).map_err(|()| {
-                anyhow!(
-                    "failed to convert HTML parent directory to base URL: {}",
-                    dir.display()
-                )
-            })?)
-        }
-    };
-
-    Ok(PreparedDocument {
-        html: build_document(&html, css.as_deref(), base.as_ref(), width),
-        base_url: base,
-    })
 }
 
 pub fn build_document(

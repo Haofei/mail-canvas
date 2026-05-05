@@ -1,20 +1,29 @@
-[package]
-name = "mail-canvas"
+[workspace]
+members = [
+  "crates/mail-canvas-core",
+  "crates/mail-canvas-native",
+  "crates/mail-canvas-wasm",
+  "crates/mail-canvas-cli",
+]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.86"
-description = "Chrome-free HTML/CSS email template renderer for PNG and raster PDF output."
 license = "MIT"
 repository = "https://github.com/Haofei/mail-canvas"
 
-[dependencies]
+[workspace.dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 cosmic-text = "0.17.0"
 css-inline = { version = "0.20.2", default-features = false }
 data-url = "0.3.2"
 fontdb = "0.23.0"
+getrandom = { version = "0.3.4", features = ["wasm_js"] }
 image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
+js-sys = "0.3"
 kuchiki = "0.8.1"
 lightningcss = { version = "1.0.0-alpha.71", default-features = false }
 pdf-writer = "0.14.0"
@@ -25,9 +34,10 @@ tiny-skia = "0.11.4"
 ttf-parser = "0.25"
 ureq = { version = "3.3.0", default-features = false, features = ["rustls"] }
 url = "2"
+wasm-bindgen = "0.2"
 wuff = "0.2.5"
 
-[lints.clippy]
+[workspace.lints.clippy]
 cast_possible_truncation = "warn"
 cast_precision_loss = "warn"
 cast_sign_loss = "warn"

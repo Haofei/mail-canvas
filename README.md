@@ -45,7 +45,7 @@ npx playwright install chromium
 ### CLI Usage
 
 ```sh
-cargo run -- \
+cargo run -p mail-canvas-cli -- \
   --html examples/basic.html \
   --css examples/basic.css \
   --output out.png \
@@ -89,7 +89,8 @@ The diagnostics JSON currently includes:
 ### Rust API
 
 ```rust
-use mail_canvas::{EmailRenderer, MailCanvasRenderer, RenderRequest};
+use mail_canvas_core::{EmailRenderer, RenderRequest};
+use mail_canvas_native::MailCanvasRenderer;
 
 fn main() -> anyhow::Result<()> {
     let html = "<table><tr><td>Hello</td></tr></table>".to_string();
@@ -106,18 +107,14 @@ older local experiments.
 
 ### Project Shape
 
-- `src/api.rs`: public renderer request, result, console message, and trait
-  types.
-- `src/lib.rs`: renderer implementation, layout tree, email-oriented layout
-  rules, and painting.
-- `src/text.rs`: text metrics, Blink-style line-height helpers, and rich inline
-  text helpers.
-- `src/css.rs`: CSS inlining helpers, `lightningcss` declaration parsing,
-  active media extraction, and `@font-face` extraction.
-- `src/resource.rs`: bounded local, data URL, and opt-in remote resource loading.
-- `src/pdf.rs`: raster PDF generation from rendered PNG output.
-- `src/document.rs`: document wrapping and head injection helpers.
-- `src/main.rs`: CLI wrapper around the library API.
+- `crates/mail-canvas-core/`: parse, style, layout, paint model, diagnostics,
+  and resource/font/output traits. No filesystem, HTTP, CLI, or system-font
+  scanning.
+- `crates/mail-canvas-native/`: native resource loading, filesystem helpers,
+  system font discovery, PNG output, and raster PDF output.
+- `crates/mail-canvas-wasm/`: `wasm-bindgen` wrapper with a minimal
+  `HTML + registered fonts + data:image` rendering path for browser workers.
+- `crates/mail-canvas-cli/`: CLI wrapper around the native renderer.
 - `scripts/`: Chromium comparison, layout dump, template corpus, and Blink
   reference helpers.
 
@@ -257,7 +254,7 @@ npx playwright install chromium
 ### 命令行使用
 
 ```sh
-cargo run -- \
+cargo run -p mail-canvas-cli -- \
   --html examples/basic.html \
   --css examples/basic.css \
   --output out.png \
@@ -296,7 +293,8 @@ cargo run -- \
 ### Rust API
 
 ```rust
-use mail_canvas::{EmailRenderer, MailCanvasRenderer, RenderRequest};
+use mail_canvas_core::{EmailRenderer, RenderRequest};
+use mail_canvas_native::MailCanvasRenderer;
 
 fn main() -> anyhow::Result<()> {
     let html = "<table><tr><td>Hello</td></tr></table>".to_string();
@@ -312,16 +310,13 @@ fn main() -> anyhow::Result<()> {
 
 ### 项目结构
 
-- `src/api.rs`: public renderer request、result、console message 和 trait 类型。
-- `src/lib.rs`: renderer 实现、layout tree、邮件布局规则和绘制逻辑。
-- `src/text.rs`: 文字度量、Blink 风格 line-height 辅助逻辑，以及 rich inline
-  text 辅助逻辑。
-- `src/css.rs`: CSS inlining、`lightningcss` declaration 解析、active media
-  提取和 `@font-face` 提取。
-- `src/resource.rs`: 带限制的本地资源、data URL、可选远程资源加载。
-- `src/pdf.rs`: 基于渲染 PNG 输出生成栅格 PDF。
-- `src/document.rs`: HTML document 包装和 head 注入。
-- `src/main.rs`: 基于库 API 的 CLI。
+- `crates/mail-canvas-core/`: parse、style、layout、paint model、diagnostics，
+  以及 resource/font/output trait。这里不做文件读取、HTTP、CLI 或系统字体扫描。
+- `crates/mail-canvas-native/`: native 资源加载、文件系统 helper、系统字体发现、
+  PNG 输出和 raster PDF 输出。
+- `crates/mail-canvas-wasm/`: `wasm-bindgen` 封装，先支持浏览器 worker 里的最小
+  `HTML + 注册字体 + data:image` 渲染链路。
+- `crates/mail-canvas-cli/`: 基于 native renderer 的 CLI。
 - `scripts/`: Chromium 对比、布局 dump、模板语料和 Blink 参考代码工具。
 
 ### 对比和调试

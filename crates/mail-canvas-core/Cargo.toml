@@ -1,0 +1,31 @@
+[package]
+name = "mail-canvas-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core HTML/CSS email layout and paint engine for mail-canvas."
+
+[dependencies]
+anyhow.workspace = true
+cosmic-text.workspace = true
+css-inline.workspace = true
+fontdb.workspace = true
+kuchiki.workspace = true
+lightningcss.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+taffy.workspace = true
+tiny-skia.workspace = true
+ttf-parser.workspace = true
+url.workspace = true
+wuff.workspace = true
+
+[dev-dependencies]
+data-url.workspace = true
+image.workspace = true
+pdf-writer.workspace = true
+
+[lints]
+workspace = true

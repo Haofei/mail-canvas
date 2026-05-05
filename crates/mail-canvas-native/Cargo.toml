@@ -1,0 +1,23 @@
+[package]
+name = "mail-canvas-native"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Native runtime bindings for mail-canvas."
+
+[dependencies]
+anyhow.workspace = true
+cosmic-text.workspace = true
+data-url.workspace = true
+fontdb.workspace = true
+image.workspace = true
+mail-canvas-core = { path = "../mail-canvas-core" }
+pdf-writer.workspace = true
+tiny-skia.workspace = true
+ureq.workspace = true
+url.workspace = true
+
+[lints]
+workspace = true

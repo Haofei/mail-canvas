@@ -7,7 +7,6 @@ use url::Url;
 pub(crate) const MAX_CONSOLE_MESSAGES: usize = 50;
 pub(crate) const MAX_CONSOLE_MESSAGE_LEN: usize = 2048;
 pub(crate) const MAX_RENDER_WARNINGS: usize = 100;
-pub(crate) const MAX_ASSET_REPORTS: usize = 512;
 pub(crate) const DEFAULT_MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 pub(crate) const DEFAULT_MAX_DECODED_PIXELS: u64 = 16_000_000;
 pub(crate) const DEFAULT_MAX_DOM_NODES: usize = 100_000;
@@ -188,7 +187,7 @@ impl AssetReport {
         self
     }
 
-    pub(crate) fn merge_from(&mut self, newer: Self) {
+    pub fn merge_from(&mut self, newer: Self) {
         self.attempts = self.attempts.saturating_add(newer.attempts);
         self.status = newer.status;
         self.bytes = newer.bytes.or(self.bytes);

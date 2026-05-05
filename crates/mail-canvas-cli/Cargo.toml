@@ -1,0 +1,23 @@
+[package]
+name = "mail-canvas-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI for mail-canvas."
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+mail-canvas-core = { path = "../mail-canvas-core" }
+mail-canvas-native = { path = "../mail-canvas-native" }
+serde.workspace = true
+serde_json.workspace = true
+
+[[bin]]
+name = "mail-canvas"
+path = "src/main.rs"
+
+[lints]
+workspace = true

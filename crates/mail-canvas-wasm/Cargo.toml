@@ -1,0 +1,28 @@
+[package]
+name = "mail-canvas-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "WASM bindings for mail-canvas."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+anyhow.workspace = true
+cosmic-text.workspace = true
+data-url.workspace = true
+fontdb.workspace = true
+getrandom.workspace = true
+image.workspace = true
+js-sys.workspace = true
+mail-canvas-core = { path = "../mail-canvas-core" }
+serde.workspace = true
+tiny-skia.workspace = true
+wasm-bindgen.workspace = true
+url.workspace = true
+
+[lints]
+workspace = true

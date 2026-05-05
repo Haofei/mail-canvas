@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail};
@@ -16,28 +16,7 @@ use crate::{AssetReport, RenderWarning, RenderWarningCode, parse_font_style};
 const MAX_WEB_FONT_IMPORTS: usize = 16;
 const MAX_WEB_FONTS: usize = 32;
 
-pub(crate) trait FontDatabaseLoader {
-    fn load_database(&self, font_paths: &[PathBuf]) -> Result<fontdb::Database>;
-    fn available_families(&self, db: &fontdb::Database) -> Vec<String>;
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct NativeFontDatabaseLoader;
-
-impl FontDatabaseLoader for NativeFontDatabaseLoader {
-    fn load_database(&self, font_paths: &[PathBuf]) -> Result<fontdb::Database> {
-        if font_paths.is_empty() {
-            Ok(system_font_database())
-        } else {
-            font_database_from_paths(font_paths)
-        }
-    }
-
-    fn available_families(&self, db: &fontdb::Database) -> Vec<String> {
-        font_database_families(db)
-    }
-}
-
+#[cfg(test)]
 pub(crate) fn system_font_database() -> fontdb::Database {
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
@@ -47,7 +26,8 @@ pub(crate) fn system_font_database() -> fontdb::Database {
     db
 }
 
-pub(crate) fn font_database_from_paths(paths: &[PathBuf]) -> Result<fontdb::Database> {
+#[cfg(test)]
+pub(crate) fn font_database_from_paths(paths: &[std::path::PathBuf]) -> Result<fontdb::Database> {
     let mut db = fontdb::Database::new();
     for path in paths {
         if !path.is_file() {
@@ -62,6 +42,7 @@ pub(crate) fn font_database_from_paths(paths: &[PathBuf]) -> Result<fontdb::Data
     Ok(db)
 }
 
+#[cfg(test)]
 fn set_generic_font_families(db: &mut fontdb::Database) {
     let fallback_family = db
         .faces()
@@ -120,6 +101,7 @@ fn set_generic_font_families(db: &mut fontdb::Database) {
     }
 }
 
+#[cfg(test)]
 fn first_available_family(db: &fontdb::Database, candidates: &[&str]) -> Option<String> {
     candidates
         .iter()
@@ -127,6 +109,7 @@ fn first_available_family(db: &fontdb::Database, candidates: &[&str]) -> Option<
         .map(|candidate| (*candidate).to_string())
 }
 
+#[cfg(test)]
 fn font_family_available(db: &fontdb::Database, candidate: &str) -> bool {
     db.faces().any(|face| {
         face.families

@@ -7,11 +7,13 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, anyhow, bail};
 use data_url::DataUrl;
 use image::{DynamicImage, ImageDecoder, ImageReader, Limits};
+use mail_canvas_core::{
+    AssetKind, AssetReport, AssetSource, AssetStatus, ImageData, RenderRequest, ResourceProvider,
+    ResourceProviderFactory,
+};
 use url::Url;
 
-use crate::{
-    AssetKind, AssetReport, AssetSource, AssetStatus, RenderRequest, api::MAX_ASSET_REPORTS,
-};
+const MAX_ASSET_REPORTS: usize = 512;
 
 const BLINK_RESOURCE_USER_AGENT: &str = concat!(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ",
@@ -20,7 +22,7 @@ const BLINK_RESOURCE_USER_AGENT: &str = concat!(
 );
 
 #[derive(Debug, Clone)]
-pub(crate) struct ResourcePolicy {
+pub struct ResourcePolicy {
     pub(crate) base_url: Option<Url>,
     pub(crate) allow_remote: bool,
     pub(crate) https_only: bool,
@@ -28,12 +30,6 @@ pub(crate) struct ResourcePolicy {
     pub(crate) max_image_bytes: usize,
     pub(crate) max_decoded_pixels: u64,
     pub(crate) asset_reports: Arc<Mutex<Vec<AssetReport>>>,
-}
-
-pub(crate) trait ResourceProvider {
-    fn load_image(&self, src: &str, initiator: &'static str) -> Result<ImageData>;
-    fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Vec<u8>>;
-    fn record_asset_report(&self, report: AssetReport);
 }
 
 impl ResourcePolicy {
@@ -94,16 +90,24 @@ impl ResourceProvider for ResourcePolicy {
         load_resource_bytes(src, self, kind, initiator)
     }
 
+    fn take_asset_reports(&self) -> Vec<AssetReport> {
+        Self::take_asset_reports(self)
+    }
+
     fn record_asset_report(&self, report: AssetReport) {
         Self::record_asset_report(self, report);
     }
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct ImageData {
-    pub(crate) width: u32,
-    pub(crate) height: u32,
-    pub(crate) rgba: Vec<u8>,
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NativeResourceProviderFactory;
+
+impl ResourceProviderFactory for NativeResourceProviderFactory {
+    type Provider = ResourcePolicy;
+
+    fn create(&self, request: &RenderRequest, document_base_url: Option<Url>) -> Self::Provider {
+        ResourcePolicy::from_request(request, document_base_url)
+    }
 }
 
 struct LoadedResourceBytes {

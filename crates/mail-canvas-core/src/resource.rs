@@ -1,0 +1,193 @@
+use anyhow::Result;
+use url::Url;
+
+use crate::{AssetKind, AssetReport};
+
+#[derive(Debug, Clone)]
+pub struct ImageData {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
+pub trait ResourceProvider: Clone {
+    fn load_image(&self, src: &str, initiator: &'static str) -> Result<ImageData>;
+    fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Vec<u8>>;
+    fn take_asset_reports(&self) -> Vec<AssetReport>;
+    fn record_asset_report(&self, report: AssetReport);
+}
+
+pub trait ResourceProviderFactory {
+    type Provider: ResourceProvider;
+
+    fn create(
+        &self,
+        request: &crate::RenderRequest,
+        document_base_url: Option<Url>,
+    ) -> Self::Provider;
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone)]
+pub(crate) struct TestResourceProvider {
+    allow_remote: bool,
+    https_only: bool,
+    max_image_bytes: usize,
+    max_decoded_pixels: u64,
+    asset_reports: std::sync::Arc<std::sync::Mutex<Vec<AssetReport>>>,
+}
+
+#[cfg(test)]
+impl TestResourceProvider {
+    pub(crate) fn from_request(request: &crate::RenderRequest) -> Self {
+        Self {
+            allow_remote: request.allow_remote,
+            https_only: request.https_only,
+            max_image_bytes: request.max_image_bytes.max(1),
+            max_decoded_pixels: request.max_decoded_pixels.max(1),
+            asset_reports: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        }
+    }
+
+    fn push_asset_report(&self, report: AssetReport) {
+        let mut reports = self
+            .asset_reports
+            .lock()
+            .expect("asset report mutex poisoned");
+        reports.push(report);
+    }
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct TestResourceProviderFactory;
+
+#[cfg(test)]
+impl ResourceProviderFactory for TestResourceProviderFactory {
+    type Provider = TestResourceProvider;
+
+    fn create(
+        &self,
+        request: &crate::RenderRequest,
+        _document_base_url: Option<Url>,
+    ) -> Self::Provider {
+        TestResourceProvider::from_request(request)
+    }
+}
+
+#[cfg(test)]
+impl ResourceProvider for TestResourceProvider {
+    fn load_image(&self, src: &str, initiator: &'static str) -> Result<ImageData> {
+        use anyhow::{anyhow, bail};
+        use data_url::DataUrl;
+        use image::{DynamicImage, ImageDecoder, ImageReader, Limits};
+
+        if !src.trim_start().starts_with("data:") {
+            if src.starts_with("http://") || src.starts_with("https://") {
+                if !self.allow_remote || (self.https_only && src.starts_with("http://")) {
+                    self.push_asset_report(
+                        crate::AssetReport::new(
+                            crate::AssetKind::Image,
+                            crate::AssetStatus::Blocked,
+                            src.to_string(),
+                        )
+                        .with_source(crate::AssetSource::Remote)
+                        .with_initiator(initiator),
+                    );
+                    bail!("remote resources are disabled");
+                }
+            }
+            bail!("image not available in core test provider");
+        }
+
+        let data_url =
+            DataUrl::process(src).map_err(|error| anyhow!("invalid data URL: {error}"))?;
+        let (bytes, _) = data_url
+            .decode_to_vec()
+            .map_err(|error| anyhow!("invalid data URL body: {error:?}"))?;
+        if bytes.len() > self.max_image_bytes {
+            bail!("image resource exceeds max-image-bytes");
+        }
+        let mut reader = ImageReader::new(std::io::Cursor::new(&bytes));
+        let mut limits = Limits::default();
+        limits.max_image_width = Some(self.max_decoded_pixels.min(u64::from(u32::MAX)) as u32);
+        limits.max_image_height = Some(self.max_decoded_pixels.min(u64::from(u32::MAX)) as u32);
+        limits.max_alloc = Some(self.max_decoded_pixels.saturating_mul(4));
+        reader.limits(limits);
+        let mut decoder = reader
+            .with_guessed_format()?
+            .into_decoder()
+            .map_err(|error| anyhow!("failed to create image decoder: {error}"))?;
+        let orientation = decoder
+            .orientation()
+            .map_err(|error| anyhow!("failed to read image orientation: {error}"))?;
+        let mut image = DynamicImage::from_decoder(decoder)?;
+        image.apply_orientation(orientation);
+        let rgba = image.to_rgba8();
+        let width = rgba.width();
+        let height = rgba.height();
+        if u64::from(width) * u64::from(height) > self.max_decoded_pixels {
+            bail!("decoded image exceeds max-decoded-pixels");
+        }
+        self.push_asset_report(
+            crate::AssetReport::new(
+                crate::AssetKind::Image,
+                crate::AssetStatus::Loaded,
+                src.to_string(),
+            )
+            .with_source(crate::AssetSource::DataUrl)
+            .with_initiator(initiator)
+            .with_bytes(bytes.len()),
+        );
+        Ok(ImageData {
+            width,
+            height,
+            rgba: rgba.into_raw(),
+        })
+    }
+
+    fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Vec<u8>> {
+        use anyhow::{anyhow, bail};
+        use data_url::DataUrl;
+
+        if src.trim_start().starts_with("data:") {
+            let data_url =
+                DataUrl::process(src).map_err(|error| anyhow!("invalid data URL: {error}"))?;
+            let (bytes, _) = data_url
+                .decode_to_vec()
+                .map_err(|error| anyhow!("invalid data URL body: {error:?}"))?;
+            self.push_asset_report(
+                crate::AssetReport::new(kind, crate::AssetStatus::Loaded, src.to_string())
+                    .with_source(crate::AssetSource::DataUrl)
+                    .with_initiator(initiator)
+                    .with_bytes(bytes.len()),
+            );
+            return Ok(bytes);
+        }
+
+        if src.starts_with("http://") || src.starts_with("https://") {
+            if !self.allow_remote || (self.https_only && src.starts_with("http://")) {
+                self.push_asset_report(
+                    crate::AssetReport::new(kind, crate::AssetStatus::Blocked, src.to_string())
+                        .with_source(crate::AssetSource::Remote)
+                        .with_initiator(initiator),
+                );
+                bail!("remote resources are disabled");
+            }
+        }
+
+        bail!("resource not available in core test provider")
+    }
+
+    fn take_asset_reports(&self) -> Vec<AssetReport> {
+        let mut reports = self
+            .asset_reports
+            .lock()
+            .expect("asset report mutex poisoned");
+        std::mem::take(&mut *reports)
+    }
+
+    fn record_asset_report(&self, report: AssetReport) {
+        self.push_asset_report(report);
+    }
+}
