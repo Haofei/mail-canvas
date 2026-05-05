@@ -1,10 +1,12 @@
 use std::time::Duration;
 
 use anyhow::Result;
+use serde::Serialize;
 use url::Url;
 
 pub(crate) const MAX_CONSOLE_MESSAGES: usize = 50;
 pub(crate) const MAX_CONSOLE_MESSAGE_LEN: usize = 2048;
+pub(crate) const MAX_RENDER_WARNINGS: usize = 100;
 pub(crate) const DEFAULT_MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 pub(crate) const DEFAULT_MAX_DECODED_PIXELS: u64 = 16_000_000;
 
@@ -55,6 +57,7 @@ pub struct RenderedImage {
     pub scale: f32,
     pub content_css_width: u32,
     pub console_messages: Vec<ConsoleMessage>,
+    pub warnings: Vec<RenderWarning>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,12 +69,83 @@ pub struct RenderedPdf {
     pub pixel_height: u32,
     pub scale: f32,
     pub console_messages: Vec<ConsoleMessage>,
+    pub warnings: Vec<RenderWarning>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ConsoleMessage {
     pub level: &'static str,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderWarningCode {
+    ImageLoadFailed,
+    LayoutLimitReached,
+    StylesheetLoadFailed,
+    UnsupportedCssDeclaration,
+    WebFontLimitReached,
+    WebFontLoadFailed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderWarning {
+    pub code: RenderWarningCode,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub property: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+impl RenderWarning {
+    pub fn new(code: RenderWarningCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            node: None,
+            property: None,
+            value: None,
+            url: None,
+        }
+    }
+
+    pub fn with_node(mut self, node: impl Into<String>) -> Self {
+        self.node = Some(node.into());
+        self
+    }
+
+    pub fn with_property(mut self, property: impl Into<String>, value: impl Into<String>) -> Self {
+        self.property = Some(property.into());
+        self.value = Some(value.into());
+        self
+    }
+
+    pub fn with_url(mut self, url: impl Into<String>) -> Self {
+        self.url = Some(url.into());
+        self
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct RenderDiagnostics {
+    pub(crate) console_messages: Vec<ConsoleMessage>,
+    pub(crate) warnings: Vec<RenderWarning>,
+}
+
+impl RenderDiagnostics {
+    pub(crate) fn push_warning(&mut self, warning: RenderWarning) {
+        push_console_message(&mut self.console_messages, "warn", &warning.message);
+        if self.warnings.len() >= MAX_RENDER_WARNINGS {
+            return;
+        }
+        self.warnings.push(warning);
+    }
 }
 
 pub(crate) fn push_console_message(

@@ -34,8 +34,11 @@ mod text;
 
 #[cfg(test)]
 use api::DEFAULT_MAX_IMAGE_BYTES;
-pub use api::{ConsoleMessage, EmailRenderer, RenderRequest, RenderedImage, RenderedPdf};
-use api::{DEFAULT_MAX_DECODED_PIXELS, push_console_message};
+pub use api::{
+    ConsoleMessage, EmailRenderer, RenderRequest, RenderWarning, RenderWarningCode, RenderedImage,
+    RenderedPdf,
+};
+use api::{DEFAULT_MAX_DECODED_PIXELS, RenderDiagnostics};
 use css::{
     css_declarations, css_format_hint, css_function_value, first_css_url, first_quoted_css_string,
     font_face_declarations, inline_css, next_css_segment_end, strip_hidden_conditional_comments,
@@ -241,12 +244,12 @@ impl EmailRenderer for MailCanvasRenderer {
         let render_html = strip_hidden_conditional_comments(&request.html);
         let source_document = kuchiki::parse_html().one(render_html.clone());
         let resources = ResourcePolicy::from_request(&request, document_base_url(&source_document));
-        let mut warnings = Vec::new();
+        let mut diagnostics = RenderDiagnostics::default();
         let web_font_faces = load_web_fonts_from_html(
             &render_html,
             &resources,
             self.font_system.db_mut(),
-            &mut warnings,
+            &mut diagnostics,
         );
 
         let available_font_families = font_database_families(self.font_system.db());
@@ -259,8 +262,8 @@ impl EmailRenderer for MailCanvasRenderer {
             web_font_faces,
         );
         let mut layout = engine.layout_document(&document, request.width)?;
-        for message in std::mem::take(&mut engine.warnings) {
-            push_console_message(&mut warnings, message.level, &message.message);
+        for warning in std::mem::take(&mut engine.warnings) {
+            diagnostics.push_warning(warning);
         }
         drop(engine);
 
@@ -302,7 +305,8 @@ impl EmailRenderer for MailCanvasRenderer {
             pixel_height,
             scale: request.scale,
             content_css_width: ceil_to_u32(layout.rect.width)?,
-            console_messages: warnings,
+            console_messages: diagnostics.console_messages,
+            warnings: diagnostics.warnings,
         })
     }
 
@@ -317,6 +321,7 @@ impl EmailRenderer for MailCanvasRenderer {
             pixel_height: rendered.pixel_height,
             scale: rendered.scale,
             console_messages: rendered.console_messages,
+            warnings: rendered.warnings,
         })
     }
 }
@@ -334,7 +339,7 @@ fn load_web_fonts_from_html(
     html: &str,
     policy: &ResourcePolicy,
     db: &mut fontdb::Database,
-    warnings: &mut Vec<ConsoleMessage>,
+    diagnostics: &mut RenderDiagnostics,
 ) -> Vec<WebFontFace> {
     let mut css_blocks: Vec<FontCssBlock> = style_blocks(html)
         .into_iter()
@@ -365,10 +370,13 @@ fn load_web_fonts_from_html(
                     });
                 }
             }
-            Err(error) => push_console_message(
-                warnings,
-                "warn",
-                &format!("failed to load stylesheet {stylesheet_url}: {error}"),
+            Err(error) => diagnostics.push_warning(
+                RenderWarning::new(
+                    RenderWarningCode::StylesheetLoadFailed,
+                    format!("failed to load stylesheet {stylesheet_url}: {error}"),
+                )
+                .with_node("link")
+                .with_url(stylesheet_url),
             ),
         }
     }
@@ -387,10 +395,13 @@ fn load_web_fonts_from_html(
             imported_urls.push(import_url.clone());
             match load_stylesheet(&import_url, policy) {
                 Ok(css) => css_blocks.push(FontCssBlock { css, source }),
-                Err(error) => push_console_message(
-                    warnings,
-                    "warn",
-                    &format!("failed to load stylesheet {import_url}: {error}"),
+                Err(error) => diagnostics.push_warning(
+                    RenderWarning::new(
+                        RenderWarningCode::StylesheetLoadFailed,
+                        format!("failed to load stylesheet {import_url}: {error}"),
+                    )
+                    .with_node("@import")
+                    .with_url(import_url),
                 ),
             }
             if imported_urls.len() >= MAX_WEB_FONT_IMPORTS {
@@ -407,10 +418,12 @@ fn load_web_fonts_from_html(
         let preserve_descriptors = block.source == FontCssSource::LinkedStylesheet;
         for declarations in font_face_declarations(&block.css) {
             if loaded_fonts >= MAX_WEB_FONTS {
-                push_console_message(
-                    warnings,
-                    "warn",
-                    "maximum web font count reached; skipped remaining @font-face rules",
+                diagnostics.push_warning(
+                    RenderWarning::new(
+                        RenderWarningCode::WebFontLimitReached,
+                        "maximum web font count reached; skipped remaining @font-face rules",
+                    )
+                    .with_node("@font-face"),
                 );
                 return web_font_faces;
             }
@@ -486,20 +499,28 @@ fn load_web_fonts_from_html(
                         }
                         loaded_fonts += 1;
                     } else {
-                        push_console_message(
-                            warnings,
-                            "warn",
-                            &format!("web font {family} did not contain a loadable face"),
+                        diagnostics.push_warning(
+                            RenderWarning::new(
+                                RenderWarningCode::WebFontLoadFailed,
+                                format!("web font {family} did not contain a loadable face"),
+                            )
+                            .with_node("@font-face")
+                            .with_property("font-family", family.clone())
+                            .with_url(candidate.url.clone()),
                         );
                     }
                 }
-                Err(error) => push_console_message(
-                    warnings,
-                    "warn",
-                    &format!(
-                        "failed to load web font {family} from {}: {error}",
-                        candidate.url
-                    ),
+                Err(error) => diagnostics.push_warning(
+                    RenderWarning::new(
+                        RenderWarningCode::WebFontLoadFailed,
+                        format!(
+                            "failed to load web font {family} from {}: {error}",
+                            candidate.url
+                        ),
+                    )
+                    .with_node("@font-face")
+                    .with_property("font-family", family)
+                    .with_url(candidate.url),
                 ),
             }
         }
@@ -736,7 +757,7 @@ struct LayoutEngine<'a> {
     resources: ResourcePolicy,
     available_font_families: Vec<String>,
     web_font_faces: Vec<WebFontFace>,
-    warnings: Vec<ConsoleMessage>,
+    warnings: Vec<RenderWarning>,
 }
 
 impl<'a> LayoutEngine<'a> {
@@ -819,10 +840,10 @@ impl<'a> LayoutEngine<'a> {
         depth: usize,
     ) -> Result<LayoutChildren> {
         if depth > MAX_LAYOUT_DEPTH {
-            self.push_warning(
-                "warn",
+            self.push_warning(RenderWarning::new(
+                RenderWarningCode::LayoutLimitReached,
                 "maximum layout depth reached; truncated nested content",
-            );
+            ));
             return Ok(LayoutChildren::default());
         }
 
@@ -1850,8 +1871,12 @@ impl<'a> LayoutEngine<'a> {
             Ok(image) => Some(image),
             Err(error) => {
                 self.push_warning(
-                    "warn",
-                    &format!("failed to load image {src}: {error}; left image box empty"),
+                    RenderWarning::new(
+                        RenderWarningCode::ImageLoadFailed,
+                        format!("failed to load image {src}: {error}; left image box empty"),
+                    )
+                    .with_node("img")
+                    .with_url(src),
                 );
                 None
             }
@@ -2200,8 +2225,10 @@ impl<'a> LayoutEngine<'a> {
             .max(0.0)
     }
 
-    fn push_warning(&mut self, level: &'static str, message: &str) {
-        push_console_message(&mut self.warnings, level, message);
+    fn push_warning(&mut self, warning: RenderWarning) {
+        if self.warnings.len() < api::MAX_RENDER_WARNINGS {
+            self.warnings.push(warning);
+        }
     }
 }
 
@@ -8632,6 +8659,7 @@ mod tests {
         let mut renderer = MailCanvasRenderer::new(40, 40, 1.0).unwrap();
         let image = renderer.render_png(request).unwrap();
         assert!(image.console_messages.is_empty());
+        assert!(image.warnings.is_empty());
         let decoded = image::load_from_memory(&image.png).unwrap().to_rgba8();
         assert_ne!(decoded.get_pixel(5, 5).0, [255, 255, 255, 255]);
     }
@@ -8653,6 +8681,13 @@ mod tests {
                 .message
                 .contains("remote resources are disabled")
         );
+        assert_eq!(image.warnings.len(), 1);
+        assert_eq!(image.warnings[0].code, RenderWarningCode::ImageLoadFailed);
+        assert_eq!(image.warnings[0].node.as_deref(), Some("img"));
+        assert_eq!(
+            image.warnings[0].url.as_deref(),
+            Some("https://example.com/pixel.png")
+        );
     }
 
     #[test]
@@ -8663,6 +8698,7 @@ mod tests {
         let pdf = renderer.render_pdf(request).unwrap();
         assert!(pdf.pdf.starts_with(b"%PDF-"));
         assert!(pdf.pdf.len() > 100);
+        assert!(pdf.warnings.is_empty());
     }
 
     #[test]

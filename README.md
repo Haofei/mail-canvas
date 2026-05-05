@@ -49,6 +49,7 @@ cargo run -- \
   --html examples/basic.html \
   --css examples/basic.css \
   --output out.png \
+  --warnings-json warnings.json \
   --pdf-output out.pdf \
   --width 600
 ```
@@ -59,6 +60,8 @@ Important options:
 - `--scale`: output pixel scale, default `1.0`.
 - `--min-height`: minimum final CSS height.
 - `--max-height`: fail if rendered content exceeds this CSS height.
+- `--warnings-json`: optional JSON diagnostics output path for structured
+  renderer warnings.
 - `--pdf-output`: optional raster PDF output path.
 - `--base-url`: base URL for relative assets; defaults to the HTML file
   directory.
@@ -177,7 +180,8 @@ the smallest email-relevant rule in Rust.
 - PNG is the primary output. PDF output is raster-only, so text is not
   selectable or searchable.
 - CSS support is intentionally narrow and tied to email templates. Unsupported
-  declarations are ignored.
+  declarations are ignored today; structured renderer warnings report resource,
+  web font, and layout-limit issues.
 - JavaScript, forms, video, canvas, full positioning, full flex/grid, and full
   browser painting are out of scope.
 - Remote resources are disabled by default and must be enabled explicitly.
@@ -242,6 +246,7 @@ cargo run -- \
   --html examples/basic.html \
   --css examples/basic.css \
   --output out.png \
+  --warnings-json warnings.json \
   --pdf-output out.pdf \
   --width 600
 ```
@@ -252,6 +257,8 @@ cargo run -- \
 - `--scale`: 输出像素倍率，默认 `1.0`。
 - `--min-height`: 最小 CSS 输出高度。
 - `--max-height`: 内容超过该 CSS 高度时失败。
+- `--warnings-json`: 可选的 JSON diagnostics 输出，包含结构化 renderer
+  warnings。
 - `--pdf-output`: 可选的栅格 PDF 输出路径。
 - `--base-url`: 相对资源的 base URL，默认是 HTML 文件目录。
 - `--allow-remote`: 允许远程 `http(s)` 图片和字体。
@@ -356,7 +363,8 @@ scripts/fetch_blink_reference.sh
 ### 当前限制
 
 - PNG 是主要输出；PDF 目前是栅格 PDF，文字不可选中、不可搜索。
-- CSS 支持是邮件模板导向的子集，不支持的 declaration 会被忽略。
+- CSS 支持是邮件模板导向的子集；暂时不支持的 declaration 会被忽略，
+  结构化 renderer warnings 已覆盖资源、web font 和 layout limit 问题。
 - JavaScript、form、video、canvas、完整 positioning、完整 flex/grid、完整浏览器
   painting 都不在当前范围内。
 - 远程资源默认关闭，需要显式开启。

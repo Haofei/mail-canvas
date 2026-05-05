@@ -4,7 +4,10 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, ValueEnum};
-use mail_canvas::{EmailRenderer, MailCanvasRenderer, RenderRequest, build_document_from_files};
+use mail_canvas::{
+    ConsoleMessage, EmailRenderer, MailCanvasRenderer, RenderRequest, RenderWarning,
+    build_document_from_files,
+};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum PdfMode {
@@ -26,6 +29,10 @@ struct Args {
     /// PNG output path.
     #[arg(short, long)]
     output: PathBuf,
+
+    /// Optional JSON diagnostics output path for structured renderer warnings.
+    #[arg(long)]
+    warnings_json: Option<PathBuf>,
 
     /// Optional raster PDF output path.
     #[arg(long)]
@@ -140,6 +147,10 @@ fn main() -> Result<()> {
     fs::write(&args.output, &image.png)
         .with_context(|| format!("failed to write {}", args.output.display()))?;
 
+    if let Some(path) = &args.warnings_json {
+        write_warnings_json(path, &image.warnings, &image.console_messages)?;
+    }
+
     eprintln!(
         "rendered {}x{} CSS px at {}x scale -> {}x{} px ({})",
         image.css_width,
@@ -150,7 +161,7 @@ fn main() -> Result<()> {
         args.output.display()
     );
 
-    for message in image.console_messages {
+    for message in &image.console_messages {
         eprintln!("console.{}: {}", message.level, message.message);
     }
 
@@ -170,11 +181,35 @@ fn main() -> Result<()> {
             pdf.pixel_height,
             pdf_output.display()
         );
-        for message in pdf.console_messages {
+        for message in &pdf.console_messages {
             eprintln!("console.{}: {}", message.level, message.message);
         }
     }
 
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct DiagnosticsReport<'a> {
+    warnings: &'a [RenderWarning],
+    console_messages: &'a [ConsoleMessage],
+}
+
+fn write_warnings_json(
+    path: &std::path::Path,
+    warnings: &[RenderWarning],
+    console_messages: &[ConsoleMessage],
+) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    let report = DiagnosticsReport {
+        warnings,
+        console_messages,
+    };
+    let json = serde_json::to_vec_pretty(&report).context("failed to serialize warnings JSON")?;
+    fs::write(path, json).with_context(|| format!("failed to write {}", path.display()))?;
     Ok(())
 }
 
