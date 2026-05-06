@@ -3455,6 +3455,29 @@ mod tests {
     }
 
     #[test]
+    fn inline_block_flow_does_not_double_count_padding() {
+        let layout = layout_for_test(
+            r#"
+            <div style="width:433px;text-align:right;font-size:0">
+              <a style="display:inline-block;padding:5px 10px 5px 20px;font-size:16px">Home</a><a style="display:inline-block;padding:5px 10px 5px 20px;font-size:16px">Product</a><a style="display:inline-block;padding:5px 10px 5px 20px;font-size:16px">About Us</a><a style="display:inline-block;padding:5px 10px 5px 20px;font-size:16px">Blog</a>
+            </div>
+            "#,
+            433,
+        );
+        let links: Vec<&LayoutBox> = collect_layouts(&layout, &|child| child.debug.tag == "a");
+        assert_eq!(links.len(), 4);
+        let first_y = links[0].rect.y;
+        assert!(
+            links.iter().all(|link| (link.rect.y - first_y).abs() < 0.1),
+            "inline-block links should stay on one line: {:?}",
+            links
+                .iter()
+                .map(|link| (link.debug.text.as_str(), link.rect))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn percentage_width_table_cells_do_not_shrink_single_column_tables() {
         let layout = layout_for_test(
             r#"<table width="600" border="0" cellpadding="0" cellspacing="0"><tr><td style="padding-left:6.25%;padding-right:6.25%;width:87.5%">Header</td></tr></table>"#,

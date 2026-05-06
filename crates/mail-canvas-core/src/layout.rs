@@ -314,12 +314,15 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     continue;
                 }
                 if child_is_inline_flow {
-                    let inline_flow_width =
-                        (flow.node.rect.width
-                            + flow.node.style.padding.horizontal()
-                            + flow.node.style.border.horizontal()
-                            + flow.node.style.margin.horizontal())
-                        .max(1.0);
+                    let replaced_padding = if matches!(flow.node.kind, LayoutKind::Image(_)) {
+                        flow.node.style.padding.horizontal() + flow.node.style.border.horizontal()
+                    } else {
+                        0.0
+                    };
+                    let inline_flow_width = (flow.node.rect.width
+                        + replaced_padding
+                        + flow.node.style.margin.horizontal())
+                    .max(1.0);
                     if inline_row_width > 0.0
                         && inline_row_width + inline_flow_width > width + f32::EPSILON
                     {
