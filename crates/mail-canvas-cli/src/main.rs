@@ -4,7 +4,10 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, ValueEnum};
-use mail_canvas_core::{EmailRenderer, RenderDiagnosticsReport, RenderRequest, ResourcePolicy};
+use mail_canvas_core::{
+    EmailRenderer, RenderDiagnosticsReport, RenderExperimentalOptions, RenderRequest,
+    ResourcePolicy,
+};
 use mail_canvas_native::{MailCanvasRenderer, build_document_from_files};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -164,7 +167,7 @@ fn main() -> Result<()> {
         max_dom_nodes: args.max_dom_nodes,
         max_layout_depth: args.max_layout_depth,
         max_table_cells: args.max_table_cells,
-        text_hints: Vec::new(),
+        experimental: RenderExperimentalOptions::default(),
     };
 
     let mut renderer = MailCanvasRenderer::with_fonts(
@@ -186,7 +189,7 @@ fn main() -> Result<()> {
         write_warnings_json(path, &image.diagnostics())?;
     }
     if let Some(path) = &args.layout_json {
-        write_layout_json(path, &image.layout, &image.text_rects)?;
+        write_layout_json(path, &image.layout, &image.text_rects, &image.text_layouts)?;
     }
 
     eprintln!(
@@ -241,11 +244,13 @@ fn write_layout_json(
     path: &std::path::Path,
     layout: &mail_canvas_core::LayoutNodeSnapshot,
     text_rects: &[mail_canvas_core::TextRectSnapshot],
+    text_layouts: &[mail_canvas_core::TextLayoutSnapshot],
 ) -> Result<()> {
     #[derive(serde::Serialize)]
     struct LayoutDump<'a> {
         tree: &'a mail_canvas_core::LayoutNodeSnapshot,
         text_rects: &'a [mail_canvas_core::TextRectSnapshot],
+        text_layouts: &'a [mail_canvas_core::TextLayoutSnapshot],
     }
 
     if let Some(parent) = path.parent() {
@@ -255,6 +260,7 @@ fn write_layout_json(
     let json = serde_json::to_vec_pretty(&LayoutDump {
         tree: layout,
         text_rects,
+        text_layouts,
     })
     .context("failed to serialize layout JSON")?;
     fs::write(path, json).with_context(|| format!("failed to write {}", path.display()))?;

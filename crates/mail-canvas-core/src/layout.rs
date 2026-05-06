@@ -29,8 +29,7 @@ pub(crate) struct LayoutEngine<'a, R: ResourceProvider> {
     available_font_families: Vec<String>,
     web_font_faces: Vec<WebFontFace>,
     warnings: Vec<RenderWarning>,
-    text_hints: &'a [TextLayoutHint],
-    text_hint_cursor: usize,
+    text_hints: std::collections::HashMap<&'a str, &'a TextLayoutHint>,
 }
 
 impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
@@ -49,17 +48,11 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             available_font_families,
             web_font_faces,
             warnings: Vec::new(),
-            text_hints,
-            text_hint_cursor: 0,
+            text_hints: text_hints
+                .iter()
+                .map(|hint| (hint.text_id.as_str(), hint))
+                .collect(),
         }
-    }
-
-    fn next_text_hint(&mut self) -> Option<&TextLayoutHint> {
-        let index = self.text_hint_cursor;
-        self.text_hint_cursor += 1;
-        self.text_hints
-            .iter()
-            .find(|hint| hint.index == index)
     }
 
     fn style_for_node(&self, node: &NodeRef, parent: &Style) -> Style {
@@ -146,6 +139,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         let mut last_inline_block_fallback = false;
         let parent_line_height = resolved_line_height_from_db(self.font_system.db(), style);
         let mut floats = Vec::new();
+        let current_text_id = attr(node, "data-mail-canvas-text-id");
 
         for child in node.children() {
             if let Some(text_node) = child.as_text() {
@@ -236,6 +230,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 text_x,
                 &mut cursor_y,
                 text_width,
+                current_text_id.as_deref(),
                 &mut children,
             )? {
                 previous_margin_bottom = None;
@@ -394,6 +389,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             text_x,
             &mut cursor_y,
             text_width,
+            current_text_id.as_deref(),
             &mut children,
         )? {
             previous_margin_bottom = None;
@@ -427,6 +423,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         x: f32,
         cursor_y: &mut f32,
         width: f32,
+        text_id: Option<&str>,
         children: &mut Vec<LayoutBox>,
     ) -> Result<bool> {
         let normalized = normalize_text_spans(text);
@@ -438,7 +435,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
 
         let plain_text = spans_text(&normalized);
         let matches_parent_style = text_spans_match_style(&normalized, style);
-        let text_hint = self.next_text_hint().cloned();
+        let text_hint = text_id.and_then(|id| self.text_hints.get(id)).copied();
         let height = if matches_parent_style {
             if let Some(hint) = text_hint.as_ref().filter(|hint| hint.text == plain_text) {
                 hint.measured_height.max(resolved_line_height_from_db(self.font_system.db(), style))
@@ -454,7 +451,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             }) {
                 LayoutKind::HintedText {
                     text: plain_text,
-                    lines: hint.lines,
+                    lines: hint.lines.clone(),
                 }
             } else {
                 LayoutKind::Text(plain_text)
@@ -463,9 +460,13 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             LayoutKind::RichText(normalized)
         };
         let debug = match &kind {
-            LayoutKind::Text(text) => LayoutDebugMeta::for_text(text),
-            LayoutKind::HintedText { text, .. } => LayoutDebugMeta::for_text(text),
-            LayoutKind::RichText(spans) => LayoutDebugMeta::for_text(&spans_text(spans)),
+            LayoutKind::Text(text) => LayoutDebugMeta::for_text(text).with_text_id(text_id),
+            LayoutKind::HintedText { text, .. } => {
+                LayoutDebugMeta::for_text(text).with_text_id(text_id)
+            }
+            LayoutKind::RichText(spans) => {
+                LayoutDebugMeta::for_text(&spans_text(spans)).with_text_id(text_id)
+            }
             _ => LayoutDebugMeta::default(),
         };
         children.push(LayoutBox {
@@ -1863,6 +1864,7 @@ pub(crate) struct LayoutDebugMeta {
     tag: String,
     id: Option<String>,
     class_name: Option<String>,
+    text_id: Option<String>,
     text: String,
     src: Option<String>,
 }
@@ -1875,6 +1877,7 @@ impl LayoutDebugMeta {
             tag,
             id: attr(node, "id"),
             class_name: attr(node, "class"),
+            text_id: attr(node, "data-mail-canvas-text-id"),
             text,
             src: None,
         }
@@ -1906,6 +1909,11 @@ impl LayoutDebugMeta {
             meta.text = normalize_preview_text(&attr(node, "alt").unwrap_or_default());
         }
         meta
+    }
+
+    fn with_text_id(mut self, text_id: Option<&str>) -> Self {
+        self.text_id = text_id.map(ToOwned::to_owned);
+        self
     }
 }
 

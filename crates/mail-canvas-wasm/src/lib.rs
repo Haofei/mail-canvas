@@ -10,8 +10,8 @@ use image::{DynamicImage, ImageDecoder, ImageReader, Limits};
 use js_sys::Uint8Array;
 use mail_canvas_core::{
     AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, RenderOutputBackend,
-    RenderRequest, RenderWarning, RenderedImage, RendererCore, ResourcePolicy, ResourceProvider,
-    ResourceProviderFactory, TextLayoutHint,
+    RenderExperimentalOptions, RenderRequest, RenderWarning, RenderedImage, RendererCore,
+    ResourcePolicy, ResourceProvider, ResourceProviderFactory, TextLayoutHint,
 };
 use serde::Serialize;
 use tiny_skia::Pixmap;
@@ -195,7 +195,9 @@ impl WasmRenderer {
 impl WasmRenderer {
     fn render_with_request(&mut self, request: RenderRequest) -> Result<RenderedImage> {
         let mut request = request;
-        request.text_hints = self.text_hints.clone();
+        request.experimental = RenderExperimentalOptions {
+            text_hints: self.text_hints.clone(),
+        };
         let rendered = self.inner.render_png_with(
             request,
             &WasmResourceProviderFactory {

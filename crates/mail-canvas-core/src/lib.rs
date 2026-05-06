@@ -36,9 +36,9 @@ use api::DEFAULT_MAX_IMAGE_BYTES;
 pub use api::{
     AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, EmailRenderer,
     ImageDiagnosticKind, ImageLayoutDiagnostic, IntrinsicSizeSnapshot, LayoutNodeSnapshot,
-    LayoutStyleSnapshot, RectSnapshot, RenderDiagnosticsReport, RenderRequest, RenderWarning,
-    RenderWarningCode, RenderedImage, RenderedPdf, ResourcePolicy, TextLayoutHint,
-    TextLayoutSnapshot, TextRectSnapshot, TextStyleSnapshot,
+    LayoutStyleSnapshot, RectSnapshot, RenderDiagnosticsReport, RenderExperimentalOptions,
+    RenderRequest, RenderWarning, RenderWarningCode, RenderedImage, RenderedPdf, ResourcePolicy,
+    TextLayoutHint, TextLayoutSnapshot, TextRectSnapshot, TextStyleSnapshot,
 };
 use api::{DEFAULT_MAX_DECODED_PIXELS, RenderDiagnostics};
 use css::{
@@ -125,7 +125,7 @@ impl RendererCore {
             available_font_families,
             web_font_faces,
             limits,
-            &request.text_hints,
+            &request.experimental.text_hints,
         );
         let mut layout = engine.layout_document(&document, request.width)?;
         for warning in std::mem::take(&mut engine.warnings) {
@@ -384,16 +384,19 @@ fn collect_text_rects_into(layout: &LayoutBox, out: &mut Vec<TextRectSnapshot>) 
 fn collect_text_layouts_into(layout: &LayoutBox, out: &mut Vec<TextLayoutSnapshot>) {
     match &layout.kind {
         LayoutKind::Text(text) => out.push(TextLayoutSnapshot {
+            text_id: layout.debug.text_id.clone(),
             text: normalize_preview_text(text),
             rect: rect_snapshot(layout.rect),
             style: text_style_snapshot(&layout.style),
         }),
         LayoutKind::HintedText { text, .. } => out.push(TextLayoutSnapshot {
+            text_id: layout.debug.text_id.clone(),
             text: normalize_preview_text(text),
             rect: rect_snapshot(layout.rect),
             style: text_style_snapshot(&layout.style),
         }),
         LayoutKind::RichText(spans) => out.push(TextLayoutSnapshot {
+            text_id: layout.debug.text_id.clone(),
             text: normalize_preview_text(&spans_text(spans)),
             rect: rect_snapshot(layout.rect),
             style: text_style_snapshot(&layout.style),
@@ -2302,7 +2305,7 @@ fn resource_policy_for_test() -> TestResourceProvider {
         max_dom_nodes: crate::api::DEFAULT_MAX_DOM_NODES,
         max_layout_depth: crate::api::DEFAULT_MAX_LAYOUT_DEPTH,
         max_table_cells: crate::api::DEFAULT_MAX_TABLE_CELLS,
-        text_hints: Vec::new(),
+        experimental: RenderExperimentalOptions::default(),
     })
 }
 
@@ -2323,6 +2326,22 @@ fn layout_for_test(html: &str, width: u32) -> LayoutBox {
 }
 
 #[cfg(test)]
+fn layout_for_test_with_hints(html: &str, width: u32, text_hints: &[TextLayoutHint]) -> LayoutBox {
+    let html = inline_css(&build_document(html, None, None, width), width).unwrap();
+    let document = kuchiki::parse_html().one(html);
+    let mut font_system = FontSystem::new();
+    let mut engine = LayoutEngine::new(
+        &mut font_system,
+        resource_policy_for_test(),
+        Vec::new(),
+        Vec::new(),
+        RenderLimits::default(),
+        text_hints,
+    );
+    engine.layout_document(&document, width).unwrap()
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -2337,7 +2356,10 @@ mod tests {
     }
 
     fn find_text_layout(layout: &LayoutBox) -> Option<&LayoutBox> {
-        if matches!(layout.kind, LayoutKind::Text(_) | LayoutKind::RichText(_)) {
+        if matches!(
+            layout.kind,
+            LayoutKind::Text(_) | LayoutKind::HintedText { .. } | LayoutKind::RichText(_)
+        ) {
             return Some(layout);
         }
         layout.children.iter().find_map(find_text_layout)
@@ -2361,6 +2383,29 @@ mod tests {
             .children
             .iter()
             .find_map(|child| find_layout_with_float(child, float_side))
+    }
+
+    #[test]
+    fn experimental_text_hint_uses_text_id_for_hinted_text() {
+        let layout = layout_for_test_with_hints(
+            r#"<p data-mail-canvas-text-id="hero-copy">Hello world from MailCanvas.</p>"#,
+            240,
+            &[TextLayoutHint {
+                text_id: "hero-copy".to_string(),
+                text: "Hello world from MailCanvas.".to_string(),
+                lines: vec!["Hello world".to_string(), "from MailCanvas.".to_string()],
+                measured_height: 48.0,
+            }],
+        );
+        let text = find_text_layout(&layout).expect("text");
+        match &text.kind {
+            LayoutKind::HintedText { text, lines } => {
+                assert_eq!(text, "Hello world from MailCanvas.");
+                assert_eq!(lines.len(), 2);
+            }
+            other => panic!("expected hinted text, got {other:?}"),
+        }
+        assert!((text.rect.height - 48.0).abs() < 0.1);
     }
 
     #[test]

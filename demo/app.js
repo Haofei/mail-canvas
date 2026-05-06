@@ -60,7 +60,6 @@ const DEMO_FONTS = [
 ];
 
 const PRETEXT_TARGET_TAGS = new Set([
-  "A",
   "DIV",
   "H1",
   "H2",
@@ -69,7 +68,6 @@ const PRETEXT_TARGET_TAGS = new Set([
   "H5",
   "H6",
   "P",
-  "SPAN",
 ]);
 
 const assetPattern = /url\(\s*(['"]?)([^'")]+)\1\s*\)|@import\s+(?:url\(\s*)?(['"]?)([^'")\s]+)\3\s*\)?/gi;
@@ -268,6 +266,19 @@ function collectPretextCandidates(rootDocument) {
   return candidates;
 }
 
+function annotatePretextCandidates(html) {
+  const sourceDocument = new DOMParser().parseFromString(html, "text/html");
+  const candidates = collectPretextCandidates(sourceDocument);
+  let nextId = 1;
+  for (const element of candidates) {
+    element.setAttribute("data-mail-canvas-text-id", String(nextId++));
+  }
+  return {
+    html: `<!doctype html>\n${sourceDocument.documentElement.outerHTML}`,
+    candidateCount: candidates.length,
+  };
+}
+
 function pretextOptionsFromRust(style) {
   return {
     whiteSpace: style.wrap === "none" ? "pre" : "normal",
@@ -310,24 +321,14 @@ async function loadMeasurementDocument(html, baseUrl, width) {
   return frameWindow.document;
 }
 
-function matchRustTextLayouts(candidates, textLayouts) {
-  const matchedLayouts = [];
-  let searchStart = 0;
-  for (const candidate of candidates) {
-    const text = normalizeText(candidate.textContent);
-    let matchIndex = -1;
-    for (let index = searchStart; index < textLayouts.length; index += 1) {
-      if (normalizeText(textLayouts[index].text) === text) {
-        matchIndex = index;
-        break;
-      }
-    }
-    matchedLayouts.push(matchIndex >= 0 ? textLayouts[matchIndex] : null);
-    if (matchIndex >= 0) {
-      searchStart = matchIndex + 1;
+function mapRustTextLayoutsById(textLayouts) {
+  const byId = new Map();
+  for (const layout of textLayouts) {
+    if (layout?.text_id) {
+      byId.set(String(layout.text_id), layout);
     }
   }
-  return matchedLayouts;
+  return byId;
 }
 
 function isAllCapsText(text) {
@@ -358,7 +359,16 @@ async function applyPretextHints(html, baseUrl, width, textLayouts) {
   if (candidateCount === 0) {
     return {
       textHints: [],
-      report: { enabled: true, candidates: 0, matched: 0, applied: 0, changed: [] },
+      report: {
+        enabled: true,
+        scope: "plain_leaf_block_text_only",
+        candidates: 0,
+        matched: 0,
+        eligible: 0,
+        applied: 0,
+        skipped: {},
+        changed: [],
+      },
     };
   }
 
@@ -366,18 +376,34 @@ async function applyPretextHints(html, baseUrl, width, textLayouts) {
   const preparedHtml = serializeDocumentWithBase(sourceDocument, baseUrl);
   const measurementDocument = await loadMeasurementDocument(preparedHtml, baseUrl, width);
   const measuredCandidates = collectPretextCandidates(measurementDocument);
-  const matchedLayouts = matchRustTextLayouts(sourceCandidates, textLayouts);
+  const textLayoutsById = mapRustTextLayoutsById(textLayouts);
   const changed = [];
   const textHints = [];
   let matched = 0;
+  let eligible = 0;
+  const skipped = {
+    missingTextId: 0,
+    noRustMatch: 0,
+    tooNarrow: 0,
+    notEligible: 0,
+    widthMismatch: 0,
+    singleLine: 0,
+  };
 
   for (let index = 0; index < sourceCandidates.length; index += 1) {
     const sourceElement = sourceCandidates[index];
     const measuredElement = measuredCandidates[index];
-    const rustLayout = matchedLayouts[index];
-    if (!measuredElement || !rustLayout) {
+    const textId = sourceElement.getAttribute("data-mail-canvas-text-id");
+    if (!measuredElement || !textId) {
+      skipped.missingTextId += 1;
       continue;
     }
+    const rustLayout = textLayoutsById.get(textId);
+    if (!rustLayout) {
+      skipped.noRustMatch += 1;
+      continue;
+    }
+    matched += 1;
 
     const text = normalizeText(sourceElement.textContent);
     if (!text) {
@@ -386,12 +412,19 @@ async function applyPretextHints(html, baseUrl, width, textLayouts) {
 
     const rectWidth = Number(rustLayout.rect?.width || 0);
     if (rectWidth < 20) {
+      skipped.tooNarrow += 1;
+      continue;
+    }
+    const browserRect = measuredElement.getBoundingClientRect();
+    if (Math.abs(browserRect.width - rectWidth) > 4) {
+      skipped.widthMismatch += 1;
       continue;
     }
     if (!shouldApplyPretextHint(sourceElement, text, rectWidth)) {
+      skipped.notEligible += 1;
       continue;
     }
-    matched += 1;
+    eligible += 1;
 
     const computedStyle = measurementDocument.defaultView.getComputedStyle(measuredElement);
     const lineHeight = Number(rustLayout.style?.line_height || 0) || Number.parseFloat(computedStyle.lineHeight) || 16 * 1.2;
@@ -402,15 +435,12 @@ async function applyPretextHints(html, baseUrl, width, textLayouts) {
     );
     const result = layoutWithLines(prepared, rectWidth, lineHeight);
     if (result.lineCount <= 1) {
+      skipped.singleLine += 1;
       continue;
     }
 
-    const rustIndex = textLayouts.indexOf(rustLayout);
-    if (rustIndex < 0) {
-      continue;
-    }
     textHints.push({
-      index: rustIndex,
+      text_id: textId,
       text,
       lines: result.lines.map((line) => line.text),
       measured_height: Math.round(result.height * 1000) / 1000,
@@ -419,8 +449,9 @@ async function applyPretextHints(html, baseUrl, width, textLayouts) {
       tag: sourceElement.tagName.toLowerCase(),
       text: text.slice(0, 80),
       lines: result.lineCount,
-      index: rustIndex,
+      textId,
       width: Math.round(rectWidth * 100) / 100,
+      browserWidth: Math.round(browserRect.width * 100) / 100,
       height: Math.round(result.height * 100) / 100,
       rustHeight: Math.round((Number(rustLayout.rect?.height || 0)) * 100) / 100,
     });
@@ -430,9 +461,12 @@ async function applyPretextHints(html, baseUrl, width, textLayouts) {
     textHints,
     report: {
       enabled: true,
+      scope: "plain_leaf_block_text_only",
       candidates: candidateCount,
       matched,
+      eligible,
       applied: textHints.length,
+      skipped,
       changed: changed.slice(0, 20),
     },
   };
@@ -472,11 +506,15 @@ async function renderCurrentTemplate() {
   setStatus("Preparing HTML...");
 
   try {
-    const html = rawHtml;
+    let html = rawHtml;
     let pretextReport = { enabled: false };
     let textHints = [];
     setStatus("Fetching linked assets...");
-    const assets = await fetchAssetGraph(rawHtml, baseUrl);
+    if (usePretextInput.checked) {
+      const annotated = annotatePretextCandidates(rawHtml);
+      html = annotated.html;
+    }
+    const assets = await fetchAssetGraph(html, baseUrl);
 
     if (usePretextInput.checked) {
       const firstPassAssets = cloneAssetsForWorker(assets);
@@ -484,7 +522,7 @@ async function renderCurrentTemplate() {
       const firstPass = await callWorker(
         {
           type: "render",
-          html: rawHtml,
+          html,
           width,
           viewportHeight,
           scale,
@@ -494,7 +532,7 @@ async function renderCurrentTemplate() {
         firstPassAssets.map((asset) => asset.bytes.buffer),
       );
       setStatus("Measuring text with Pretext...");
-      const prepared = await applyPretextHints(rawHtml, baseUrl, width, firstPass.textLayout || []);
+      const prepared = await applyPretextHints(html, baseUrl, width, firstPass.textLayout || []);
       textHints = prepared.textHints || [];
       pretextReport = {
         ...prepared.report,

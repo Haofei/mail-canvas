@@ -56,7 +56,7 @@ pub struct RenderRequest {
     pub max_dom_nodes: usize,
     pub max_layout_depth: usize,
     pub max_table_cells: usize,
-    pub text_hints: Vec<TextLayoutHint>,
+    pub experimental: RenderExperimentalOptions,
 }
 
 impl RenderRequest {
@@ -74,7 +74,7 @@ impl RenderRequest {
             max_dom_nodes: DEFAULT_MAX_DOM_NODES,
             max_layout_depth: DEFAULT_MAX_LAYOUT_DEPTH,
             max_table_cells: DEFAULT_MAX_TABLE_CELLS,
-            text_hints: Vec::new(),
+            experimental: RenderExperimentalOptions::default(),
         }
     }
 
@@ -215,15 +215,22 @@ pub struct TextStyleSnapshot {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TextLayoutSnapshot {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_id: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub text: String,
     pub rect: RectSnapshot,
     pub style: TextStyleSnapshot,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct RenderExperimentalOptions {
+    pub text_hints: Vec<TextLayoutHint>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextLayoutHint {
-    pub index: usize,
+    pub text_id: String,
     pub text: String,
     #[serde(default)]
     pub lines: Vec<String>,
