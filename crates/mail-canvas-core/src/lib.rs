@@ -2596,6 +2596,10 @@ mod tests {
             parse_font_family_with_available("Georgia, Times New Roman, serif", &available)
                 .unwrap();
         assert_eq!(family, "serif");
+
+        let family =
+            parse_font_family_with_available("Trebuchet MS, Verdana, Tahoma", &available).unwrap();
+        assert_eq!(family, "sans-serif");
     }
 
     #[test]

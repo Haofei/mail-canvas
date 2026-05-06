@@ -240,7 +240,10 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
 
   const sourceHtml = await readFile(template.htmlPath, 'utf8');
   const baseUrl = template.sourceBaseUrl ?? template.baseUrl ?? new URL('.', template.url).href;
-  await writeFile(preparedPath, buildBrowserDocument(sourceHtml, baseUrl, args.width));
+  await writeFile(
+    preparedPath,
+    buildBrowserDocument(sourceHtml, baseUrl, args.width, args.fixtureFonts),
+  );
 
   const browserMetrics = await browserScreenshot(
     browser,
@@ -869,7 +872,7 @@ function padPng(source, width, height) {
   return target;
 }
 
-function buildBrowserDocument(sourceHtml, baseUrl, width) {
+function buildBrowserDocument(sourceHtml, baseUrl, width, fixtureFonts = false) {
   const head = [
     '<meta charset="utf-8">',
     `<base href="${escapeAttr(baseUrl)}">`,
@@ -880,6 +883,7 @@ function buildBrowserDocument(sourceHtml, baseUrl, width) {
     'table { border-collapse: separate; border-spacing: 0; }',
     'img { display: block; }',
     '</style>',
+    fixtureFonts ? fixtureFontCss() : '',
   ].join('\n');
   const lower = sourceHtml.toLowerCase();
   const looksLikeDocument =
@@ -907,6 +911,66 @@ function buildBrowserDocument(sourceHtml, baseUrl, width) {
     }
   }
   return `<!doctype html><html><head>${head}</head>${sourceHtml}</html>`;
+}
+
+function fixtureFontCss() {
+  const arimoRegular = pathToFileURL(FIXTURE_FONT_FILES[0]).href;
+  const arimoBold = pathToFileURL(FIXTURE_FONT_FILES[1]).href;
+  const tinosRegular = pathToFileURL(FIXTURE_FONT_FILES[2]).href;
+  const tinosBold = pathToFileURL(FIXTURE_FONT_FILES[3]).href;
+  const notoRegular = pathToFileURL(FIXTURE_FONT_FILES[4]).href;
+  const notoBold = pathToFileURL(FIXTURE_FONT_FILES[5]).href;
+  const sansAliases = [
+    'Arial',
+    'Arial Nova',
+    'Avenir',
+    'Avenir Next',
+    'Avenir Next LT Pro',
+    'Corbel',
+    'Helvetica',
+    'Helvetica Neue',
+    'Lucida Grande',
+    'Lucida Sans',
+    'Lucida Sans Unicode',
+    'Montserrat',
+    'Nimbus Sans',
+    'Open Sans',
+    'Roboto',
+    'Segoe UI',
+    'Tahoma',
+    'Trebuchet MS',
+    'Verdana',
+  ];
+  const serifAliases = [
+    'Cambria',
+    'Georgia',
+    'Palatino',
+    'Palatino Linotype',
+    'Times',
+    'Times New Roman',
+  ];
+  const css = ['<style id="email-render-fixture-fonts">'];
+  for (const family of sansAliases) {
+    css.push(fontFaceCss(family, 400, arimoRegular), fontFaceCss(family, 700, arimoBold));
+  }
+  for (const family of serifAliases) {
+    css.push(fontFaceCss(family, 400, tinosRegular), fontFaceCss(family, 700, tinosBold));
+  }
+  css.push(fontFaceCss('Noto Sans', 400, notoRegular), fontFaceCss('Noto Sans', 700, notoBold));
+  css.push('</style>');
+  return css.join('\n');
+}
+
+function fontFaceCss(family, weight, url) {
+  return [
+    '@font-face {',
+    `font-family: "${family}";`,
+    `src: url("${url}") format("truetype");`,
+    `font-weight: ${weight};`,
+    'font-style: normal;',
+    'font-display: block;',
+    '}',
+  ].join(' ');
 }
 
 function escapeAttr(value) {

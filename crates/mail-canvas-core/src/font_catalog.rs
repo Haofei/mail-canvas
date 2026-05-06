@@ -5,6 +5,9 @@ pub(crate) const SANS_FALLBACK_CANDIDATES: &[&str] = &[
     "Helvetica Neue",
     "Avenir",
     "Segoe UI",
+    "Tahoma",
+    "Trebuchet MS",
+    "Verdana",
     "Roboto",
     "Open Sans",
     "DejaVu Sans",
@@ -60,6 +63,12 @@ pub(crate) fn is_safe_system_font(value: &str) -> bool {
             | "helvetica neue"
             | "nimbus sans"
             | "segoe ui"
+            | "tahoma"
+            | "trebuchet ms"
+            | "verdana"
+            | "lucida grande"
+            | "lucida sans"
+            | "lucida sans unicode"
             | "corbel"
             | "georgia"
             | "times"
@@ -72,8 +81,22 @@ pub(crate) fn is_safe_system_font(value: &str) -> bool {
 
 pub(crate) fn safe_system_font_generic(value: &str) -> Option<&'static str> {
     match value.to_ascii_lowercase().as_str() {
-        "arial" | "arial nova" | "avenir" | "avenir next" | "avenir next lt pro" | "helvetica"
-        | "helvetica neue" | "nimbus sans" | "segoe ui" | "corbel" => Some("sans-serif"),
+        "arial"
+        | "arial nova"
+        | "avenir"
+        | "avenir next"
+        | "avenir next lt pro"
+        | "helvetica"
+        | "helvetica neue"
+        | "nimbus sans"
+        | "segoe ui"
+        | "tahoma"
+        | "trebuchet ms"
+        | "verdana"
+        | "lucida grande"
+        | "lucida sans"
+        | "lucida sans unicode"
+        | "corbel" => Some("sans-serif"),
         "georgia" | "times" | "times new roman" | "cambria" => Some("serif"),
         "courier" | "courier new" => Some("monospace"),
         _ => None,
