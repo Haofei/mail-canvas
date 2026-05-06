@@ -199,15 +199,11 @@ pub(crate) fn load_web_fonts_from_html(
         }
         imported_urls.push(stylesheet_url.clone());
         match load_stylesheet(&stylesheet_url, policy) {
-            Ok(css) => {
-                if linked_stylesheet_fonts_are_supported(&css) {
-                    css_blocks.push(FontCssBlock {
-                        css,
-                        source: FontCssSource::LinkedStylesheet,
-                        base_url: Some(stylesheet_url.clone()),
-                    });
-                }
-            }
+            Ok(css) => css_blocks.push(FontCssBlock {
+                css,
+                source: FontCssSource::LinkedStylesheet,
+                base_url: Some(stylesheet_url.clone()),
+            }),
             Err(error) => diagnostics.push_warning(
                 RenderWarning::new(
                     RenderWarningCode::StylesheetLoadFailed,
@@ -452,15 +448,6 @@ pub(crate) fn stylesheet_link_urls(html: &str) -> Vec<String> {
         urls.push(normalize_resource_url(href));
     }
     urls
-}
-
-pub(crate) fn linked_stylesheet_fonts_are_supported(css: &str) -> bool {
-    font_face_declarations(css).into_iter().all(|declarations| {
-        declaration_value(&declarations, "font-style")
-            .map(parse_font_style)
-            .unwrap_or(FontStyle::Normal)
-            == FontStyle::Normal
-    })
 }
 
 fn css_import_urls(css: &str) -> Vec<String> {

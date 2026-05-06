@@ -52,8 +52,8 @@ use dom::{
 use fonts::{WebFontFace, font_database_families, load_web_fonts_from_html};
 #[cfg(test)]
 use fonts::{
-    font_database_from_paths, font_face_covers_basic_latin, linked_stylesheet_fonts_are_supported,
-    stylesheet_link_urls, system_font_database,
+    font_database_from_paths, font_face_covers_basic_latin, stylesheet_link_urls,
+    system_font_database,
 };
 pub use output::OutputBackend as RenderOutputBackend;
 use output::OutputBackend;
@@ -2657,16 +2657,6 @@ mod tests {
         );
 
         assert_eq!(urls, vec!["fonts.css"]);
-    }
-
-    #[test]
-    fn linked_stylesheet_font_filter_requires_normal_style_faces() {
-        assert!(linked_stylesheet_fonts_are_supported(
-            r#"@font-face { font-family: Work; font-style: normal; font-weight: 400; src: url(work.woff2); }"#
-        ));
-        assert!(!linked_stylesheet_fonts_are_supported(
-            r#"@font-face { font-family: Playfair; font-style: italic; font-weight: 400; src: url(playfair.woff2); }"#
-        ));
     }
 
     #[test]
