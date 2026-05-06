@@ -3209,6 +3209,40 @@ mod tests {
     }
 
     #[test]
+    fn explicit_auto_layout_tables_expand_for_fixed_image_grid_min_width() {
+        let layout = layout_for_test(
+            r#"<table align="center" width="600" cellpadding="0" cellspacing="0">
+                <tr><td style="padding:0 20px">
+                  <table width="560" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td><img width="100" height="100" alt=""></td>
+                      <td><img width="100" height="100" alt=""></td>
+                      <td><img width="100" height="100" alt=""></td>
+                      <td><img width="100" height="100" alt=""></td>
+                      <td><img width="100" height="100" alt=""></td>
+                      <td><img width="100" height="100" alt=""></td>
+                    </tr>
+                  </table>
+                </td></tr>
+              </table>"#,
+            800,
+        );
+        let tables: Vec<&LayoutBox> =
+            collect_layouts(&layout, &|child| matches!(child.kind, LayoutKind::Table));
+
+        assert!(
+            (tables[0].rect.width - 640.0).abs() < 0.1,
+            "outer table width: {}",
+            tables[0].rect.width
+        );
+        assert!(
+            (tables[1].rect.width - 600.0).abs() < 0.1,
+            "inner table width: {}",
+            tables[1].rect.width
+        );
+    }
+
+    #[test]
     fn table_cells_use_cellpadding_attribute() {
         let layout = layout_for_test(
             r#"<table width="100" cellpadding="1"><tr><td><img width="20" height="10" alt=""></td></tr></table>"#,

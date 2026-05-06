@@ -903,7 +903,17 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             style.cell_spacing.max(0.0)
         };
         let table_width = if let Some(width) = style.resolve_width(containing_width) {
-            style.outer_width_for_declared(width)
+            let declared = style.outer_width_for_declared(width);
+            if !can_expand_declared_table_width(&style) {
+                declared
+            } else {
+                declared.max(self.fixed_replaced_table_min_outer_width(
+                    &grid,
+                    &style,
+                    declared.max(max_table_width),
+                    spacing,
+                )?)
+            }
         } else {
             self.preferred_table_outer_width(&grid, &style, max_table_width, spacing)?
                 .min(max_table_width)
@@ -1675,7 +1685,18 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     child_style.cell_spacing.max(0.0)
                 };
                 if let Some(width) = child_style.resolve_width(containing_width) {
-                    child_style.outer_width_for_declared(width)
+                    let declared = child_style.outer_width_for_declared(width);
+                    if !can_expand_declared_table_width(&child_style) {
+                        declared
+                    } else {
+                        self.fixed_replaced_table_min_outer_width(
+                            &grid,
+                            &child_style,
+                            declared.max(containing_width),
+                            spacing,
+                        )?
+                        .max(declared)
+                    }
                 } else {
                     self.preferred_table_outer_width(
                         &grid,
@@ -1702,6 +1723,146 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         Ok(max_width.max(1.0))
     }
 
+    fn fixed_replaced_table_min_outer_width(
+        &mut self,
+        grid: &TableGrid,
+        table_style: &Style,
+        max_outer_width: f32,
+        spacing: f32,
+    ) -> Result<f32> {
+        let count = grid.column_count.max(1);
+        let max_content_width = table_style.inner_width_for_outer(max_outer_width);
+        let available =
+            (max_content_width - spacing * count.saturating_sub(1) as f32).max(count as f32);
+        let mut widths = vec![0.0_f32; count];
+
+        for (col, width) in grid.col_widths.iter().enumerate().take(count) {
+            if let Some(width) = width
+                .filter(length_is_intrinsic_fixed)
+                .and_then(|width| width.resolve(available))
+            {
+                widths[col] = widths[col].max(width.max(1.0));
+            }
+        }
+
+        for row in &grid.rows {
+            let row_style = self.style_for_node(&row.node, table_style);
+            if row_style.display == Display::None {
+                continue;
+            }
+            for cell in &row.cells {
+                let mut cell_style = self.style_for_node(&cell.node, &row_style);
+                if cell_style.display == Display::None {
+                    continue;
+                }
+                cell_style.apply_table_cell_padding(table_style.cell_padding);
+
+                let intrinsic = if let Some(width) = cell_style
+                    .width
+                    .filter(length_is_intrinsic_fixed)
+                    .and_then(|width| width.resolve(available))
+                {
+                    Some(cell_style.outer_width_for_declared(width))
+                } else {
+                    self.fixed_replaced_content_min_width(
+                        &cell.node,
+                        &cell_style,
+                        available,
+                    )?
+                    .map(|width| {
+                        width + cell_style.padding.horizontal() + cell_style.border.horizontal()
+                    })
+                };
+                let Some(intrinsic) = intrinsic else {
+                    continue;
+                };
+                let per_col = ((intrinsic - spacing * cell.colspan.saturating_sub(1) as f32)
+                    / cell.colspan as f32)
+                    .max(0.0);
+                for col in cell.col..cell.col + cell.colspan {
+                    if col < widths.len() {
+                        widths[col] = widths[col].max(per_col);
+                    }
+                }
+            }
+        }
+
+        let content_width = widths.iter().sum::<f32>() + spacing * count.saturating_sub(1) as f32;
+        Ok(content_width + table_style.padding.horizontal() + table_style.border.horizontal())
+    }
+
+    fn fixed_replaced_content_min_width(
+        &mut self,
+        node: &NodeRef,
+        style: &Style,
+        containing_width: f32,
+    ) -> Result<Option<f32>> {
+        let mut saw_fixed = false;
+        let mut max_width = 0.0_f32;
+
+        for child in node.children() {
+            if let Some(text) = child.as_text() {
+                if !text.borrow().chars().all(is_collapsible_whitespace) {
+                    return Ok(None);
+                }
+                continue;
+            }
+
+            let Some(tag) = element_tag(&child) else {
+                continue;
+            };
+            if is_metadata_tag(&tag) || tag == "br" {
+                continue;
+            }
+            let child_style = self.style_for_node(&child, style);
+            if child_style.display == Display::None {
+                continue;
+            }
+
+            let width = if tag == "img" {
+                Some(self.preferred_image_width(&child, &child_style, containing_width))
+            } else if matches!(child_style.display, Display::Table | Display::InlineTable) {
+                let grid = build_table_grid(&child, self.limits.max_table_cells)?;
+                let spacing = if child_style.border_collapse == BorderCollapse::Collapse {
+                    0.0
+                } else {
+                    child_style.cell_spacing.max(0.0)
+                };
+                let intrinsic = self.fixed_replaced_table_min_outer_width(
+                    &grid,
+                    &child_style,
+                    containing_width,
+                    spacing,
+                )?;
+                let declared = child_style
+                    .resolve_width(containing_width)
+                    .map(|width| child_style.outer_width_for_declared(width));
+                if child_style.width.is_some_and(is_px_length) {
+                    Some(declared.map_or(intrinsic, |declared| declared.max(intrinsic)))
+                } else {
+                    (intrinsic > 1.0).then_some(intrinsic)
+                }
+            } else if matches!(
+                child_style.display,
+                Display::Inline | Display::InlineBlock | Display::Block
+            ) {
+                self.fixed_replaced_content_min_width(&child, &child_style, containing_width)?
+                    .map(|width| {
+                        width + child_style.padding.horizontal() + child_style.border.horizontal()
+                    })
+            } else {
+                return Ok(None);
+            };
+
+            if let Some(width) = width {
+                saw_fixed = true;
+                max_width = max_width.max(width);
+            }
+        }
+
+        Ok(saw_fixed.then_some(max_width.max(1.0)))
+    }
+
     fn preferred_image_width(&self, node: &NodeRef, style: &Style, containing_width: f32) -> f32 {
         style
             .resolve_width(containing_width)
@@ -1724,6 +1885,14 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             self.warnings.push(warning);
         }
     }
+}
+
+fn can_expand_declared_table_width(style: &Style) -> bool {
+    !style.table_layout_fixed && style.box_sizing == BoxSizing::ContentBox && style.width.is_some_and(is_px_length)
+}
+
+fn is_px_length(length: Length) -> bool {
+    matches!(length, Length::Px(_))
 }
 
 pub(crate) fn taffy_flex_container_style(
