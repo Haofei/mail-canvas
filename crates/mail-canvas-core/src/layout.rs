@@ -216,8 +216,26 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 continue;
             }
 
+            let child_display = child_style.display;
+            let child_float_side = child_style.float_side;
+            let child_clear = child_style.clear;
+            let child_is_inline_flow = is_inline_flow(&tag, &child_style);
             let (text_x, text_width) = float_adjusted_line(x, width, cursor_y, &floats);
-            if self.flush_text(
+            if child_is_inline_flow {
+                if self.push_text_inline_row(
+                    &mut text,
+                    style,
+                    text_x,
+                    text_width,
+                    &mut inline_row,
+                    &mut inline_row_width,
+                    &mut inline_row_height,
+                    &mut cursor_y,
+                    &mut children,
+                )? {
+                    previous_margin_bottom = None;
+                }
+            } else if self.flush_text(
                 &mut text,
                 style,
                 text_x,
@@ -227,14 +245,10 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             )? {
                 previous_margin_bottom = None;
             }
-            let child_display = child_style.display;
-            let child_float_side = child_style.float_side;
-            let child_clear = child_style.clear;
             if child_clear != Clear::None {
                 cursor_y = cursor_y.max(clear_float_y(&floats, child_clear));
                 previous_margin_bottom = None;
             }
-            let child_is_inline_flow = is_inline_flow(&tag, &child_style);
             if !child_is_inline_flow
                 && flush_inline_row(
                     &mut inline_row,
@@ -448,6 +462,77 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             children: Vec::new(),
         });
         *cursor_y += height;
+        Ok(true)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn push_text_inline_row(
+        &mut self,
+        text: &mut Vec<TextSpan>,
+        style: &Style,
+        x: f32,
+        width: f32,
+        inline_row: &mut Vec<LayoutBox>,
+        inline_row_width: &mut f32,
+        inline_row_height: &mut f32,
+        cursor_y: &mut f32,
+        children: &mut Vec<LayoutBox>,
+    ) -> Result<bool> {
+        let normalized = normalize_text_spans(text);
+        text.clear();
+
+        if normalized.is_empty() {
+            return Ok(false);
+        }
+
+        let plain_text = spans_text(&normalized);
+        let matches_parent_style = text_spans_match_style(&normalized, style);
+        let text_width = if matches_parent_style {
+            self.measure_text_width(&plain_text, style)
+        } else {
+            self.measure_rich_text_width(&normalized, style)
+        }
+        .min(width.max(1.0));
+        if *inline_row_width > 0.0 && *inline_row_width + text_width > width + f32::EPSILON {
+            flush_inline_row(
+                inline_row,
+                inline_row_width,
+                inline_row_height,
+                style,
+                width,
+                cursor_y,
+                children,
+            );
+        }
+
+        let height = if matches_parent_style {
+            resolved_line_height_from_db(self.font_system.db(), style)
+        } else {
+            normalized
+                .iter()
+                .map(|span| resolved_line_height_from_run_db(self.font_system.db(), &span.style))
+                .fold(resolved_line_height_from_db(self.font_system.db(), style), f32::max)
+        };
+        let kind = if matches_parent_style {
+            LayoutKind::Text(plain_text)
+        } else {
+            LayoutKind::RichText(normalized)
+        };
+        let debug = match &kind {
+            LayoutKind::Text(text) => LayoutDebugMeta::for_text(text),
+            LayoutKind::RichText(spans) => LayoutDebugMeta::for_text(&spans_text(spans)),
+            _ => LayoutDebugMeta::default(),
+        };
+
+        inline_row.push(LayoutBox {
+            kind,
+            rect: Rect::new(x + *inline_row_width, *cursor_y, text_width, height),
+            style: style.clone(),
+            debug,
+            children: Vec::new(),
+        });
+        *inline_row_width += text_width;
+        *inline_row_height = inline_row_height.max(height);
         Ok(true)
     }
 

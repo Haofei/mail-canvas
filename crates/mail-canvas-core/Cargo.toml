@@ -10,6 +10,7 @@ description = "Core HTML/CSS email layout and paint engine for mail-canvas."
 [dependencies]
 anyhow.workspace = true
 cosmic-text.workspace = true
+crc32fast.workspace = true
 css-inline.workspace = true
 fontdb.workspace = true
 kuchiki.workspace = true

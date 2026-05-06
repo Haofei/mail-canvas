@@ -9,7 +9,7 @@ use data_url::DataUrl;
 use image::{DynamicImage, ImageDecoder, ImageReader, Limits};
 use mail_canvas_core::{
     AssetKind, AssetReport, AssetSource, AssetStatus, ImageData, RenderRequest, ResourceProvider,
-    ResourceProviderFactory,
+    ResourceProviderFactory, repair_png_chunk_crcs,
 };
 use url::Url;
 
@@ -461,6 +461,19 @@ fn ensure_resource_size(len: usize, max_len: usize) -> Result<()> {
 
 fn decode_image_bytes(bytes: &[u8], policy: &ResourcePolicy) -> Result<ImageData> {
     ensure_resource_size(bytes.len(), policy.policy.max_resource_bytes)?;
+    match decode_image_bytes_strict(bytes, policy) {
+        Ok(image) => Ok(image),
+        Err(error) => {
+            let Some(repaired) = repair_png_chunk_crcs(bytes) else {
+                return Err(error);
+            };
+            decode_image_bytes_strict(&repaired, policy)
+                .with_context(|| format!("failed to decode image after PNG CRC repair: {error}"))
+        }
+    }
+}
+
+fn decode_image_bytes_strict(bytes: &[u8], policy: &ResourcePolicy) -> Result<ImageData> {
     let max_side = u32::try_from(policy.policy.max_decoded_pixels.min(u64::from(u32::MAX)))
         .expect("bounded decoded pixel limit");
     let mut reader = ImageReader::new(Cursor::new(bytes));
@@ -533,6 +546,22 @@ mod tests {
         let image = decode_image_bytes(&oriented, &test_policy()).expect("decode");
 
         assert_eq!((image.width, image.height), (2, 1));
+    }
+
+    #[test]
+    fn decode_repairs_invalid_png_chunk_crc_like_browsers() {
+        let png = [
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
+            0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x08,
+            0x1d, 0x63, 0xf8, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x09, 0xfb, 0x03, 0xfd, 0x2a, 0x86,
+            0xe3, 0x8a, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+        ];
+
+        let image = decode_image_bytes(&png, &test_policy()).expect("decode repaired png");
+
+        assert_eq!((image.width, image.height), (1, 1));
+        assert_eq!(image.rgba, [255, 255, 255, 255]);
     }
 
     #[test]

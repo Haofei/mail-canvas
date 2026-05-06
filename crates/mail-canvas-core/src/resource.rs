@@ -12,6 +12,40 @@ pub struct ImageData {
     pub rgba: Vec<u8>,
 }
 
+pub fn repair_png_chunk_crcs(bytes: &[u8]) -> Option<Vec<u8>> {
+    const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if bytes.len() < PNG_SIGNATURE.len() || &bytes[..PNG_SIGNATURE.len()] != PNG_SIGNATURE {
+        return None;
+    }
+
+    let mut repaired = bytes.to_vec();
+    let mut offset = PNG_SIGNATURE.len();
+    let mut changed = false;
+    while offset.checked_add(12)? <= repaired.len() {
+        let length = u32::from_be_bytes(repaired[offset..offset + 4].try_into().ok()?) as usize;
+        let chunk_type_start = offset + 4;
+        let chunk_data_start = offset + 8;
+        let chunk_crc_start = chunk_data_start.checked_add(length)?;
+        let next = chunk_crc_start.checked_add(4)?;
+        if next > repaired.len() {
+            return None;
+        }
+
+        let expected = crc32fast::hash(&repaired[chunk_type_start..chunk_crc_start]);
+        let actual = u32::from_be_bytes(repaired[chunk_crc_start..next].try_into().ok()?);
+        if expected != actual {
+            repaired[chunk_crc_start..next].copy_from_slice(&expected.to_be_bytes());
+            changed = true;
+        }
+
+        if &repaired[chunk_type_start..chunk_data_start] == b"IEND" {
+            return changed.then_some(repaired);
+        }
+        offset = next;
+    }
+    None
+}
+
 pub trait ResourceProvider: Clone {
     fn load_image(&self, src: &str, initiator: &'static str) -> Result<ImageData>;
     fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Vec<u8>>;

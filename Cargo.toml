@@ -18,6 +18,7 @@ repository = "https://github.com/Haofei/mail-canvas"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 cosmic-text = "0.17.0"
+crc32fast = "1"
 css-inline = { version = "0.20.2", default-features = false }
 data-url = "0.3.2"
 fontdb = "0.23.0"

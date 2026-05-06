@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context as _, Result, anyhow, bail};
 use cosmic_text::FontSystem;
 use data_url::DataUrl;
 use fontdb::Database;
@@ -11,7 +11,7 @@ use js_sys::Uint8Array;
 use mail_canvas_core::{
     AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, RenderOutputBackend,
     RenderRequest, RenderWarning, RenderedImage, RendererCore, ResourcePolicy, ResourceProvider,
-    ResourceProviderFactory,
+    ResourceProviderFactory, repair_png_chunk_crcs,
 };
 use serde::Serialize;
 use tiny_skia::Pixmap;
@@ -438,6 +438,19 @@ fn decode_registered_image(bytes: &[u8]) -> Result<mail_canvas_core::ImageData> 
     if bytes.len() > DEFAULT_MAX_RESOURCE_BYTES {
         bail!("image resource exceeds max-image-bytes");
     }
+    match decode_registered_image_strict(bytes) {
+        Ok(image) => Ok(image),
+        Err(error) => {
+            let Some(repaired) = repair_png_chunk_crcs(bytes) else {
+                return Err(error);
+            };
+            decode_registered_image_strict(&repaired)
+                .with_context(|| format!("failed to decode image after PNG CRC repair: {error}"))
+        }
+    }
+}
+
+fn decode_registered_image_strict(bytes: &[u8]) -> Result<mail_canvas_core::ImageData> {
     let mut reader = ImageReader::new(std::io::Cursor::new(bytes));
     let mut limits = Limits::default();
     limits.max_image_width = Some(

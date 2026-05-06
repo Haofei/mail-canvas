@@ -621,15 +621,11 @@ impl Style {
                     self.font_face_weight = None;
                 }
             }
-            "font-weight" => {
-                if !is_inherit_keyword(value) {
-                    self.font_weight = parse_font_weight(value);
-                }
+            "font-weight" if !is_inherit_keyword(value) => {
+                self.font_weight = parse_font_weight(value);
             }
-            "font-style" => {
-                if !is_inherit_keyword(value) {
-                    self.font_style = parse_font_style(value);
-                }
+            "font-style" if !is_inherit_keyword(value) => {
+                self.font_style = parse_font_style(value);
             }
             "line-height" => {
                 if let Some(line_height) = parse_line_height_declaration(value, self.font_size) {
@@ -648,10 +644,8 @@ impl Style {
             "-webkit-font-smoothing" => {
                 self.font_hinting_disabled = value.trim().eq_ignore_ascii_case("antialiased");
             }
-            "text-rendering" => {
-                if value.trim().eq_ignore_ascii_case("geometricprecision") {
-                    self.font_hinting_disabled = true;
-                }
+            "text-rendering" if value.trim().eq_ignore_ascii_case("geometricprecision") => {
+                self.font_hinting_disabled = true;
             }
             "text-align" | "align" => {
                 if let Some(align) = parse_text_align(value) {
@@ -669,20 +663,16 @@ impl Style {
                     self.vertical_align = align;
                 }
             }
-            "white-space" => {
-                if value.trim().eq_ignore_ascii_case("nowrap") {
-                    self.wrap = TextWrap::None;
-                }
+            "white-space" if value.trim().eq_ignore_ascii_case("nowrap") => {
+                self.wrap = TextWrap::None;
             }
             "list-style" | "list-style-type" => {
                 if let Some(list_style_type) = parse_list_style_type(value) {
                     self.list_style_type = list_style_type;
                 }
             }
-            "word-break" => {
-                if value.trim().eq_ignore_ascii_case("break-all") {
-                    self.wrap = TextWrap::Glyph;
-                }
+            "word-break" if value.trim().eq_ignore_ascii_case("break-all") => {
+                self.wrap = TextWrap::Glyph;
             }
             "overflow-wrap" | "word-wrap" => {
                 if matches!(
@@ -797,10 +787,8 @@ impl Style {
             "border-right" => apply_border_side(self, BorderSide::Right, value),
             "border-bottom" => apply_border_side(self, BorderSide::Bottom, value),
             "border-left" => apply_border_side(self, BorderSide::Left, value),
-            "border-collapse" => {
-                if value.trim().eq_ignore_ascii_case("collapse") {
-                    self.border_collapse = BorderCollapse::Collapse;
-                }
+            "border-collapse" if value.trim().eq_ignore_ascii_case("collapse") => {
+                self.border_collapse = BorderCollapse::Collapse;
             }
             "table-layout" => {
                 self.table_layout_fixed = value.trim().eq_ignore_ascii_case("fixed");
@@ -1240,16 +1228,11 @@ pub(crate) enum BoxSizing {
     ContentBox,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum BackgroundRepeat {
+    #[default]
     Repeat,
     NoRepeat,
-}
-
-impl Default for BackgroundRepeat {
-    fn default() -> Self {
-        Self::Repeat
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2451,36 +2434,8 @@ pub(crate) fn parse_font_family_candidates(value: &str) -> Vec<String> {
         .collect()
 }
 
-pub(crate) fn generic_font_family(value: &str) -> Option<&'static str> {
-    match value.to_ascii_lowercase().as_str() {
-        "sans-serif" | "ui-sans-serif" | "system-ui" | "-apple-system" => Some("sans-serif"),
-        "serif" | "ui-serif" => Some("serif"),
-        "monospace" | "ui-monospace" => Some("monospace"),
-        _ => None,
-    }
-}
-
-pub(crate) fn is_safe_system_font(value: &str) -> bool {
-    matches!(
-        value.to_ascii_lowercase().as_str(),
-        "arial"
-            | "arial nova"
-            | "avenir"
-            | "avenir next"
-            | "avenir next lt pro"
-            | "helvetica"
-            | "helvetica neue"
-            | "nimbus sans"
-            | "segoe ui"
-            | "corbel"
-            | "georgia"
-            | "times"
-            | "times new roman"
-            | "cambria"
-            | "courier"
-            | "courier new"
-    )
-}
+pub(crate) use crate::font_catalog::generic_font_family;
+pub(crate) use crate::font_catalog::is_safe_system_font;
 
 pub(crate) fn parse_font_weight(value: &str) -> FontWeight {
     match value.trim().to_ascii_lowercase().as_str() {

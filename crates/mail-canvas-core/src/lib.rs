@@ -25,6 +25,7 @@ mod api;
 mod css;
 mod document;
 mod dom;
+mod font_catalog;
 mod fonts;
 mod output;
 mod resource;
@@ -58,7 +59,7 @@ pub use output::OutputBackend as RenderOutputBackend;
 use output::OutputBackend;
 #[cfg(test)]
 use resource::TestResourceProvider;
-pub use resource::{ImageData, ResourceProvider, ResourceProviderFactory};
+pub use resource::{ImageData, ResourceProvider, ResourceProviderFactory, repair_png_chunk_crcs};
 use table::{
     TableGrid, build_table_grid, column_offset, distribute_fixed_table_column_widths,
     length_is_intrinsic_fixed, spanned_width,
@@ -4258,6 +4259,40 @@ mod tests {
         .expect("B");
         assert!((a.rect.y - b.rect.y).abs() < 0.1);
         assert!((b.rect.x - a.rect.x - 100.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn mixed_inline_text_and_inline_blocks_share_one_row() {
+        let layout = layout_for_test(
+            r#"<div style="font-size:0;text-align:center">
+                <a style="display:inline-block;padding:5px;font-size:14px">HOW TO BOOK?</a>
+                <span style="font-size:14px">·</span>
+                <a style="display:inline-block;padding:5px;font-size:14px">ABOUT THE EVENT</a>
+                <span style="font-size:14px">·</span>
+                <a style="display:inline-block;padding:5px;font-size:14px">CONTACT</a>
+            </div>"#,
+            650,
+        );
+        let first = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "HOW TO BOOK?"),
+        )
+        .expect("first link");
+        let second = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "ABOUT THE EVENT"),
+        )
+        .expect("second link");
+        let third = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "CONTACT"),
+        )
+        .expect("third link");
+
+        assert!((first.rect.y - second.rect.y).abs() < 0.1);
+        assert!((second.rect.y - third.rect.y).abs() < 0.1);
+        assert!(first.rect.x < second.rect.x);
+        assert!(second.rect.x < third.rect.x);
     }
 
     #[test]

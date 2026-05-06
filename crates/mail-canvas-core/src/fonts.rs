@@ -11,6 +11,10 @@ use crate::css::{
     css_format_hint, css_function_value, first_css_url, first_quoted_css_string,
     font_face_declarations, next_css_segment_end, style_blocks, unquote_css_value,
 };
+#[cfg(test)]
+use crate::font_catalog::{
+    MONO_FALLBACK_CANDIDATES, SANS_FALLBACK_CANDIDATES, SERIF_FALLBACK_CANDIDATES,
+};
 use crate::resource::ResourceProvider;
 use crate::{AssetReport, RenderWarning, RenderWarningCode, parse_font_style};
 
@@ -67,47 +71,11 @@ fn set_generic_font_families(db: &mut fontdb::Database) {
         .faces()
         .flat_map(|face| face.families.iter().map(|(family, _)| family.clone()))
         .next();
-    let sans = first_available_family(
-        db,
-        &[
-            "Arial",
-            "Helvetica",
-            "Helvetica Neue",
-            "Avenir",
-            "Segoe UI",
-            "Roboto",
-            "Open Sans",
-            "DejaVu Sans",
-            "Noto Sans",
-        ],
-    )
-    .or_else(|| fallback_family.clone());
-    let serif = first_available_family(
-        db,
-        &[
-            "Times",
-            "Times New Roman",
-            "Georgia",
-            "Palatino",
-            "Palatino Linotype",
-            "Iowan Old Style",
-            "DejaVu Serif",
-            "Noto Serif",
-        ],
-    )
-    .or_else(|| fallback_family.clone());
-    let mono = first_available_family(
-        db,
-        &[
-            "Courier New",
-            "Menlo",
-            "Monaco",
-            "Consolas",
-            "DejaVu Sans Mono",
-            "Noto Sans Mono",
-        ],
-    )
-    .or(fallback_family);
+    let sans =
+        first_available_family(db, SANS_FALLBACK_CANDIDATES).or_else(|| fallback_family.clone());
+    let serif =
+        first_available_family(db, SERIF_FALLBACK_CANDIDATES).or_else(|| fallback_family.clone());
+    let mono = first_available_family(db, MONO_FALLBACK_CANDIDATES).or(fallback_family);
 
     if let Some(sans) = sans {
         db.set_sans_serif_family(sans);

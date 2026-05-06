@@ -327,13 +327,21 @@ the smallest email-relevant rule in Rust.
 
 ### Deterministic Regression Fonts
 
-Regression screenshots use committed font fixtures:
+The full Playwright corpus comparison uses the host system fonts by default so
+the Chromium reference and MailCanvas resolve common email families such as
+Arial through the same local font stack. This gives better
+Beefree/marketing-template fidelity on developer machines and CI images with
+compatible system fonts.
+
+Committed font fixtures remain available for explicit deterministic runs:
 
 - `fixtures/fonts/NotoSans-Regular.ttf`
 - `fixtures/fonts/NotoSans-Bold.ttf`
 
-The Playwright comparison script passes these fixtures through `--font-file` so
-layout and text wrapping do not depend on the host machine's system fonts.
+`npm run test:playwright-regression` passes `--fixture-fonts` so GitHub Actions
+does not depend on the Linux runner's installed fonts. Pass `--fixture-fonts` to
+`scripts/playwright_compare.mjs` for other host-independent runs when stable
+wrapping is more important than matching Chromium's local font fallback.
 
 ### Examples
 

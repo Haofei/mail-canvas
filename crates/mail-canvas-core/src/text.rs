@@ -9,15 +9,78 @@ use cosmic_text::{
     Attrs, CacheKeyFlags, Family as FontFamily, Style as FontStyle, Weight as FontWeight,
 };
 
+use crate::font_catalog::{
+    BLINK_SANS_SERIF_FAMILY, BLINK_SERIF_FAMILY, generic_font_family as generic_font_family_name,
+    normalized_font_family,
+};
+
 use super::{Style, TextRunStyle, TextSpan, parse_css_length};
 
-const BLINK_SERIF_FAMILY: &str = "Times";
-const BLINK_SANS_SERIF_FAMILY: &str = "Helvetica";
 const BLINK_WEB_STANDARD_ASCENT_ADJUSTMENT_FACTOR: f32 = 0.15;
 const BLINK_WEB_STANDARD_ASCENT_ADJUSTMENT_BIAS: f32 = 0.5;
 
 const RICH_TEXT_BASELINE_LEADING_FACTOR: f32 = 0.5;
 const NORMAL_LINE_HEIGHT_FALLBACK_FACTOR: f32 = 1.4;
+const DEFAULT_WRAP_WIDTH_SCALE: f32 = 1.0;
+const POPPINS_WRAP_WIDTH_SCALE: f32 = 1.08;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlinkGenericFamily {
+    Serif,
+    SansSerif,
+    Monospace,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TextCompatibilityProfile {
+    generic_family: Option<BlinkGenericFamily>,
+    apply_mac_ascent_hack: bool,
+    wrap_width_scale: f32,
+}
+
+impl Default for TextCompatibilityProfile {
+    fn default() -> Self {
+        Self {
+            generic_family: None,
+            apply_mac_ascent_hack: false,
+            wrap_width_scale: DEFAULT_WRAP_WIDTH_SCALE,
+        }
+    }
+}
+
+struct TextCompatibilityRule {
+    families: &'static [&'static str],
+    generic_family: Option<BlinkGenericFamily>,
+    apply_mac_ascent_hack: bool,
+    wrap_width_scale: f32,
+}
+
+const TEXT_COMPATIBILITY_RULES: &[TextCompatibilityRule] = &[
+    TextCompatibilityRule {
+        families: &["serif", "times"],
+        generic_family: Some(BlinkGenericFamily::Serif),
+        apply_mac_ascent_hack: true,
+        wrap_width_scale: DEFAULT_WRAP_WIDTH_SCALE,
+    },
+    TextCompatibilityRule {
+        families: &["sans-serif", "helvetica"],
+        generic_family: Some(BlinkGenericFamily::SansSerif),
+        apply_mac_ascent_hack: true,
+        wrap_width_scale: DEFAULT_WRAP_WIDTH_SCALE,
+    },
+    TextCompatibilityRule {
+        families: &["monospace", "courier"],
+        generic_family: Some(BlinkGenericFamily::Monospace),
+        apply_mac_ascent_hack: true,
+        wrap_width_scale: DEFAULT_WRAP_WIDTH_SCALE,
+    },
+    TextCompatibilityRule {
+        families: &["poppins"],
+        generic_family: None,
+        apply_mac_ascent_hack: false,
+        wrap_width_scale: POPPINS_WRAP_WIDTH_SCALE,
+    },
+];
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct LineHeightDeclaration {
@@ -49,12 +112,11 @@ pub(super) fn text_style_attrs(
 }
 
 fn cosmic_font_family(font_family: Option<&str>) -> FontFamily<'_> {
-    match font_family.map(str::to_ascii_lowercase) {
-        Some(family) if family == "serif" => FontFamily::Name(BLINK_SERIF_FAMILY),
-        Some(family) if family == "monospace" => FontFamily::Monospace,
-        Some(family) if family == "sans-serif" => FontFamily::Name(BLINK_SANS_SERIF_FAMILY),
-        Some(_) => font_family.map_or(FontFamily::SansSerif, FontFamily::Name),
-        None => FontFamily::Name(BLINK_SERIF_FAMILY),
+    match text_compatibility_profile(font_family).generic_family {
+        Some(BlinkGenericFamily::Serif) => FontFamily::Name(BLINK_SERIF_FAMILY),
+        Some(BlinkGenericFamily::Monospace) => FontFamily::Monospace,
+        Some(BlinkGenericFamily::SansSerif) => FontFamily::Name(BLINK_SANS_SERIF_FAMILY),
+        None => font_family.map_or(FontFamily::SansSerif, FontFamily::Name),
     }
 }
 
@@ -84,7 +146,8 @@ fn blink_normal_line_height_from_db(db: &fontdb::Database, style: &Style) -> Opt
         style: style.font_style,
     };
     let id = db.query(&query)?;
-    let apply_mac_ascent_hack = blink_mac_ascent_hack_applies(style.font_family.as_deref());
+    let apply_mac_ascent_hack =
+        text_compatibility_profile(style.font_family.as_deref()).apply_mac_ascent_hack;
     db.with_face_data(id, |font_data, face_index| {
         blink_normal_line_height_from_face(
             font_data,
@@ -125,7 +188,8 @@ fn blink_normal_line_height_from_run_db(
         style: style.font_style,
     };
     let id = db.query(&query)?;
-    let apply_mac_ascent_hack = blink_mac_ascent_hack_applies(style.font_family.as_deref());
+    let apply_mac_ascent_hack =
+        text_compatibility_profile(style.font_family.as_deref()).apply_mac_ascent_hack;
     db.with_face_data(id, |font_data, face_index| {
         blink_normal_line_height_from_face(
             font_data,
@@ -146,16 +210,14 @@ fn fontdb_family_for_run_style(style: &TextRunStyle) -> fontdb::Family<'_> {
 }
 
 pub(super) fn fontdb_family(font_family: Option<&str>) -> fontdb::Family<'_> {
-    match font_family {
-        Some(family) if family.eq_ignore_ascii_case("serif") => {
-            fontdb::Family::Name(BLINK_SERIF_FAMILY)
-        }
-        Some(family) if family.eq_ignore_ascii_case("monospace") => fontdb::Family::Monospace,
-        Some(family) if family.eq_ignore_ascii_case("sans-serif") => {
-            fontdb::Family::Name(BLINK_SANS_SERIF_FAMILY)
-        }
-        Some(family) => fontdb::Family::Name(family),
-        None => fontdb::Family::Name(BLINK_SERIF_FAMILY),
+    match text_compatibility_profile(font_family).generic_family {
+        Some(BlinkGenericFamily::Serif) => fontdb::Family::Name(BLINK_SERIF_FAMILY),
+        Some(BlinkGenericFamily::Monospace) => fontdb::Family::Monospace,
+        Some(BlinkGenericFamily::SansSerif) => fontdb::Family::Name(BLINK_SANS_SERIF_FAMILY),
+        None => font_family.map_or(
+            fontdb::Family::Name(BLINK_SERIF_FAMILY),
+            fontdb::Family::Name,
+        ),
     }
 }
 
@@ -182,15 +244,9 @@ fn blink_normal_line_height_from_face(
     line_height.is_finite().then_some(line_height.max(1.0))
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn blink_mac_ascent_hack_applies(font_family: Option<&str>) -> bool {
-    let Some(family) = font_family else {
-        return true;
-    };
-    let family = family.trim().trim_matches(['"', '\'']).to_ascii_lowercase();
-    matches!(
-        family.as_str(),
-        "serif" | "times" | "sans-serif" | "helvetica" | "monospace" | "courier"
-    )
+    text_compatibility_profile(font_family).apply_mac_ascent_hack
 }
 
 pub(super) fn blink_web_standard_family_ascent_adjustment(ascent: f32, descent: f32) -> f32 {
@@ -216,14 +272,31 @@ pub(super) fn normal_line_height_fallback(font_size: f32) -> f32 {
 }
 
 pub(super) fn wrap_width_adjustment(font_family: Option<&str>) -> f32 {
-    let Some(family) = font_family else {
-        return 1.0;
+    text_compatibility_profile(font_family).wrap_width_scale
+}
+
+fn text_compatibility_profile(font_family: Option<&str>) -> TextCompatibilityProfile {
+    let Some(family) = normalized_font_family(font_family) else {
+        return TextCompatibilityProfile {
+            generic_family: Some(BlinkGenericFamily::Serif),
+            apply_mac_ascent_hack: true,
+            ..TextCompatibilityProfile::default()
+        };
     };
-    let family = family.trim().trim_matches(['"', '\'']).to_ascii_lowercase();
-    match family.as_str() {
-        "poppins" => 1.08,
-        _ => 1.0,
+
+    let canonical_family = generic_font_family_name(&family).unwrap_or(family.as_str());
+    if let Some(rule) = TEXT_COMPATIBILITY_RULES
+        .iter()
+        .find(|rule| rule.families.iter().any(|name| *name == canonical_family))
+    {
+        return TextCompatibilityProfile {
+            generic_family: rule.generic_family,
+            apply_mac_ascent_hack: rule.apply_mac_ascent_hack,
+            wrap_width_scale: rule.wrap_width_scale,
+        };
     }
+
+    TextCompatibilityProfile::default()
 }
 
 pub(super) fn parse_line_height_declaration(
