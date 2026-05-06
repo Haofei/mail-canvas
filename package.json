@@ -10,6 +10,7 @@
     "compare:playwright-editors": "node scripts/playwright_compare.mjs --work-dir /tmp/mail-canvas-playwright-editors --timeout-ms 30000 --width 800 --all --no-remote --fixture-fonts --provider beefree --provider stripo --provider mjml",
     "compare:playwright-golden": "node scripts/playwright_compare.mjs --work-dir /tmp/mail-canvas-playwright-golden --timeout-ms 30000 --width 800 --all --no-remote --fixture-fonts --corpus-group golden",
     "compare:playwright-dirty": "node scripts/playwright_compare.mjs --work-dir /tmp/mail-canvas-playwright-dirty --timeout-ms 30000 --width 800 --all --no-remote --fixture-fonts --corpus-group real-world-dirty",
+    "compare:local": "node scripts/playwright_compare.mjs --work-dir /tmp/mail-canvas-playwright-local --timeout-ms 30000 --width 800 --no-remote --fixture-fonts",
     "compare:layout-rects": "node scripts/compare_layout_rects.mjs",
     "corpus:audit": "node scripts/audit_corpus.mjs",
     "corpus:manifest": "node scripts/export_corpus_manifest.mjs",

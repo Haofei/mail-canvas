@@ -72,7 +72,8 @@ use text::{
 };
 #[cfg(test)]
 use text::{
-    blink_mac_ascent_hack_applies, blink_web_standard_family_ascent_adjustment, fontdb_family,
+    blink_web_standard_ascent_adjustment_applies, blink_web_standard_family_ascent_adjustment,
+    fontdb_family,
 };
 
 const MAX_RENDER_PIXELS_PER_AXIS: u32 = 16_384;
@@ -861,9 +862,7 @@ fn align_block_child_to_legacy_align_attribute(
 fn legacy_align_attribute_applies_to_child(child: &LayoutBox) -> bool {
     match child.kind {
         LayoutKind::Image(_) => true,
-        LayoutKind::Block => {
-            !child.style.margin_left_auto && !child.style.margin_right_auto
-        }
+        LayoutKind::Block => !child.style.margin_left_auto && !child.style.margin_right_auto,
         _ => false,
     }
 }
@@ -2580,11 +2579,15 @@ mod tests {
     }
 
     #[test]
-    fn blink_mac_ascent_hack_matches_web_standard_families() {
-        assert!(blink_mac_ascent_hack_applies(Some("Helvetica")));
-        assert!(blink_mac_ascent_hack_applies(Some("serif")));
-        assert!(blink_mac_ascent_hack_applies(None));
-        assert!(!blink_mac_ascent_hack_applies(Some("Helvetica Neue")));
+    fn blink_web_standard_ascent_adjustment_matches_web_standard_families() {
+        assert!(blink_web_standard_ascent_adjustment_applies(Some(
+            "Helvetica"
+        )));
+        assert!(blink_web_standard_ascent_adjustment_applies(Some("serif")));
+        assert!(blink_web_standard_ascent_adjustment_applies(None));
+        assert!(!blink_web_standard_ascent_adjustment_applies(Some(
+            "Helvetica Neue"
+        )));
         assert_eq!(blink_web_standard_family_ascent_adjustment(12.0, 4.0), 2.0);
     }
 

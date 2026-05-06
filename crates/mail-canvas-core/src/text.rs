@@ -33,7 +33,7 @@ enum BlinkGenericFamily {
 #[derive(Debug, Clone, Copy)]
 struct TextCompatibilityProfile {
     generic_family: Option<BlinkGenericFamily>,
-    apply_mac_ascent_hack: bool,
+    apply_web_standard_ascent_adjustment: bool,
     wrap_width_scale: f32,
 }
 
@@ -41,7 +41,7 @@ impl Default for TextCompatibilityProfile {
     fn default() -> Self {
         Self {
             generic_family: None,
-            apply_mac_ascent_hack: false,
+            apply_web_standard_ascent_adjustment: false,
             wrap_width_scale: DEFAULT_WRAP_WIDTH_SCALE,
         }
     }
@@ -50,7 +50,7 @@ impl Default for TextCompatibilityProfile {
 struct TextCompatibilityRule {
     families: &'static [&'static str],
     generic_family: Option<BlinkGenericFamily>,
-    apply_mac_ascent_hack: bool,
+    apply_web_standard_ascent_adjustment: bool,
     wrap_width_scale: f32,
 }
 
@@ -58,19 +58,19 @@ const TEXT_COMPATIBILITY_RULES: &[TextCompatibilityRule] = &[
     TextCompatibilityRule {
         families: &["serif", "times"],
         generic_family: Some(BlinkGenericFamily::Serif),
-        apply_mac_ascent_hack: true,
+        apply_web_standard_ascent_adjustment: true,
         wrap_width_scale: DEFAULT_WRAP_WIDTH_SCALE,
     },
     TextCompatibilityRule {
         families: &["sans-serif", "arial", "helvetica"],
         generic_family: Some(BlinkGenericFamily::SansSerif),
-        apply_mac_ascent_hack: true,
+        apply_web_standard_ascent_adjustment: true,
         wrap_width_scale: WEB_STANDARD_SANS_WRAP_WIDTH_SCALE,
     },
     TextCompatibilityRule {
         families: &["monospace", "courier"],
         generic_family: Some(BlinkGenericFamily::Monospace),
-        apply_mac_ascent_hack: true,
+        apply_web_standard_ascent_adjustment: true,
         wrap_width_scale: DEFAULT_WRAP_WIDTH_SCALE,
     },
 ];
@@ -139,14 +139,15 @@ fn blink_normal_line_height_from_db(db: &fontdb::Database, style: &Style) -> Opt
         style: style.font_style,
     };
     let id = db.query(&query)?;
-    let apply_mac_ascent_hack =
-        text_compatibility_profile(style.font_family.as_deref()).apply_mac_ascent_hack;
+    let apply_web_standard_ascent_adjustment =
+        text_compatibility_profile(style.font_family.as_deref())
+            .apply_web_standard_ascent_adjustment;
     db.with_face_data(id, |font_data, face_index| {
         blink_normal_line_height_from_face(
             font_data,
             face_index,
             style.font_size,
-            apply_mac_ascent_hack,
+            apply_web_standard_ascent_adjustment,
         )
     })
     .flatten()
@@ -181,14 +182,15 @@ fn blink_normal_line_height_from_run_db(
         style: style.font_style,
     };
     let id = db.query(&query)?;
-    let apply_mac_ascent_hack =
-        text_compatibility_profile(style.font_family.as_deref()).apply_mac_ascent_hack;
+    let apply_web_standard_ascent_adjustment =
+        text_compatibility_profile(style.font_family.as_deref())
+            .apply_web_standard_ascent_adjustment;
     db.with_face_data(id, |font_data, face_index| {
         blink_normal_line_height_from_face(
             font_data,
             face_index,
             style.font_size,
-            apply_mac_ascent_hack,
+            apply_web_standard_ascent_adjustment,
         )
     })
     .flatten()
@@ -215,7 +217,7 @@ fn blink_normal_line_height_from_face(
     font_data: &[u8],
     face_index: u32,
     font_size: f32,
-    apply_mac_ascent_hack: bool,
+    apply_web_standard_ascent_adjustment: bool,
 ) -> Option<f32> {
     let face = ttf_parser::Face::parse(font_data, face_index).ok()?;
     let units_per_em = f32::from(face.units_per_em());
@@ -226,7 +228,7 @@ fn blink_normal_line_height_from_face(
     let scale = font_size.max(1.0) / units_per_em;
     let mut ascent = (f32::from(face.ascender()) * scale).round();
     let descent = (-(f32::from(face.descender())) * scale).round();
-    if apply_mac_ascent_hack {
+    if apply_web_standard_ascent_adjustment {
         ascent += blink_web_standard_family_ascent_adjustment(ascent, descent);
     }
     let line_gap = (f32::from(face.line_gap()) * scale).round();
@@ -235,8 +237,8 @@ fn blink_normal_line_height_from_face(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-pub(super) fn blink_mac_ascent_hack_applies(font_family: Option<&str>) -> bool {
-    text_compatibility_profile(font_family).apply_mac_ascent_hack
+pub(super) fn blink_web_standard_ascent_adjustment_applies(font_family: Option<&str>) -> bool {
+    text_compatibility_profile(font_family).apply_web_standard_ascent_adjustment
 }
 
 pub(super) fn blink_web_standard_family_ascent_adjustment(ascent: f32, descent: f32) -> f32 {
@@ -269,7 +271,7 @@ fn text_compatibility_profile(font_family: Option<&str>) -> TextCompatibilityPro
     let Some(family) = normalized_font_family(font_family) else {
         return TextCompatibilityProfile {
             generic_family: Some(BlinkGenericFamily::Serif),
-            apply_mac_ascent_hack: true,
+            apply_web_standard_ascent_adjustment: true,
             ..TextCompatibilityProfile::default()
         };
     };
@@ -281,7 +283,7 @@ fn text_compatibility_profile(font_family: Option<&str>) -> TextCompatibilityPro
     {
         return TextCompatibilityProfile {
             generic_family: rule.generic_family,
-            apply_mac_ascent_hack: rule.apply_mac_ascent_hack,
+            apply_web_standard_ascent_adjustment: rule.apply_web_standard_ascent_adjustment,
             wrap_width_scale: rule.wrap_width_scale,
         };
     }

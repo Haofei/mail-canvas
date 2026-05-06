@@ -166,6 +166,9 @@ The browser demo now runs in a worker and uses explicit asset injection:
 3. The worker registers assets in `mail-canvas-wasm`.
 4. The worker returns PNG bytes and diagnostics JSON.
 
+The generated `demo/pkg/` wasm bundle is intentionally ignored by Git. Rebuild
+it with `npm run build:demo` or start the full local demo with `npm run demo`.
+
 ### Project Shape
 
 - `crates/mail-canvas-core/`: parse, style, layout, paint model, diagnostics,
@@ -227,6 +230,21 @@ npm run compare:playwright-editors
 This filters the local, vendored corpus to Beefree, Stripo, and MJML templates.
 It is intended for renderer-fidelity work on valid generated email HTML, not
 legacy hand-written compatibility fixtures.
+
+Compare one local real-world HTML file, such as an exported editor template:
+
+```sh
+npm run compare:local -- \
+  --html ./cnn.html \
+  --name cnn-local
+```
+
+The local compare path uses the same Chromium screenshot, MailCanvas render,
+diff, side-by-side image, diagnostics, and `layout-json` artifact generation as
+the corpus runs. Outputs default to `/tmp/mail-canvas-playwright-local`; pass
+`--work-dir` after `--` when you want a different directory. Local one-off
+templates are not committed by default, especially when they include private
+preview links or email addresses.
 
 The corpus lives in `scripts/templates.mjs` as structured metadata: provider,
 category, status, expected warning count, and the reason for any known warning.
@@ -542,6 +560,9 @@ const diagnostics = JSON.parse(renderer.diagnostics_json());
 3. worker 在 `mail-canvas-wasm` 里注册资源并渲染；
 4. worker 返回 PNG 字节和 diagnostics JSON。
 
+生成出来的 `demo/pkg/` wasm bundle 不进入 Git。需要时用
+`npm run build:demo` 重新生成，或者直接用 `npm run demo` 启动本地 demo。
+
 ### 项目结构
 
 - `crates/mail-canvas-core/`: parse、style、layout、paint model、diagnostics，
@@ -597,6 +618,19 @@ npm run compare:playwright-editors
 
 这个命令只筛选本地 vendored 语料里的 Beefree、Stripo 和 MJML 模板，主要用于
 合法生成 HTML 的渲染质量迭代，不针对老旧手写兼容 hack。
+
+对比一个本地真实 HTML 文件，比如从编辑器导出的模板：
+
+```sh
+npm run compare:local -- \
+  --html ./cnn.html \
+  --name cnn-local
+```
+
+本地模板对比和语料对比使用同一套 Chromium 截图、MailCanvas 渲染、diff、
+side-by-side、diagnostics 和 `layout-json` 输出。默认输出目录是
+`/tmp/mail-canvas-playwright-local`；如果要换目录，可以在 `--` 后面传
+`--work-dir`。一次性的真实模板默认不提交，尤其是包含私有预览链接或邮箱地址时。
 
 `scripts/templates.mjs` 现在是带 metadata 的语料：provider、category、status、
 expected warning count，以及 known warning 的原因。全量语料里，known-warning
