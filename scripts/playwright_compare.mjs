@@ -417,7 +417,7 @@ async function collectComparisonRects(page, width, height) {
       for (const element of document.body.querySelectorAll('*')) {
         const style = window.getComputedStyle(element);
         const tag = element.tagName.toLowerCase();
-        const hasMedia = tag === 'img' || style.backgroundImage !== 'none';
+        const hasMedia = tag === 'img' || hasRenderableBackgroundImage(style.backgroundImage);
         if (!hasMedia) {
           continue;
         }
@@ -459,6 +459,13 @@ async function collectComparisonRects(page, width, height) {
       range.detach();
 
       return { mediaRects, textRects };
+
+      function hasRenderableBackgroundImage(value) {
+        if (!value || value === 'none') {
+          return false;
+        }
+        return !/url\((['"]?)\1\)/.test(value.trim());
+      }
     },
     { width, height },
   );
