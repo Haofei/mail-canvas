@@ -417,32 +417,33 @@ const REMOTE_TEMPLATES = [
   ],
 ];
 
-const GENERATED_FIXTURES = [
-  {
-    name: 'mjml-basic',
-    url: 'https://github.com/mjmlio/email-templates/blob/master/templates/basic.mjml',
-    sourcePath: 'corpus/mjml/mjml-basic.html',
-    preserveLocal: true,
-  },
-  {
-    name: 'mjml-alert',
-    url: 'https://github.com/mjmlio/email-templates/blob/master/templates/alert.mjml',
-    sourcePath: 'corpus/mjml/mjml-alert.html',
-    preserveLocal: true,
-  },
-  {
-    name: 'mjml-card',
-    url: 'https://github.com/mjmlio/email-templates/blob/master/templates/card.mjml',
-    sourcePath: 'corpus/mjml/mjml-card.html',
-    preserveLocal: true,
-  },
-  {
-    name: 'mjml-black-friday',
-    url: 'https://github.com/mjmlio/email-templates/blob/master/templates/black-friday.mjml',
-    sourcePath: 'corpus/mjml/mjml-black-friday.html',
-    preserveLocal: true,
-  },
+const OFFICIAL_MJML_FIXTURES = [
+  'alert',
+  'arturia',
+  'austin',
+  'basic',
+  'black-friday',
+  'card',
+  'christmas',
+  'delivery',
+  'happy-new-year',
+  'loyalty-client',
+  'newsletter',
+  'onepage',
+  'proof',
+  'reactivation-email',
+  'real-estate',
+  'referral-email',
+  'tech-geek',
+  'welcome-email',
 ];
+
+const GENERATED_FIXTURES = OFFICIAL_MJML_FIXTURES.map((name) => ({
+  name: `mjml-${name}`,
+  url: `https://github.com/mjmlio/email-templates/blob/master/templates/${name}.mjml`,
+  sourcePath: `corpus/mjml/mjml-${name}.html`,
+  preserveLocal: true,
+}));
 
 const TEMPLATE_METADATA = {
   'sendgrid-dynamic-receipt': {
@@ -565,6 +566,7 @@ export const TEMPLATE_CORPUS = [
   ...(VENDORED_INDEX.get(template.name) ?? {}),
   provider: templateProvider(template.name),
   category: templateCategory(template.name),
+  corpusGroup: templateCorpusGroup(template.name),
   supportTier: 'modern-supported',
   supportReason: '',
   status: 'active',
@@ -631,6 +633,29 @@ function templateProvider(name) {
   if (name.startsWith('konsav-')) return 'konsav';
   if (name.startsWith('davidamunga-')) return 'davidamunga';
   return name.split('-')[0] || 'unknown';
+}
+
+function templateCorpusGroup(name) {
+  const provider = templateProvider(name);
+  if (
+    [
+      'leemunroe',
+      'mailgun',
+      'waypoint',
+      'mailpace',
+      'postmark',
+      'mailersend',
+      'sendgrid',
+      'emailoctopus',
+      'mjml',
+    ].includes(provider)
+  ) {
+    return 'golden';
+  }
+  if (provider === 'cerberus') {
+    return 'legacy-reference';
+  }
+  return 'real-world-dirty';
 }
 
 function templateCategory(name) {

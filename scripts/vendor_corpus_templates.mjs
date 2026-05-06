@@ -176,6 +176,7 @@ export async function mirrorHtml(html, baseUrl, assetDir) {
       const next = await mirrorCssText(styleText, baseUrl, assetDir, cache, {
         declarationsOnly: true,
         relativeMode: 'html',
+        cssUrlQuote: quote === '"' ? "'" : '"',
       });
       return `style=${quote}${next}${quote}`;
     },
@@ -194,7 +195,7 @@ async function mirrorCssText(cssText, sourceUrl, assetDir, cache, options = {}) 
       /@import\s+(?:url\(\s*)?(["']?)([^"'()\s;]+)\1\s*\)?([^;]*);/gi,
       async (match, _quote, importUrl, trailer) => {
         const local = await mirrorUrlAsset(importUrl, sourceUrl, assetDir, cache, { css: true });
-        return local ? `@import url("${local[pathKey]}")${trailer};` : match;
+        return local ? `@import "${local[pathKey]}"${trailer};` : match;
       },
     );
   }
@@ -204,7 +205,8 @@ async function mirrorCssText(cssText, sourceUrl, assetDir, cache, options = {}) 
     /url\(\s*(["']?)(.*?)\1\s*\)/gi,
     async (match, _quote, rawUrl) => {
       const local = await mirrorUrlAsset(rawUrl, sourceUrl, assetDir, cache);
-      return local ? `url("${local[pathKey]}")` : match;
+      const quote = options.cssUrlQuote ?? '"';
+      return local ? `url(${quote}${local[pathKey]}${quote})` : match;
     },
   );
 

@@ -17,6 +17,13 @@ Fields:
 - `baseUrl`: optional base URL for resolving relative remote assets from local fixtures
 - `provider`: source family
 - `category`: coarse email category
+- `corpusGroup`: validation group:
+  - `golden`: clean, vendored templates from stable GitHub/framework sources;
+    this is the primary renderer compatibility corpus.
+  - `real-world-dirty`: editor/community exports kept for diagnostics when their
+    HTML or assets are not clean enough for golden gates.
+  - `legacy-reference`: useful email-client compatibility references that rely
+    on older hacks outside the modern renderer target.
 - `supportTier`: `modern-supported`, `legacy-hacks`, or `invalid-structure`
 - `status`: `active` or `known-warning`
 - `expectedWarnings`: expected renderer warning count for known-warning fixtures
@@ -34,12 +41,34 @@ Refresh vendored local fixtures with:
 node scripts/vendor_corpus_templates.mjs
 ```
 
+Refresh the generated MJML official golden fixtures with:
+
+```sh
+npm run corpus:vendor-mjml
+```
+
+This uses `npx mjml@4.16.1` only while refreshing fixtures. The committed HTML
+and mirrored assets are what CI uses.
+
 Audit local fixtures for corpus issues that can distort visual comparisons:
 
 ```sh
 npm run corpus:audit
 ```
 
+Audit only the primary golden corpus:
+
+```sh
+npm run corpus:audit -- --corpus-group golden
+```
+
 The audit reports invalid inline `style="...url("...")..."` URL quoting and
 empty linked CSS files, both of which should be treated as fixture quality
 problems before using a high visual diff as renderer evidence.
+
+Run visual comparisons for each quality group:
+
+```sh
+npm run compare:playwright-golden
+npm run compare:playwright-dirty
+```

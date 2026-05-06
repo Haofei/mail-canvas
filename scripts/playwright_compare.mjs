@@ -33,6 +33,7 @@ function parseArgs(argv) {
     only: [],
     providers: [],
     categories: [],
+    corpusGroups: [],
     all: false,
     allowRemote: true,
     keep: false,
@@ -71,6 +72,9 @@ function parseArgs(argv) {
         break;
       case '--category':
         args.categories.push(next());
+        break;
+      case '--corpus-group':
+        args.corpusGroups.push(next());
         break;
       case '--all':
         args.all = true;
@@ -191,6 +195,10 @@ function selectTemplates(args, expectations) {
     const categories = new Set(args.categories);
     pool = pool.filter((template) => categories.has(template.category));
   }
+  if (args.corpusGroups.length > 0) {
+    const corpusGroups = new Set(args.corpusGroups);
+    pool = pool.filter((template) => corpusGroups.has(template.corpusGroup));
+  }
 
   const expectedNames = expectations ? Object.keys(expectations.templates ?? {}) : [];
   const wanted =
@@ -308,6 +316,7 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     name: template.name,
     url: template.sourceUrl ?? template.url,
     provider: template.provider,
+    corpusGroup: template.corpusGroup,
     category: template.category,
     supportTier: template.supportTier,
     supportReason: template.supportReason,
@@ -1310,8 +1319,8 @@ function renderMarkdownReport(results, args, expectations) {
     `- Remote image loading in Rust renderer: ${args.allowRemote ? 'enabled' : 'disabled'}`,
     `- Output directory: \`${args.workDir}\``,
     '',
-    '| Template | Browser | Rust | Diff | Media Diff | Media Rect Δ | Text Diff | Text Coverage Δ | Text Rect Δ | Text Pixel Δ | First Bad Region | Non-Media Diff | Non-Media Non-Text Diff | Diff Target | Non-Media Target | Non-Media Non-Text Target | Warnings | Assets | Corpus Issues | Files |',
-    '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|',
+    '| Template | Provider | Group | Browser | Rust | Diff | Media Diff | Media Rect Δ | Text Diff | Text Coverage Δ | Text Rect Δ | Text Pixel Δ | First Bad Region | Non-Media Diff | Non-Media Non-Text Diff | Diff Target | Non-Media Target | Non-Media Non-Text Target | Warnings | Assets | Corpus Issues | Files |',
+    '|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|',
   ];
 
   for (const result of results) {
@@ -1361,7 +1370,7 @@ function renderMarkdownReport(results, args, expectations) {
     const assets = `${result.assetSummary.loaded}/${result.assetSummary.blocked}/${result.assetSummary.failed}`;
     const corpusIssues = formatCorpusIssues(result.corpusIssues);
     lines.push(
-      `| ${result.name} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${percent} | ${mediaPercent} | ${mediaRectPercent} | ${textPercent} | ${textCoveragePercent} | ${textRectPercent} | ${textPixelPercent} | ${firstBadRegion} | ${nonMediaPercent} | ${nonMediaNonTextPercent} | ${targetText} | ${nonMediaTargetText} | ${nonMediaNonTextTargetText} | ${result.warningCount} | ${assets} | ${corpusIssues} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) [diagnostics](${result.diagnosticsJson}) [layout](${result.layoutJson}) |`,
+      `| ${result.name} | ${result.provider} | ${result.corpusGroup} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${percent} | ${mediaPercent} | ${mediaRectPercent} | ${textPercent} | ${textCoveragePercent} | ${textRectPercent} | ${textPixelPercent} | ${firstBadRegion} | ${nonMediaPercent} | ${nonMediaNonTextPercent} | ${targetText} | ${nonMediaTargetText} | ${nonMediaNonTextTargetText} | ${result.warningCount} | ${assets} | ${corpusIssues} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) [diagnostics](${result.diagnosticsJson}) [layout](${result.layoutJson}) |`,
     );
   }
   lines.push('');
@@ -1378,8 +1387,8 @@ function renderSemanticMarkdownReport(results, args, expectations) {
     `- Output directory: \`${args.workDir}\``,
     '- Total pixel diff is reported as an observation only unless `maxTotalDiffPercent` is set.',
     '',
-    '| Template | Provider | Support | Status | Browser | Rust | Height Delta | Total Diff | Text Diff | Text Coverage Δ | Text Rect Δ | Text Pixel Δ | First Bad Region | Media Diff | Media Rect Δ | Non-Media Non-Text Diff | Semantic Limits | Warnings | Assets | Corpus Issues | Files |',
-    '|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---|---:|---|---|---|',
+    '| Template | Provider | Group | Support | Status | Browser | Rust | Height Delta | Total Diff | Text Diff | Text Coverage Δ | Text Rect Δ | Text Pixel Δ | First Bad Region | Media Diff | Media Rect Δ | Non-Media Non-Text Diff | Semantic Limits | Warnings | Assets | Corpus Issues | Files |',
+    '|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---|---:|---|---|---|',
   ];
 
   for (const result of results) {
@@ -1405,7 +1414,7 @@ function renderSemanticMarkdownReport(results, args, expectations) {
     const assets = `${result.assetSummary.loaded}/${result.assetSummary.blocked}/${result.assetSummary.failed}`;
     const corpusIssues = formatCorpusIssues(result.corpusIssues);
     lines.push(
-      `| ${result.name} | ${result.provider} | ${result.supportTier} | ${status} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${heightDeltaPx}px (${formatPercent(heightDeltaPercent)}) | ${formatPercent(result.diffRatio)} | ${textPercent} | ${textCoveragePercent} | ${textRectPercent} | ${textPixelPercent} | ${firstBadRegion} | ${mediaPercent} | ${mediaRectPercent} | ${formatPercent(result.nonMediaNonText.diffRatio)} | ${limits} | ${result.warningCount} | ${assets} | ${corpusIssues} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) [diagnostics](${result.diagnosticsJson}) [layout](${result.layoutJson}) |`,
+      `| ${result.name} | ${result.provider} | ${result.corpusGroup} | ${result.supportTier} | ${status} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${heightDeltaPx}px (${formatPercent(heightDeltaPercent)}) | ${formatPercent(result.diffRatio)} | ${textPercent} | ${textCoveragePercent} | ${textRectPercent} | ${textPixelPercent} | ${firstBadRegion} | ${mediaPercent} | ${mediaRectPercent} | ${formatPercent(result.nonMediaNonText.diffRatio)} | ${limits} | ${result.warningCount} | ${assets} | ${corpusIssues} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) [diagnostics](${result.diagnosticsJson}) [layout](${result.layoutJson}) |`,
     );
   }
   lines.push('');
@@ -1460,6 +1469,7 @@ function buildComparisonSummary(results, failures, expectations) {
     .map((result) => ({
       name: result.name,
       provider: result.provider,
+      corpusGroup: result.corpusGroup,
       supportTier: result.supportTier,
       diffPercent: Number((result.diffRatio * 100).toFixed(2)),
       textPercent: Number((result.text.diffRatio * 100).toFixed(2)),

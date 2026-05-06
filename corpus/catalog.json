@@ -610,15 +610,33 @@
     "sourcePath": "corpus/beefree/beefree-your-voice-matters.html"
   },
   {
+    "name": "mjml-alert",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/alert.mjml",
+    "sourcePath": "corpus/mjml/mjml-alert.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-arturia",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/arturia.mjml",
+    "sourcePath": "corpus/mjml/mjml-arturia.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-austin",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/austin.mjml",
+    "sourcePath": "corpus/mjml/mjml-austin.html",
+    "preserveLocal": true
+  },
+  {
     "name": "mjml-basic",
     "url": "https://github.com/mjmlio/email-templates/blob/master/templates/basic.mjml",
     "sourcePath": "corpus/mjml/mjml-basic.html",
     "preserveLocal": true
   },
   {
-    "name": "mjml-alert",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/alert.mjml",
-    "sourcePath": "corpus/mjml/mjml-alert.html",
+    "name": "mjml-black-friday",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/black-friday.mjml",
+    "sourcePath": "corpus/mjml/mjml-black-friday.html",
     "preserveLocal": true
   },
   {
@@ -628,9 +646,75 @@
     "preserveLocal": true
   },
   {
-    "name": "mjml-black-friday",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/black-friday.mjml",
-    "sourcePath": "corpus/mjml/mjml-black-friday.html",
+    "name": "mjml-christmas",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/christmas.mjml",
+    "sourcePath": "corpus/mjml/mjml-christmas.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-delivery",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/delivery.mjml",
+    "sourcePath": "corpus/mjml/mjml-delivery.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-happy-new-year",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/happy-new-year.mjml",
+    "sourcePath": "corpus/mjml/mjml-happy-new-year.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-loyalty-client",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/loyalty-client.mjml",
+    "sourcePath": "corpus/mjml/mjml-loyalty-client.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-newsletter",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/newsletter.mjml",
+    "sourcePath": "corpus/mjml/mjml-newsletter.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-onepage",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/onepage.mjml",
+    "sourcePath": "corpus/mjml/mjml-onepage.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-proof",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/proof.mjml",
+    "sourcePath": "corpus/mjml/mjml-proof.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-reactivation-email",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/reactivation-email.mjml",
+    "sourcePath": "corpus/mjml/mjml-reactivation-email.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-real-estate",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/real-estate.mjml",
+    "sourcePath": "corpus/mjml/mjml-real-estate.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-referral-email",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/referral-email.mjml",
+    "sourcePath": "corpus/mjml/mjml-referral-email.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-tech-geek",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/tech-geek.mjml",
+    "sourcePath": "corpus/mjml/mjml-tech-geek.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-welcome-email",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/welcome-email.mjml",
+    "sourcePath": "corpus/mjml/mjml-welcome-email.html",
     "preserveLocal": true
   }
 ]

@@ -12,6 +12,7 @@ function parseArgs(argv) {
   const args = {
     json: false,
     providers: [],
+    corpusGroups: [],
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -31,6 +32,9 @@ function parseArgs(argv) {
       case '--provider':
         args.providers.push(next());
         break;
+      case '--corpus-group':
+        args.corpusGroups.push(next());
+        break;
       default:
         throw new Error(`unknown argument: ${arg}`);
     }
@@ -42,10 +46,14 @@ function parseArgs(argv) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const providerFilter = args.providers.length > 0 ? new Set(args.providers) : null;
+  const corpusGroupFilter = args.corpusGroups.length > 0 ? new Set(args.corpusGroups) : null;
   const results = [];
 
   for (const template of TEMPLATE_CORPUS) {
     if (providerFilter && !providerFilter.has(template.provider)) {
+      continue;
+    }
+    if (corpusGroupFilter && !corpusGroupFilter.has(template.corpusGroup)) {
       continue;
     }
     if (!template.sourcePath) {
@@ -61,6 +69,7 @@ async function main() {
     results.push({
       name: template.name,
       provider: template.provider,
+      corpusGroup: template.corpusGroup,
       supportTier: template.supportTier,
       invalidStyleUrlQuotes,
       emptyLinkedStylesheets,
