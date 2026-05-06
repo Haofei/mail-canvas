@@ -53,6 +53,9 @@ impl LayoutPainter<'_> {
 
         match &layout.kind {
             LayoutKind::Text(text) => self.paint_text(layout.rect, &layout.style, text, opacity),
+            LayoutKind::HintedText { text, lines } => {
+                self.paint_hinted_text(layout.rect, &layout.style, text, lines, opacity)
+            }
             LayoutKind::RichText(spans) => {
                 self.paint_rich_text(layout.rect, &layout.style, spans, opacity)
             }
@@ -70,9 +73,35 @@ impl LayoutPainter<'_> {
 
     fn paint_text(&mut self, rect: Rect, style: &Style, text: &str, opacity: f32) {
         self.paint_text_buffer(rect, style, opacity, 0.0, |buffer, font_system| {
+            buffer.set_wrap(font_system, style.wrap.to_cosmic());
             buffer.set_text(
                 font_system,
                 text,
+                &style.text_attrs(),
+                Shaping::Advanced,
+                Some(style.text_align.to_cosmic()),
+            );
+        });
+    }
+
+    fn paint_hinted_text(
+        &mut self,
+        rect: Rect,
+        style: &Style,
+        text: &str,
+        lines: &[String],
+        opacity: f32,
+    ) {
+        let joined = if lines.is_empty() {
+            text.to_string()
+        } else {
+            lines.join("\n")
+        };
+        self.paint_text_buffer(rect, style, opacity, 0.0, |buffer, font_system| {
+            buffer.set_wrap(font_system, Wrap::None);
+            buffer.set_text(
+                font_system,
+                &joined,
                 &style.text_attrs(),
                 Shaping::Advanced,
                 Some(style.text_align.to_cosmic()),
@@ -89,6 +118,7 @@ impl LayoutPainter<'_> {
             opacity,
             baseline_offset,
             |buffer, font_system| {
+                buffer.set_wrap(font_system, style.wrap.to_cosmic());
                 let rich_spans = rich_text_style_spans(spans, font_system.db(), scale, style);
                 buffer.set_rich_text(
                     font_system,
@@ -115,7 +145,6 @@ impl LayoutPainter<'_> {
             (line_height * self.scale).max(1.0),
         );
         let mut buffer = Buffer::new_empty(metrics);
-        buffer.set_wrap(self.font_system, style.wrap.to_cosmic());
         let effective_width = (rect.width
             * wrap_width_adjustment(style.font_family.as_deref())
             * self.scale)

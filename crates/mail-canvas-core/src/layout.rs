@@ -29,6 +29,8 @@ pub(crate) struct LayoutEngine<'a, R: ResourceProvider> {
     available_font_families: Vec<String>,
     web_font_faces: Vec<WebFontFace>,
     warnings: Vec<RenderWarning>,
+    text_hints: &'a [TextLayoutHint],
+    text_hint_cursor: usize,
 }
 
 impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
@@ -38,6 +40,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         available_font_families: Vec<String>,
         web_font_faces: Vec<WebFontFace>,
         limits: RenderLimits,
+        text_hints: &'a [TextLayoutHint],
     ) -> Self {
         Self {
             font_system,
@@ -46,7 +49,17 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             available_font_families,
             web_font_faces,
             warnings: Vec::new(),
+            text_hints,
+            text_hint_cursor: 0,
         }
+    }
+
+    fn next_text_hint(&mut self) -> Option<&TextLayoutHint> {
+        let index = self.text_hint_cursor;
+        self.text_hint_cursor += 1;
+        self.text_hints
+            .iter()
+            .find(|hint| hint.index == index)
     }
 
     fn style_for_node(&self, node: &NodeRef, parent: &Style) -> Style {
@@ -425,18 +438,33 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
 
         let plain_text = spans_text(&normalized);
         let matches_parent_style = text_spans_match_style(&normalized, style);
+        let text_hint = self.next_text_hint().cloned();
         let height = if matches_parent_style {
-            self.measure_text_height(&plain_text, width, style)?
+            if let Some(hint) = text_hint.as_ref().filter(|hint| hint.text == plain_text) {
+                hint.measured_height.max(resolved_line_height_from_db(self.font_system.db(), style))
+            } else {
+                self.measure_text_height(&plain_text, width, style)?
+            }
         } else {
             self.measure_rich_text_height(&normalized, width, style)?
         };
         let kind = if matches_parent_style {
-            LayoutKind::Text(plain_text)
+            if let Some(hint) = text_hint.filter(|hint| {
+                hint.text == plain_text && !hint.lines.is_empty()
+            }) {
+                LayoutKind::HintedText {
+                    text: plain_text,
+                    lines: hint.lines,
+                }
+            } else {
+                LayoutKind::Text(plain_text)
+            }
         } else {
             LayoutKind::RichText(normalized)
         };
         let debug = match &kind {
             LayoutKind::Text(text) => LayoutDebugMeta::for_text(text),
+            LayoutKind::HintedText { text, .. } => LayoutDebugMeta::for_text(text),
             LayoutKind::RichText(spans) => LayoutDebugMeta::for_text(&spans_text(spans)),
             _ => LayoutDebugMeta::default(),
         };
@@ -1811,6 +1839,7 @@ pub(crate) enum LayoutKind {
     Row,
     Cell,
     Text(String),
+    HintedText { text: String, lines: Vec<String> },
     RichText(Vec<TextSpan>),
     Image(Option<ImageData>),
 }

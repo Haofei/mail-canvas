@@ -21,8 +21,12 @@ self.addEventListener("message", async (event) => {
         throw new Error("worker not initialized");
       }
       renderer.clear_assets();
+      renderer.clear_text_hints();
       for (const asset of message.assets ?? []) {
         renderer.register_asset(asset.url, new Uint8Array(asset.bytes));
+      }
+      if (message.textHints) {
+        renderer.set_text_hints_json(JSON.stringify(message.textHints));
       }
       const png = renderer.render_png_with_base_url(
         message.html,
@@ -32,12 +36,16 @@ self.addEventListener("message", async (event) => {
         message.baseUrl
       );
       const diagnostics = JSON.parse(renderer.diagnostics_json());
+      const layout = JSON.parse(renderer.layout_json());
+      const textLayout = JSON.parse(renderer.text_layout_json());
       self.postMessage(
         {
           requestId,
           ok: true,
           png: png.buffer,
           diagnostics,
+          layout,
+          textLayout,
         },
         [png.buffer]
       );

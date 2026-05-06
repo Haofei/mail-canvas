@@ -164,6 +164,7 @@ fn main() -> Result<()> {
         max_dom_nodes: args.max_dom_nodes,
         max_layout_depth: args.max_layout_depth,
         max_table_cells: args.max_table_cells,
+        text_hints: Vec::new(),
     };
 
     let mut renderer = MailCanvasRenderer::with_fonts(

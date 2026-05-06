@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 pub(crate) const MAX_CONSOLE_MESSAGES: usize = 50;
@@ -56,6 +56,7 @@ pub struct RenderRequest {
     pub max_dom_nodes: usize,
     pub max_layout_depth: usize,
     pub max_table_cells: usize,
+    pub text_hints: Vec<TextLayoutHint>,
 }
 
 impl RenderRequest {
@@ -73,6 +74,7 @@ impl RenderRequest {
             max_dom_nodes: DEFAULT_MAX_DOM_NODES,
             max_layout_depth: DEFAULT_MAX_LAYOUT_DEPTH,
             max_table_cells: DEFAULT_MAX_TABLE_CELLS,
+            text_hints: Vec::new(),
         }
     }
 
@@ -101,6 +103,7 @@ pub struct RenderedImage {
     pub assets: Vec<AssetReport>,
     pub layout: LayoutNodeSnapshot,
     pub text_rects: Vec<TextRectSnapshot>,
+    pub text_layouts: Vec<TextLayoutSnapshot>,
     pub image_diagnostics: Vec<ImageLayoutDiagnostic>,
 }
 
@@ -117,6 +120,7 @@ pub struct RenderedPdf {
     pub assets: Vec<AssetReport>,
     pub layout: LayoutNodeSnapshot,
     pub text_rects: Vec<TextRectSnapshot>,
+    pub text_layouts: Vec<TextLayoutSnapshot>,
     pub image_diagnostics: Vec<ImageLayoutDiagnostic>,
 }
 
@@ -194,6 +198,36 @@ pub struct TextRectSnapshot {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub text: String,
     pub rect: RectSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TextStyleSnapshot {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_family: Option<String>,
+    pub font_size: f32,
+    pub line_height: f32,
+    pub font_weight: u16,
+    pub font_style: String,
+    pub letter_spacing: f32,
+    pub text_align: String,
+    pub wrap: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TextLayoutSnapshot {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub text: String,
+    pub rect: RectSnapshot,
+    pub style: TextStyleSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextLayoutHint {
+    pub index: usize,
+    pub text: String,
+    #[serde(default)]
+    pub lines: Vec<String>,
+    pub measured_height: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]

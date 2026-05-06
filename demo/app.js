@@ -206,6 +206,13 @@ function callWorker(message, transfer = []) {
   });
 }
 
+function cloneAssetsForWorker(assets) {
+  return assets.map((asset) => ({
+    url: asset.url,
+    bytes: new Uint8Array(asset.bytes),
+  }));
+}
+
 function ensureMeasurementFrame() {
   if (measurementFrame) {
     return measurementFrame;
@@ -227,28 +234,6 @@ function normalizeText(text) {
   return (text || "").replace(/\s+/g, " ").trim();
 }
 
-function assignPretextIds(sourceDocument) {
-  let nextId = 1;
-  let candidateCount = 0;
-  for (const element of sourceDocument.body.querySelectorAll("*")) {
-    if (!PRETEXT_TARGET_TAGS.has(element.tagName)) {
-      continue;
-    }
-    if (element.children.length > 0) {
-      continue;
-    }
-    if (!normalizeText(element.textContent)) {
-      continue;
-    }
-    if (element.querySelector("img,table,svg,ul,ol,li")) {
-      continue;
-    }
-    element.setAttribute("data-pretext-id", String(nextId++));
-    candidateCount += 1;
-  }
-  return candidateCount;
-}
-
 function serializeDocumentWithBase(sourceDocument, baseUrl) {
   if (!sourceDocument.head) {
     const head = sourceDocument.createElement("head");
@@ -263,30 +248,39 @@ function serializeDocumentWithBase(sourceDocument, baseUrl) {
   return `<!doctype html>\n${sourceDocument.documentElement.outerHTML}`;
 }
 
-function parsePx(rawValue, fallback) {
-  if (!rawValue || rawValue === "normal") {
-    return fallback;
+function collectPretextCandidates(rootDocument) {
+  const candidates = [];
+  for (const element of rootDocument.body.querySelectorAll("*")) {
+    if (!PRETEXT_TARGET_TAGS.has(element.tagName)) {
+      continue;
+    }
+    if (element.children.length > 0) {
+      continue;
+    }
+    if (!normalizeText(element.textContent)) {
+      continue;
+    }
+    if (element.querySelector("img,table,svg,ul,ol,li")) {
+      continue;
+    }
+    candidates.push(element);
   }
-  const value = Number.parseFloat(rawValue);
-  return Number.isFinite(value) ? value : fallback;
+  return candidates;
 }
 
-function pretextOptions(computedStyle) {
-  const letterSpacing = computedStyle.letterSpacing === "normal"
-    ? 0
-    : Number.parseFloat(computedStyle.letterSpacing);
+function pretextOptionsFromRust(style) {
   return {
-    whiteSpace: computedStyle.whiteSpace.includes("pre") ? "pre-wrap" : "normal",
-    wordBreak: computedStyle.wordBreak === "keep-all" ? "keep-all" : "normal",
-    letterSpacing: Number.isFinite(letterSpacing) ? letterSpacing : 0,
+    whiteSpace: style.wrap === "none" ? "pre" : "normal",
+    wordBreak: "normal",
+    letterSpacing: Number.isFinite(style.letter_spacing) ? style.letter_spacing : 0,
   };
 }
 
-function canvasFontShorthand(computedStyle) {
-  const fontStyle = computedStyle.fontStyle || "normal";
-  const fontWeight = computedStyle.fontWeight || "400";
-  const fontSize = computedStyle.fontSize || "16px";
-  const fontFamily = computedStyle.fontFamily || "sans-serif";
+function canvasFontShorthandFromRust(style, fallbackFamily) {
+  const fontStyle = style.font_style || "normal";
+  const fontWeight = style.font_weight || 400;
+  const fontSize = `${style.font_size || 16}px`;
+  const fontFamily = style.font_family || fallbackFamily || "sans-serif";
   return `${fontStyle} ${fontWeight} ${fontSize} ${fontFamily}`;
 }
 
@@ -316,81 +310,129 @@ async function loadMeasurementDocument(html, baseUrl, width) {
   return frameWindow.document;
 }
 
-function escapeHtml(text) {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+function matchRustTextLayouts(candidates, textLayouts) {
+  const matchedLayouts = [];
+  let searchStart = 0;
+  for (const candidate of candidates) {
+    const text = normalizeText(candidate.textContent);
+    let matchIndex = -1;
+    for (let index = searchStart; index < textLayouts.length; index += 1) {
+      if (normalizeText(textLayouts[index].text) === text) {
+        matchIndex = index;
+        break;
+      }
+    }
+    matchedLayouts.push(matchIndex >= 0 ? textLayouts[matchIndex] : null);
+    if (matchIndex >= 0) {
+      searchStart = matchIndex + 1;
+    }
+  }
+  return matchedLayouts;
 }
 
-async function applyPretextHints(html, baseUrl, width) {
+function isAllCapsText(text) {
+  const letters = text.replace(/[^A-Za-z]+/g, "");
+  return letters.length > 0 && letters === letters.toUpperCase();
+}
+
+function shouldApplyPretextHint(element, text, rectWidth) {
+  if (rectWidth < 220) {
+    return false;
+  }
+  if (element.tagName === "A") {
+    return false;
+  }
+  if (text.length < 40 && !/^H[1-6]$/.test(element.tagName)) {
+    return false;
+  }
+  if (isAllCapsText(text)) {
+    return false;
+  }
+  return true;
+}
+
+async function applyPretextHints(html, baseUrl, width, textLayouts) {
   const sourceDocument = new DOMParser().parseFromString(html, "text/html");
-  const candidateCount = assignPretextIds(sourceDocument);
+  const sourceCandidates = collectPretextCandidates(sourceDocument);
+  const candidateCount = sourceCandidates.length;
   if (candidateCount === 0) {
     return {
-      html,
-      report: { enabled: true, candidates: 0, applied: 0, changed: [] },
+      textHints: [],
+      report: { enabled: true, candidates: 0, matched: 0, applied: 0, changed: [] },
     };
   }
 
   clearCache();
   const preparedHtml = serializeDocumentWithBase(sourceDocument, baseUrl);
   const measurementDocument = await loadMeasurementDocument(preparedHtml, baseUrl, width);
+  const measuredCandidates = collectPretextCandidates(measurementDocument);
+  const matchedLayouts = matchRustTextLayouts(sourceCandidates, textLayouts);
   const changed = [];
+  const textHints = [];
+  let matched = 0;
 
-  for (const measuredElement of measurementDocument.querySelectorAll("[data-pretext-id]")) {
-    const text = normalizeText(measuredElement.textContent);
+  for (let index = 0; index < sourceCandidates.length; index += 1) {
+    const sourceElement = sourceCandidates[index];
+    const measuredElement = measuredCandidates[index];
+    const rustLayout = matchedLayouts[index];
+    if (!measuredElement || !rustLayout) {
+      continue;
+    }
+
+    const text = normalizeText(sourceElement.textContent);
     if (!text) {
       continue;
     }
 
-    const rect = measuredElement.getBoundingClientRect();
-    if (rect.width < 20 || rect.height <= 0) {
+    const rectWidth = Number(rustLayout.rect?.width || 0);
+    if (rectWidth < 20) {
       continue;
     }
+    if (!shouldApplyPretextHint(sourceElement, text, rectWidth)) {
+      continue;
+    }
+    matched += 1;
 
     const computedStyle = measurementDocument.defaultView.getComputedStyle(measuredElement);
-    const fontSize = parsePx(computedStyle.fontSize, 16);
-    const lineHeight = parsePx(computedStyle.lineHeight, fontSize * 1.2);
+    const lineHeight = Number(rustLayout.style?.line_height || 0) || Number.parseFloat(computedStyle.lineHeight) || 16 * 1.2;
     const prepared = prepareWithSegments(
       text,
-      canvasFontShorthand(computedStyle),
-      pretextOptions(computedStyle),
+      canvasFontShorthandFromRust(rustLayout.style, computedStyle.fontFamily),
+      pretextOptionsFromRust(rustLayout.style || {}),
     );
-    const result = layoutWithLines(prepared, rect.width, lineHeight);
+    const result = layoutWithLines(prepared, rectWidth, lineHeight);
     if (result.lineCount <= 1) {
       continue;
     }
 
-    const target = sourceDocument.querySelector(
-      `[data-pretext-id="${measuredElement.getAttribute("data-pretext-id")}"]`,
-    );
-    if (!target) {
+    const rustIndex = textLayouts.indexOf(rustLayout);
+    if (rustIndex < 0) {
       continue;
     }
-
-    const lineMarkup = result.lines.map((line) => escapeHtml(line.text)).join("<br>");
-    target.innerHTML = lineMarkup;
+    textHints.push({
+      index: rustIndex,
+      text,
+      lines: result.lines.map((line) => line.text),
+      measured_height: Math.round(result.height * 1000) / 1000,
+    });
     changed.push({
-      tag: target.tagName.toLowerCase(),
+      tag: sourceElement.tagName.toLowerCase(),
       text: text.slice(0, 80),
       lines: result.lineCount,
-      width: Math.round(rect.width * 100) / 100,
+      index: rustIndex,
+      width: Math.round(rectWidth * 100) / 100,
       height: Math.round(result.height * 100) / 100,
-      domHeight: Math.round(rect.height * 100) / 100,
+      rustHeight: Math.round((Number(rustLayout.rect?.height || 0)) * 100) / 100,
     });
   }
 
-  for (const node of sourceDocument.querySelectorAll("[data-pretext-id]")) {
-    node.removeAttribute("data-pretext-id");
-  }
-
   return {
-    html: `<!doctype html>\n${sourceDocument.documentElement.outerHTML}`,
+    textHints,
     report: {
       enabled: true,
       candidates: candidateCount,
-      applied: changed.length,
+      matched,
+      applied: textHints.length,
       changed: changed.slice(0, 20),
     },
   };
@@ -430,18 +472,37 @@ async function renderCurrentTemplate() {
   setStatus("Preparing HTML...");
 
   try {
-    let html = rawHtml;
+    const html = rawHtml;
     let pretextReport = { enabled: false };
+    let textHints = [];
+    setStatus("Fetching linked assets...");
+    const assets = await fetchAssetGraph(rawHtml, baseUrl);
 
     if (usePretextInput.checked) {
+      const firstPassAssets = cloneAssetsForWorker(assets);
+      setStatus("Running first-pass Rust layout...");
+      const firstPass = await callWorker(
+        {
+          type: "render",
+          html: rawHtml,
+          width,
+          viewportHeight,
+          scale,
+          baseUrl,
+          assets: firstPassAssets.map((asset) => ({ url: asset.url, bytes: asset.bytes.buffer })),
+        },
+        firstPassAssets.map((asset) => asset.bytes.buffer),
+      );
       setStatus("Measuring text with Pretext...");
-      const prepared = await applyPretextHints(rawHtml, baseUrl, width);
-      html = prepared.html;
-      pretextReport = prepared.report;
+      const prepared = await applyPretextHints(rawHtml, baseUrl, width, firstPass.textLayout || []);
+      textHints = prepared.textHints || [];
+      pretextReport = {
+        ...prepared.report,
+        firstPassTextLayouts: Array.isArray(firstPass.textLayout) ? firstPass.textLayout.length : 0,
+      };
     }
 
-    setStatus("Fetching linked assets...");
-    const assets = await fetchAssetGraph(html, baseUrl);
+    const renderAssets = cloneAssetsForWorker(assets);
     setStatus(`Rendering with ${assets.length} injected assets...`);
     const response = await callWorker(
       {
@@ -451,9 +512,10 @@ async function renderCurrentTemplate() {
         viewportHeight,
         scale,
         baseUrl,
-        assets: assets.map((asset) => ({ url: asset.url, bytes: asset.bytes.buffer })),
+        assets: renderAssets.map((asset) => ({ url: asset.url, bytes: asset.bytes.buffer })),
+        textHints,
       },
-      assets.map((asset) => asset.bytes.buffer),
+      renderAssets.map((asset) => asset.bytes.buffer),
     );
 
     if (currentObjectUrl) {

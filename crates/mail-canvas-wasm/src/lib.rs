@@ -11,7 +11,7 @@ use js_sys::Uint8Array;
 use mail_canvas_core::{
     AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, RenderOutputBackend,
     RenderRequest, RenderWarning, RenderedImage, RendererCore, ResourcePolicy, ResourceProvider,
-    ResourceProviderFactory,
+    ResourceProviderFactory, TextLayoutHint,
 };
 use serde::Serialize;
 use tiny_skia::Pixmap;
@@ -29,6 +29,9 @@ pub struct WasmRenderer {
     output: WasmOutputBackend,
     assets: AssetRegistry,
     last_diagnostics_json: String,
+    last_layout_json: String,
+    last_text_layout_json: String,
+    text_hints: Vec<TextLayoutHint>,
 }
 
 #[wasm_bindgen]
@@ -70,6 +73,9 @@ impl WasmRenderer {
             output: WasmOutputBackend::default(),
             assets: AssetRegistry::default(),
             last_diagnostics_json: diagnostics_json(&DiagnosticsSnapshot::default()),
+            last_layout_json: "null".to_string(),
+            last_text_layout_json: "[]".to_string(),
+            text_hints: Vec::new(),
         })
     }
 
@@ -90,6 +96,16 @@ impl WasmRenderer {
 
     pub fn clear_assets(&mut self) {
         self.assets.clear();
+    }
+
+    pub fn clear_text_hints(&mut self) {
+        self.text_hints.clear();
+    }
+
+    pub fn set_text_hints_json(&mut self, value: &str) -> Result<(), JsValue> {
+        self.text_hints =
+            serde_json::from_str(value).map_err(|error| JsValue::from_str(&error.to_string()))?;
+        Ok(())
     }
 
     pub fn asset_count(&self) -> u32 {
@@ -166,10 +182,20 @@ impl WasmRenderer {
     pub fn diagnostics_json(&self) -> String {
         self.last_diagnostics_json.clone()
     }
+
+    pub fn layout_json(&self) -> String {
+        self.last_layout_json.clone()
+    }
+
+    pub fn text_layout_json(&self) -> String {
+        self.last_text_layout_json.clone()
+    }
 }
 
 impl WasmRenderer {
     fn render_with_request(&mut self, request: RenderRequest) -> Result<RenderedImage> {
+        let mut request = request;
+        request.text_hints = self.text_hints.clone();
         let rendered = self.inner.render_png_with(
             request,
             &WasmResourceProviderFactory {
@@ -182,6 +208,10 @@ impl WasmRenderer {
             assets: rendered.assets.clone(),
             console_messages: rendered.console_messages.clone(),
         });
+        self.last_layout_json =
+            serde_json::to_string(&rendered.layout).unwrap_or_else(|_| "null".to_string());
+        self.last_text_layout_json =
+            serde_json::to_string(&rendered.text_layouts).unwrap_or_else(|_| "[]".to_string());
         Ok(rendered)
     }
 }

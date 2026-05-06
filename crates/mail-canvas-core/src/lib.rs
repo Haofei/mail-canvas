@@ -37,7 +37,8 @@ pub use api::{
     AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, EmailRenderer,
     ImageDiagnosticKind, ImageLayoutDiagnostic, IntrinsicSizeSnapshot, LayoutNodeSnapshot,
     LayoutStyleSnapshot, RectSnapshot, RenderDiagnosticsReport, RenderRequest, RenderWarning,
-    RenderWarningCode, RenderedImage, RenderedPdf, ResourcePolicy, TextRectSnapshot,
+    RenderWarningCode, RenderedImage, RenderedPdf, ResourcePolicy, TextLayoutHint,
+    TextLayoutSnapshot, TextRectSnapshot, TextStyleSnapshot,
 };
 use api::{DEFAULT_MAX_DECODED_PIXELS, RenderDiagnostics};
 use css::{
@@ -124,6 +125,7 @@ impl RendererCore {
             available_font_families,
             web_font_faces,
             limits,
+            &request.text_hints,
         );
         let mut layout = engine.layout_document(&document, request.width)?;
         for warning in std::mem::take(&mut engine.warnings) {
@@ -133,6 +135,7 @@ impl RendererCore {
         let assets = resources.take_asset_reports();
         let layout_snapshot = layout_snapshot(&layout);
         let text_rects = collect_text_rects(&layout);
+        let text_layouts = collect_text_layouts(&layout);
         let image_diagnostics = collect_image_diagnostics(&layout);
 
         let css_height = clamp_css_height(
@@ -178,6 +181,7 @@ impl RendererCore {
             assets,
             layout: layout_snapshot,
             text_rects,
+            text_layouts,
             image_diagnostics,
         })
     }
@@ -202,6 +206,7 @@ impl RendererCore {
             assets: rendered.assets,
             layout: rendered.layout,
             text_rects: rendered.text_rects,
+            text_layouts: rendered.text_layouts,
             image_diagnostics: rendered.image_diagnostics,
         })
     }
@@ -349,9 +354,19 @@ fn collect_text_rects(layout: &LayoutBox) -> Vec<TextRectSnapshot> {
     rects
 }
 
+fn collect_text_layouts(layout: &LayoutBox) -> Vec<TextLayoutSnapshot> {
+    let mut items = Vec::new();
+    collect_text_layouts_into(layout, &mut items);
+    items
+}
+
 fn collect_text_rects_into(layout: &LayoutBox, out: &mut Vec<TextRectSnapshot>) {
     match &layout.kind {
         LayoutKind::Text(text) => out.push(TextRectSnapshot {
+            text: normalize_preview_text(text),
+            rect: rect_snapshot(layout.rect),
+        }),
+        LayoutKind::HintedText { text, .. } => out.push(TextRectSnapshot {
             text: normalize_preview_text(text),
             rect: rect_snapshot(layout.rect),
         }),
@@ -363,6 +378,30 @@ fn collect_text_rects_into(layout: &LayoutBox, out: &mut Vec<TextRectSnapshot>) 
     }
     for child in &layout.children {
         collect_text_rects_into(child, out);
+    }
+}
+
+fn collect_text_layouts_into(layout: &LayoutBox, out: &mut Vec<TextLayoutSnapshot>) {
+    match &layout.kind {
+        LayoutKind::Text(text) => out.push(TextLayoutSnapshot {
+            text: normalize_preview_text(text),
+            rect: rect_snapshot(layout.rect),
+            style: text_style_snapshot(&layout.style),
+        }),
+        LayoutKind::HintedText { text, .. } => out.push(TextLayoutSnapshot {
+            text: normalize_preview_text(text),
+            rect: rect_snapshot(layout.rect),
+            style: text_style_snapshot(&layout.style),
+        }),
+        LayoutKind::RichText(spans) => out.push(TextLayoutSnapshot {
+            text: normalize_preview_text(&spans_text(spans)),
+            rect: rect_snapshot(layout.rect),
+            style: text_style_snapshot(&layout.style),
+        }),
+        _ => {}
+    }
+    for child in &layout.children {
+        collect_text_layouts_into(child, out);
     }
 }
 
@@ -460,6 +499,19 @@ fn layout_style_snapshot(style: &Style) -> LayoutStyleSnapshot {
     }
 }
 
+fn text_style_snapshot(style: &Style) -> TextStyleSnapshot {
+    TextStyleSnapshot {
+        font_family: style.font_family.clone(),
+        font_size: round_snapshot(style.font_size),
+        line_height: round_snapshot(style.line_height),
+        font_weight: style.font_face_weight.unwrap_or(style.font_weight).0,
+        font_style: font_style_name(style.font_style),
+        letter_spacing: round_snapshot(style.letter_spacing),
+        text_align: text_align_name(style.text_align),
+        wrap: text_wrap_name(style.wrap),
+    }
+}
+
 fn display_name(display: Display) -> String {
     match display {
         Display::None => "none",
@@ -480,6 +532,15 @@ fn text_align_name(text_align: TextAlign) -> String {
         TextAlign::Left => "left",
         TextAlign::Center => "center",
         TextAlign::Right => "right",
+    }
+    .to_string()
+}
+
+fn font_style_name(font_style: FontStyle) -> String {
+    match font_style {
+        FontStyle::Normal => "normal",
+        FontStyle::Italic => "italic",
+        FontStyle::Oblique => "oblique",
     }
     .to_string()
 }
@@ -536,6 +597,15 @@ fn background_position_name(position: BackgroundPosition) -> String {
         position_axis_name(position.x),
         position_axis_name(position.y)
     )
+}
+
+fn text_wrap_name(wrap: TextWrap) -> String {
+    match wrap {
+        TextWrap::None => "none",
+        TextWrap::Glyph => "glyph",
+        TextWrap::WordOrGlyph => "word_or_glyph",
+    }
+    .to_string()
 }
 
 fn position_axis_name(axis: PositionAxis) -> String {
@@ -638,7 +708,10 @@ fn inline_flow_line_advance(
 }
 
 fn layout_contains_line_box(layout: &LayoutBox) -> bool {
-    matches!(layout.kind, LayoutKind::Text(_) | LayoutKind::RichText(_))
+    matches!(
+        layout.kind,
+        LayoutKind::Text(_) | LayoutKind::HintedText { .. } | LayoutKind::RichText(_)
+    )
         || layout.children.iter().any(layout_contains_line_box)
 }
 
@@ -2229,6 +2302,7 @@ fn resource_policy_for_test() -> TestResourceProvider {
         max_dom_nodes: crate::api::DEFAULT_MAX_DOM_NODES,
         max_layout_depth: crate::api::DEFAULT_MAX_LAYOUT_DEPTH,
         max_table_cells: crate::api::DEFAULT_MAX_TABLE_CELLS,
+        text_hints: Vec::new(),
     })
 }
 
@@ -2243,6 +2317,7 @@ fn layout_for_test(html: &str, width: u32) -> LayoutBox {
         Vec::new(),
         Vec::new(),
         RenderLimits::default(),
+        &[],
     );
     engine.layout_document(&document, width).unwrap()
 }
@@ -3110,6 +3185,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             RenderLimits::default(),
+            &[],
         );
         let layout = engine.layout_document(&document, 200).unwrap();
         let text = find_text_layout(&layout).expect("text");
