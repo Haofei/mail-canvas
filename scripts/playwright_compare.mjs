@@ -290,7 +290,7 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     throw new Error(`renderer failed for ${template.name}; see ${logPath}`);
   }
   const rustLayout = JSON.parse(await readFile(layoutPath, 'utf8'));
-  const rustRects = collectRustRectsFromLayout(rustLayout.tree);
+  const rustRects = collectRustRectsFromLayout(rustLayout);
 
   const comparison = await comparePng(
     browserPath,
@@ -561,17 +561,23 @@ async function collectComparisonRects(page, width, height) {
   );
 }
 
-function collectRustRectsFromLayout(node) {
+function collectRustRectsFromLayout(layout) {
   const mediaRects = [];
-  const textRects = [];
-  visit(node);
+  const textRects = (layout.text_rects ?? []).map((current) => rectToMaskRect(current.rect));
+  visit(layout.tree);
   return { mediaRects, textRects };
 
   function visit(current) {
     if (!current || !current.rect) {
       return;
     }
-    if (current.tag === '#text' && current.text && current.rect.width > 0 && current.rect.height > 0) {
+    if (
+      textRects.length === 0 &&
+      current.tag === '#text' &&
+      current.text &&
+      current.rect.width > 0 &&
+      current.rect.height > 0
+    ) {
       textRects.push(rectToMaskRect(current.rect));
     }
     if (current.tag === 'img' || current.style?.background_image) {

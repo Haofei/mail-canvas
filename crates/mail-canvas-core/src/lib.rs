@@ -134,7 +134,7 @@ impl RendererCore {
         drop(engine);
         let assets = resources.take_asset_reports();
         let layout_snapshot = layout_snapshot(&layout);
-        let text_rects = collect_text_rects(&layout);
+        let text_rects = collect_text_rects(&layout, &mut self.font_system, request.scale);
         let image_diagnostics = collect_image_diagnostics(&layout);
 
         let css_height = clamp_css_height(
@@ -345,26 +345,154 @@ fn layout_snapshot(layout: &LayoutBox) -> LayoutNodeSnapshot {
     }
 }
 
-fn collect_text_rects(layout: &LayoutBox) -> Vec<TextRectSnapshot> {
+fn collect_text_rects(
+    layout: &LayoutBox,
+    font_system: &mut FontSystem,
+    scale: f32,
+) -> Vec<TextRectSnapshot> {
     let mut rects = Vec::new();
-    collect_text_rects_into(layout, &mut rects);
+    collect_text_rects_into(layout, font_system, scale, &mut rects);
     rects
 }
 
-fn collect_text_rects_into(layout: &LayoutBox, out: &mut Vec<TextRectSnapshot>) {
+fn collect_text_rects_into(
+    layout: &LayoutBox,
+    font_system: &mut FontSystem,
+    scale: f32,
+    out: &mut Vec<TextRectSnapshot>,
+) {
     match &layout.kind {
-        LayoutKind::Text(text) => out.push(TextRectSnapshot {
-            text: normalize_preview_text(text),
-            rect: rect_snapshot(layout.rect),
-        }),
-        LayoutKind::RichText(spans) => out.push(TextRectSnapshot {
-            text: normalize_preview_text(&spans_text(spans)),
-            rect: rect_snapshot(layout.rect),
-        }),
+        LayoutKind::Text(text) => collect_text_line_rects(
+            TextLineRectContext {
+                rect: layout.rect,
+                style: &layout.style,
+                text,
+                scale,
+                origin_y_extra: 0.0,
+            },
+            font_system,
+            out,
+            |buffer, font_system| {
+                buffer.set_text(
+                    font_system,
+                    text,
+                    &layout.style.text_attrs(),
+                    Shaping::Advanced,
+                    Some(layout.style.text_align.to_cosmic()),
+                );
+            },
+        ),
+        LayoutKind::RichText(spans) => {
+            let baseline_offset = rich_text_baseline_leading_offset(spans, &layout.style);
+            let text = spans_text(spans);
+            collect_text_line_rects(
+                TextLineRectContext {
+                    rect: layout.rect,
+                    style: &layout.style,
+                    text: &text,
+                    scale,
+                    origin_y_extra: baseline_offset,
+                },
+                font_system,
+                out,
+                |buffer, font_system| {
+                    let rich_spans =
+                        rich_text_style_spans(spans, font_system.db(), scale, &layout.style);
+                    buffer.set_rich_text(
+                        font_system,
+                        rich_spans,
+                        &layout.style.text_attrs(),
+                        Shaping::Advanced,
+                        Some(layout.style.text_align.to_cosmic()),
+                    );
+                },
+            );
+        }
         _ => {}
     }
     for child in &layout.children {
-        collect_text_rects_into(child, out);
+        collect_text_rects_into(child, font_system, scale, out);
+    }
+}
+
+struct TextLineRectContext<'a> {
+    rect: Rect,
+    scale: f32,
+    origin_y_extra: f32,
+    style: &'a Style,
+    text: &'a str,
+}
+
+fn collect_text_line_rects(
+    context: TextLineRectContext<'_>,
+    font_system: &mut FontSystem,
+    out: &mut Vec<TextRectSnapshot>,
+    set_text: impl FnOnce(&mut Buffer, &mut FontSystem),
+) {
+    let TextLineRectContext {
+        rect,
+        scale,
+        origin_y_extra,
+        style,
+        text,
+    } = context;
+    let line_height = resolved_line_height_from_db(font_system.db(), style);
+    let metrics = Metrics::new(
+        (style.font_size * scale).max(1.0),
+        (line_height * scale).max(1.0),
+    );
+    let mut buffer = Buffer::new_empty(metrics);
+    buffer.set_wrap(font_system, style.wrap.to_cosmic());
+    let effective_width =
+        (rect.width * wrap_width_adjustment(style.font_family.as_deref()) * scale).max(1.0);
+    buffer.set_size(
+        font_system,
+        Some(effective_width),
+        Some((rect.height * scale).max(1.0)),
+    );
+    set_text(&mut buffer, font_system);
+
+    for run in buffer.layout_runs() {
+        if run.glyphs.is_empty() {
+            continue;
+        }
+        let x0 = run
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.x)
+            .fold(f32::INFINITY, f32::min);
+        let x1 = run
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.x + glyph.w)
+            .fold(f32::NEG_INFINITY, f32::max);
+        if !x0.is_finite() || !x1.is_finite() || x1 <= x0 {
+            continue;
+        }
+        let start = run
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.start)
+            .min()
+            .unwrap_or(0)
+            .min(run.text.len());
+        let end = run
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.end)
+            .max()
+            .unwrap_or(run.text.len())
+            .min(run.text.len());
+        let line_text = run.text.get(start..end).unwrap_or(text);
+        out.push(TextRectSnapshot {
+            text: normalize_preview_text(line_text),
+            rect: rect_snapshot(Rect::new(
+                rect.x + x0 / scale,
+                rect.y + origin_y_extra + run.line_top / scale,
+                (x1 - x0) / scale,
+                run.line_height / scale,
+            )),
+        });
     }
 }
 
