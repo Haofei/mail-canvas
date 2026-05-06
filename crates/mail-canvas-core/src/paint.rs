@@ -116,9 +116,13 @@ impl LayoutPainter<'_> {
         );
         let mut buffer = Buffer::new_empty(metrics);
         buffer.set_wrap(self.font_system, style.wrap.to_cosmic());
+        let effective_width = (rect.width
+            * wrap_width_adjustment(style.font_family.as_deref())
+            * self.scale)
+            .max(1.0);
         buffer.set_size(
             self.font_system,
-            Some((rect.width * self.scale).max(1.0)),
+            Some(effective_width),
             Some((rect.height * self.scale).max(1.0)),
         );
         set_text(&mut buffer, self.font_system);

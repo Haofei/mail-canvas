@@ -20,6 +20,7 @@ function parseArgs(argv) {
     width: 600,
     timeoutMs: 15000,
     out: null,
+    fixtureFonts: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -42,6 +43,9 @@ function parseArgs(argv) {
         break;
       case '--out':
         args.out = path.resolve(next());
+        break;
+      case '--fixture-fonts':
+        args.fixtureFonts = true;
         break;
       default:
         throw new Error(`unknown argument: ${arg}`);
@@ -83,7 +87,9 @@ async function main() {
         baseUrl,
         '--allow-remote',
         '--allow-http',
-        ...FIXTURE_FONT_FILES.flatMap((fontPath) => ['--font-file', fontPath]),
+        ...(args.fixtureFonts
+          ? FIXTURE_FONT_FILES.flatMap((fontPath) => ['--font-file', fontPath])
+          : []),
       ],
       ROOT_DIR,
     );

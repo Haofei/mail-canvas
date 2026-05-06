@@ -1416,10 +1416,12 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
 
     fn measure_text_height(&mut self, text: &str, width: f32, style: &Style) -> Result<f32> {
         let line_height = resolved_line_height_from_db(self.font_system.db(), style);
+        let effective_width =
+            (width.max(1.0) * wrap_width_adjustment(style.font_family.as_deref())).max(1.0);
         let metrics = Metrics::new(style.font_size.max(1.0), line_height.max(1.0));
         let mut buffer = Buffer::new_empty(metrics);
         buffer.set_wrap(self.font_system, style.wrap.to_cosmic());
-        buffer.set_size(self.font_system, Some(width.max(1.0)), None);
+        buffer.set_size(self.font_system, Some(effective_width), None);
         buffer.set_text(
             self.font_system,
             text,
@@ -1442,11 +1444,13 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         style: &Style,
     ) -> Result<f32> {
         let line_height = resolved_line_height_from_db(self.font_system.db(), style);
+        let effective_width =
+            (width.max(1.0) * wrap_width_adjustment(style.font_family.as_deref())).max(1.0);
         let metrics = Metrics::new(style.font_size.max(1.0), line_height.max(1.0));
         let rich_spans = rich_text_style_spans(spans, self.font_system.db(), 1.0, style);
         let mut buffer = Buffer::new_empty(metrics);
         buffer.set_wrap(self.font_system, style.wrap.to_cosmic());
-        buffer.set_size(self.font_system, Some(width.max(1.0)), None);
+        buffer.set_size(self.font_system, Some(effective_width), None);
         buffer.set_rich_text(
             self.font_system,
             rich_spans,

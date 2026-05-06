@@ -30,6 +30,7 @@ function parseArgs(argv) {
     allowRemote: true,
     keep: false,
     expectations: null,
+    fixtureFonts: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -69,6 +70,9 @@ function parseArgs(argv) {
         break;
       case '--expectations':
         args.expectations = path.resolve(next());
+        break;
+      case '--fixture-fonts':
+        args.fixtureFonts = true;
         break;
       default:
         throw new Error(`unknown argument: ${arg}`);
@@ -238,8 +242,10 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     '--layout-json',
     layoutPath,
   ];
-  for (const fontPath of FIXTURE_FONT_FILES) {
-    renderArgs.push('--font-file', fontPath);
+  if (args.fixtureFonts) {
+    for (const fontPath of FIXTURE_FONT_FILES) {
+      renderArgs.push('--font-file', fontPath);
+    }
   }
   if (args.allowRemote) {
     renderArgs.push('--allow-remote');

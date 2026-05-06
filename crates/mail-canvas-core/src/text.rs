@@ -215,6 +215,17 @@ pub(super) fn normal_line_height_fallback(font_size: f32) -> f32 {
     font_size.max(1.0) * NORMAL_LINE_HEIGHT_FALLBACK_FACTOR
 }
 
+pub(super) fn wrap_width_adjustment(font_family: Option<&str>) -> f32 {
+    let Some(family) = font_family else {
+        return 1.0;
+    };
+    let family = family.trim().trim_matches(['"', '\'']).to_ascii_lowercase();
+    match family.as_str() {
+        "poppins" => 1.08,
+        _ => 1.0,
+    }
+}
+
 pub(super) fn parse_line_height_declaration(
     value: &str,
     font_size: f32,

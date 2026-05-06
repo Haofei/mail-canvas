@@ -66,7 +66,7 @@ use table::{
 use text::{
     blink_font_descent_from_db, normal_line_height_fallback, parse_line_height_declaration,
     resolved_line_height_from_db, resolved_line_height_from_run_db,
-    rich_text_baseline_leading_offset, text_style_attrs,
+    rich_text_baseline_leading_offset, text_style_attrs, wrap_width_adjustment,
 };
 #[cfg(test)]
 use text::{
