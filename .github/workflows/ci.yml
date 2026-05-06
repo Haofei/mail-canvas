@@ -41,7 +41,7 @@ jobs:
       - name: Generate corpus manifest
         run: npm run corpus:manifest
       - name: Run Playwright regression
-        run: npm run test:playwright-regression
+        run: npm run test:visual
       - name: Upload visual diff artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -77,7 +77,7 @@ jobs:
       - name: Run full Playwright corpus
         id: full-corpus
         continue-on-error: true
-        run: npm run test:playwright-corpus
+        run: npm run compare:corpus
       - name: Append corpus summary
         if: always()
         run: |

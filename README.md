@@ -197,7 +197,7 @@ longer a single-file implementation.
 Run the fixed Playwright semantic visual regression set:
 
 ```sh
-npm run test:playwright-regression
+npm run test:visual
 ```
 
 This gate uses Chromium as the reference, but it does not require strict total
@@ -215,16 +215,16 @@ pixel equality. The pass/fail checks are semantic and tolerant:
 - total pixel diff is still reported for investigation, but it is observational
   unless `maxTotalDiffPercent` is explicitly configured.
 
-Run the full corpus comparison with the same semantic gate:
+Run the full golden corpus comparison for diagnostics:
 
 ```sh
-npm run compare:playwright
+npm run compare:corpus
 ```
 
 Run only the modern editor/generated marketing corpus:
 
 ```sh
-npm run compare:playwright-editors
+npm run compare:editors
 ```
 
 This filters the local, vendored corpus to Beefree, Stripo, and MJML templates.
@@ -262,18 +262,10 @@ Refresh it with:
 npm run corpus:manifest
 ```
 
-```sh
-node scripts/playwright_compare.mjs \
-  --expectations scripts/playwright_expectations.json \
-  --work-dir /tmp/mail-canvas-playwright-all-semantic \
-  --timeout-ms 30000 \
-  --all
-```
-
-Artifacts are written under `/tmp/mail-canvas-playwright-regression` or
-`/tmp/mail-canvas-playwright-compare`, including browser screenshots, MailCanvas
-screenshots, diff images, side-by-side images, `comparison.json`,
-`comparison.report.json`, and `report.md`.
+Artifacts are written under the command's `/tmp/mail-canvas-*` work directory,
+including browser screenshots, MailCanvas screenshots, diff images,
+side-by-side images, `comparison.json`, `comparison.report.json`, and
+`report.md`.
 
 `comparison.report.json` is the machine-readable summary intended for CI and
 artifact upload.
@@ -281,7 +273,7 @@ artifact upload.
 For detailed layout investigation:
 
 ```sh
-npm run dump:chrome-layout -- \
+npm run layout:chrome -- \
   --template colorlib-template-1 \
   --selector '.email-section, .text-services, td, img' \
   --y 2066 \
@@ -300,7 +292,7 @@ cargo run -p mail-canvas-cli -- \
 And you can compare Chrome vs MailCanvas rects:
 
 ```sh
-npm run compare:layout-rects -- \
+npm run layout:compare -- \
   --browser /tmp/colorlib-1-layout.json \
   --rust /tmp/mail-canvas-layout.json
 ```
@@ -379,7 +371,7 @@ editor templates that fall back to `serif`; Noto Sans remains the broader
 fallback fixture. Noto Sans Math covers common symbols and arrows that editor
 templates often place in CTA labels.
 
-`npm run test:playwright-regression` passes `--fixture-fonts` so GitHub Actions
+`npm run test:visual` passes `--fixture-fonts` so GitHub Actions
 does not depend on the Linux runner's installed fonts. Pass `--fixture-fonts` to
 `scripts/playwright_compare.mjs` for other host-independent runs when stable
 wrapping is more important than matching Chromium's local font fallback.
@@ -412,7 +404,7 @@ This writes RSS and elapsed-time measurements for:
 cargo fmt --check
 cargo test
 cargo clippy --all-targets --all-features
-npm run test:playwright-regression
+npm run test:visual
 ```
 
 ## 中文
@@ -589,7 +581,7 @@ npm run corpus:manifest
 固定 Playwright 语义视觉回归集：
 
 ```sh
-npm run test:playwright-regression
+npm run test:visual
 ```
 
 这个 gate 仍然使用 Chromium 作为参考，但不要求总像素完全一致。真正的通过条件
@@ -604,16 +596,16 @@ npm run test:playwright-regression
 - total pixel diff 仍会输出，方便排查，但除非显式配置 `maxTotalDiffPercent`，
   否则不作为失败条件。
 
-使用同一套 semantic gate 跑完整语料：
+跑完整 golden corpus 对比（诊断用，不作为必须通过 gate）：
 
 ```sh
-npm run compare:playwright
+npm run compare:corpus
 ```
 
 只跑现代编辑器/生成器模板：
 
 ```sh
-npm run compare:playwright-editors
+npm run compare:editors
 ```
 
 这个命令只筛选本地 vendored 语料里的 Beefree、Stripo 和 MJML 模板，主要用于
@@ -637,22 +629,14 @@ expected warning count，以及 known warning 的原因。全量语料里，know
 模板会先跳过，除非它被显式列在 `scripts/playwright_expectations.json`；这样上游
 已经失效的图片链接和模板变量图片不会污染通过率。
 
-```sh
-node scripts/playwright_compare.mjs \
-  --expectations scripts/playwright_expectations.json \
-  --work-dir /tmp/mail-canvas-playwright-all-semantic \
-  --timeout-ms 30000 \
-  --all
-```
-
-输出会在 `/tmp/mail-canvas-playwright-regression` 或
-`/tmp/mail-canvas-playwright-compare`，里面有浏览器截图、MailCanvas 截图、
-diff 图、side-by-side 图、`comparison.json` 和 `report.md`。
+输出会在对应命令的 `/tmp/mail-canvas-*` 工作目录，里面有浏览器截图、
+MailCanvas 截图、diff 图、side-by-side 图、`comparison.json`、
+`comparison.report.json` 和 `report.md`。
 
 查看 Chromium 的具体布局：
 
 ```sh
-npm run dump:chrome-layout -- \
+npm run layout:chrome -- \
   --template colorlib-template-1 \
   --selector '.email-section, .text-services, td, img' \
   --y 2066 \
@@ -671,7 +655,7 @@ cargo run -p mail-canvas-cli -- \
 然后直接对比 Chrome 和 MailCanvas 的 rect：
 
 ```sh
-npm run compare:layout-rects -- \
+npm run layout:compare -- \
   --browser /tmp/colorlib-1-layout.json \
   --rust /tmp/mail-canvas-layout.json
 ```
@@ -714,5 +698,5 @@ scripts/fetch_blink_reference.sh
 cargo fmt --check
 cargo test
 cargo clippy --all-targets --all-features
-npm run test:playwright-regression
+npm run test:visual
 ```

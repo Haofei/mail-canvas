@@ -69,6 +69,6 @@ problems before using a high visual diff as renderer evidence.
 Run visual comparisons for each quality group:
 
 ```sh
-npm run compare:playwright-golden
-npm run compare:playwright-dirty
+npm run compare:corpus
+npm run compare:dirty
 ```
