@@ -34,11 +34,15 @@ async function main() {
   const catalog = [];
   for (const template of templates) {
     if (shouldPreserveLocalFixture(template)) {
-      catalog.push({
+      const entry = {
         name: template.name,
         url: template.url,
         sourcePath: template.sourcePath,
-      });
+      };
+      if (template.preserveLocal) {
+        entry.preserveLocal = true;
+      }
+      catalog.push(entry);
       console.log(`preserved ${template.name}`);
       continue;
     }
@@ -104,10 +108,13 @@ async function loadTemplateSource(template, localSource = null) {
 }
 
 function shouldPreserveLocalFixture(template) {
+  if (template.preserveLocal && template.sourcePath) {
+    return true;
+  }
   return template.provider === 'beefree' && Boolean(template.sourcePath);
 }
 
-async function mirrorHtml(html, baseUrl, assetDir) {
+export async function mirrorHtml(html, baseUrl, assetDir) {
   const cache = new Map();
   let rewritten = html;
 
@@ -382,7 +389,9 @@ async function readDirSafe(dir) {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

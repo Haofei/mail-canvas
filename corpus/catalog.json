@@ -480,6 +480,36 @@
     "sourcePath": "corpus/inkandthunder/inkandthunder-notification.html"
   },
   {
+    "name": "stripo-mothers-day-childhood-memory",
+    "url": "https://viewstripo.email/preview/web/template/cf99cd31-85de-4587-9948-e6ee48298491",
+    "sourcePath": "corpus/stripo/stripo-mothers-day-childhood-memory.html"
+  },
+  {
+    "name": "stripo-mothers-day-thank-for-everything",
+    "url": "https://viewstripo.email/preview/web/template/d540384c-5ad3-42d9-8c12-d3ecd3662c57",
+    "sourcePath": "corpus/stripo/stripo-mothers-day-thank-for-everything.html"
+  },
+  {
+    "name": "stripo-mothers-day-help-mama",
+    "url": "https://viewstripo.email/preview/web/template/754bd273-5595-490d-9a87-e47a60db2380",
+    "sourcePath": "corpus/stripo/stripo-mothers-day-help-mama.html"
+  },
+  {
+    "name": "stripo-mothers-day-gadgets-story",
+    "url": "https://viewstripo.email/preview/web/template/f895dacc-6a5f-4b59-915f-918a2804d1a9",
+    "sourcePath": "corpus/stripo/stripo-mothers-day-gadgets-story.html"
+  },
+  {
+    "name": "stripo-mothers-day-best-flavors",
+    "url": "https://viewstripo.email/preview/web/template/6e4c7cf8-df48-4ee1-8f53-e3d303e85e81",
+    "sourcePath": "corpus/stripo/stripo-mothers-day-best-flavors.html"
+  },
+  {
+    "name": "stripo-promo-make-your-mom-happy",
+    "url": "https://viewstripo.email/preview/web/template/cf9f8bca-81eb-40cb-b6b5-f26d8369826e",
+    "sourcePath": "corpus/stripo/stripo-promo-make-your-mom-happy.html"
+  },
+  {
     "name": "beefree-confirm-and-you-are-official",
     "url": "https://beefree.io/template/confirm-and-you-are-official",
     "sourcePath": "corpus/beefree/beefree-confirm-and-you-are-official.html"
@@ -578,5 +608,29 @@
     "name": "beefree-your-voice-matters",
     "url": "https://beefree.io/template/your-voice-matters",
     "sourcePath": "corpus/beefree/beefree-your-voice-matters.html"
+  },
+  {
+    "name": "mjml-basic",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/basic.mjml",
+    "sourcePath": "corpus/mjml/mjml-basic.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-alert",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/alert.mjml",
+    "sourcePath": "corpus/mjml/mjml-alert.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-card",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/card.mjml",
+    "sourcePath": "corpus/mjml/mjml-card.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-black-friday",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/black-friday.mjml",
+    "sourcePath": "corpus/mjml/mjml-black-friday.html",
+    "preserveLocal": true
   }
 ]

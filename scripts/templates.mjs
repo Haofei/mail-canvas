@@ -391,6 +391,57 @@ const REMOTE_TEMPLATES = [
     'inkandthunder-notification',
     'https://raw.githubusercontent.com/inkandthunder/email-templates/master/notification.html',
   ],
+  [
+    'stripo-mothers-day-childhood-memory',
+    'https://viewstripo.email/preview/web/template/cf99cd31-85de-4587-9948-e6ee48298491',
+  ],
+  [
+    'stripo-mothers-day-thank-for-everything',
+    'https://viewstripo.email/preview/web/template/d540384c-5ad3-42d9-8c12-d3ecd3662c57',
+  ],
+  [
+    'stripo-mothers-day-help-mama',
+    'https://viewstripo.email/preview/web/template/754bd273-5595-490d-9a87-e47a60db2380',
+  ],
+  [
+    'stripo-mothers-day-gadgets-story',
+    'https://viewstripo.email/preview/web/template/f895dacc-6a5f-4b59-915f-918a2804d1a9',
+  ],
+  [
+    'stripo-mothers-day-best-flavors',
+    'https://viewstripo.email/preview/web/template/6e4c7cf8-df48-4ee1-8f53-e3d303e85e81',
+  ],
+  [
+    'stripo-promo-make-your-mom-happy',
+    'https://viewstripo.email/preview/web/template/cf9f8bca-81eb-40cb-b6b5-f26d8369826e',
+  ],
+];
+
+const GENERATED_FIXTURES = [
+  {
+    name: 'mjml-basic',
+    url: 'https://github.com/mjmlio/email-templates/blob/master/templates/basic.mjml',
+    sourcePath: 'corpus/mjml/mjml-basic.html',
+    preserveLocal: true,
+  },
+  {
+    name: 'mjml-alert',
+    url: 'https://github.com/mjmlio/email-templates/blob/master/templates/alert.mjml',
+    sourcePath: 'corpus/mjml/mjml-alert.html',
+    preserveLocal: true,
+  },
+  {
+    name: 'mjml-card',
+    url: 'https://github.com/mjmlio/email-templates/blob/master/templates/card.mjml',
+    sourcePath: 'corpus/mjml/mjml-card.html',
+    preserveLocal: true,
+  },
+  {
+    name: 'mjml-black-friday',
+    url: 'https://github.com/mjmlio/email-templates/blob/master/templates/black-friday.mjml',
+    sourcePath: 'corpus/mjml/mjml-black-friday.html',
+    preserveLocal: true,
+  },
 ];
 
 const TEMPLATE_METADATA = {
@@ -492,14 +543,23 @@ const BEEFREE_FIXTURES = vendoredCatalog
     sourcePath: entry.sourcePath,
   }));
 
+const PRESERVED_FIXTURES = [
+  ...BEEFREE_FIXTURES,
+  ...GENERATED_FIXTURES.map((entry) => ({
+    ...entry,
+    ...(VENDORED_INDEX.get(entry.name) ?? {}),
+    preserveLocal: true,
+  })),
+];
+
 export const TEMPLATES = [
   ...REMOTE_TEMPLATES,
-  ...BEEFREE_FIXTURES.map((entry) => [entry.name, entry.url]),
+  ...PRESERVED_FIXTURES.map((entry) => [entry.name, entry.url]),
 ];
 
 export const TEMPLATE_CORPUS = [
   ...REMOTE_TEMPLATES.map(([name, url]) => ({ name, url })),
-  ...BEEFREE_FIXTURES,
+  ...PRESERVED_FIXTURES,
 ].map((template) => ({
   ...template,
   ...(VENDORED_INDEX.get(template.name) ?? {}),
@@ -555,6 +615,8 @@ export async function loadTemplateSource(templateOrName, timeoutMs = 30000) {
 function templateProvider(name) {
   if (name.startsWith('waypoint-')) return 'waypoint';
   if (name.startsWith('beefree-')) return 'beefree';
+  if (name.startsWith('stripo-')) return 'stripo';
+  if (name.startsWith('mjml-')) return 'mjml';
   if (name.startsWith('postmark-')) return 'postmark';
   if (name.startsWith('mailersend-')) return 'mailersend';
   if (name.startsWith('mailpace-')) return 'mailpace';
@@ -574,6 +636,9 @@ function templateProvider(name) {
 function templateCategory(name) {
   if (name.startsWith('beefree-')) {
     return beefreeCategory(name);
+  }
+  if (name.startsWith('stripo-') || name.startsWith('mjml-')) {
+    return 'marketing';
   }
   if (name.includes('receipt') || name.includes('invoice') || name.includes('billing')) {
     return 'receipt';
