@@ -942,12 +942,10 @@ fn normalize_text_spans(spans: &[TextSpan]) -> Vec<TextSpan> {
                 }
                 push_text_span_segment(&mut out, segment, &span.style);
                 trim_trailing_span_space(&mut out);
-                if !rich_text_ends_with_newline(&out) {
-                    out.push(TextSpan::with_run_style(
-                        "\n".to_string(),
-                        span.style.clone(),
-                    ));
-                }
+                out.push(TextSpan::with_run_style(
+                    "\n".to_string(),
+                    span.style.clone(),
+                ));
                 segment = String::new();
                 pending_space_style = None;
             } else if is_collapsible_whitespace(ch) {
@@ -3173,6 +3171,8 @@ mod tests {
         let with_break = format!("Viewed by{HARD_BREAK}Someone");
         assert_eq!(normalize_text(&with_break), "Viewed by\nSomeone");
         assert_eq!(normalize_text(&HARD_BREAK.to_string()), "\n");
+        let with_empty_line = format!("Viewed by{HARD_BREAK}{HARD_BREAK}Someone");
+        assert_eq!(normalize_text(&with_empty_line), "Viewed by\n\nSomeone");
     }
 
     #[test]
