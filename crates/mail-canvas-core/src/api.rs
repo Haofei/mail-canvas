@@ -104,6 +104,7 @@ pub struct RenderedImage {
     pub layout: LayoutNodeSnapshot,
     pub text_rects: Vec<TextRectSnapshot>,
     pub text_layouts: Vec<TextLayoutSnapshot>,
+    pub text_hint_diagnostics: Option<TextHintDiagnostics>,
     pub image_diagnostics: Vec<ImageLayoutDiagnostic>,
 }
 
@@ -121,6 +122,7 @@ pub struct RenderedPdf {
     pub layout: LayoutNodeSnapshot,
     pub text_rects: Vec<TextRectSnapshot>,
     pub text_layouts: Vec<TextLayoutSnapshot>,
+    pub text_hint_diagnostics: Option<TextHintDiagnostics>,
     pub image_diagnostics: Vec<ImageLayoutDiagnostic>,
 }
 
@@ -129,6 +131,8 @@ pub struct RenderDiagnosticsReport {
     pub warnings: Vec<RenderWarning>,
     pub assets: Vec<AssetReport>,
     pub console_messages: Vec<ConsoleMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_hints: Option<TextHintDiagnostics>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub image_diagnostics: Vec<ImageLayoutDiagnostic>,
 }
@@ -139,6 +143,7 @@ impl RenderedImage {
             warnings: self.warnings.clone(),
             assets: self.assets.clone(),
             console_messages: self.console_messages.clone(),
+            text_hints: self.text_hint_diagnostics.clone(),
             image_diagnostics: self.image_diagnostics.clone(),
         }
     }
@@ -150,6 +155,7 @@ impl RenderedPdf {
             warnings: self.warnings.clone(),
             assets: self.assets.clone(),
             console_messages: self.console_messages.clone(),
+            text_hints: self.text_hint_diagnostics.clone(),
             image_diagnostics: self.image_diagnostics.clone(),
         }
     }
@@ -226,6 +232,22 @@ pub struct TextLayoutSnapshot {
 #[derive(Debug, Clone, Default)]
 pub struct RenderExperimentalOptions {
     pub text_hints: Vec<TextLayoutHint>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct TextHintDiagnostics {
+    pub provided: usize,
+    pub used: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub skipped_text_mismatch: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub skipped_rich_text: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub skipped_height_guard: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

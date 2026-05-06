@@ -38,7 +38,7 @@ pub use api::{
     ImageDiagnosticKind, ImageLayoutDiagnostic, IntrinsicSizeSnapshot, LayoutNodeSnapshot,
     LayoutStyleSnapshot, RectSnapshot, RenderDiagnosticsReport, RenderExperimentalOptions,
     RenderRequest, RenderWarning, RenderWarningCode, RenderedImage, RenderedPdf, ResourcePolicy,
-    TextLayoutHint, TextLayoutSnapshot, TextRectSnapshot, TextStyleSnapshot,
+    TextHintDiagnostics, TextLayoutHint, TextLayoutSnapshot, TextRectSnapshot, TextStyleSnapshot,
 };
 use api::{DEFAULT_MAX_DECODED_PIXELS, RenderDiagnostics};
 use css::{
@@ -131,6 +131,7 @@ impl RendererCore {
         for warning in std::mem::take(&mut engine.warnings) {
             diagnostics.push_warning(warning);
         }
+        let text_hint_diagnostics = engine.text_hint_diagnostics();
         drop(engine);
         let assets = resources.take_asset_reports();
         let layout_snapshot = layout_snapshot(&layout);
@@ -182,6 +183,7 @@ impl RendererCore {
             layout: layout_snapshot,
             text_rects,
             text_layouts,
+            text_hint_diagnostics,
             image_diagnostics,
         })
     }
@@ -207,6 +209,7 @@ impl RendererCore {
             layout: rendered.layout,
             text_rects: rendered.text_rects,
             text_layouts: rendered.text_layouts,
+            text_hint_diagnostics: rendered.text_hint_diagnostics,
             image_diagnostics: rendered.image_diagnostics,
         })
     }
@@ -385,19 +388,19 @@ fn collect_text_layouts_into(layout: &LayoutBox, out: &mut Vec<TextLayoutSnapsho
     match &layout.kind {
         LayoutKind::Text(text) => out.push(TextLayoutSnapshot {
             text_id: layout.debug.text_id.clone(),
-            text: normalize_preview_text(text),
+            text: normalize_hint_text(text),
             rect: rect_snapshot(layout.rect),
             style: text_style_snapshot(&layout.style),
         }),
         LayoutKind::HintedText { text, .. } => out.push(TextLayoutSnapshot {
             text_id: layout.debug.text_id.clone(),
-            text: normalize_preview_text(text),
+            text: normalize_hint_text(text),
             rect: rect_snapshot(layout.rect),
             style: text_style_snapshot(&layout.style),
         }),
         LayoutKind::RichText(spans) => out.push(TextLayoutSnapshot {
             text_id: layout.debug.text_id.clone(),
-            text: normalize_preview_text(&spans_text(spans)),
+            text: normalize_hint_text(&spans_text(spans)),
             rect: rect_snapshot(layout.rect),
             style: text_style_snapshot(&layout.style),
         }),

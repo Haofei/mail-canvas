@@ -30,6 +30,7 @@ pub(crate) struct LayoutEngine<'a, R: ResourceProvider> {
     web_font_faces: Vec<WebFontFace>,
     warnings: Vec<RenderWarning>,
     text_hints: std::collections::HashMap<&'a str, &'a TextLayoutHint>,
+    text_hint_stats: TextHintDiagnostics,
 }
 
 impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
@@ -48,11 +49,19 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             available_font_families,
             web_font_faces,
             warnings: Vec::new(),
+            text_hint_stats: TextHintDiagnostics {
+                provided: text_hints.len(),
+                ..TextHintDiagnostics::default()
+            },
             text_hints: text_hints
                 .iter()
                 .map(|hint| (hint.text_id.as_str(), hint))
                 .collect(),
         }
+    }
+
+    fn text_hint_diagnostics(&self) -> Option<TextHintDiagnostics> {
+        (self.text_hint_stats.provided > 0).then_some(self.text_hint_stats.clone())
     }
 
     fn style_for_node(&self, node: &NodeRef, parent: &Style) -> Style {
@@ -434,11 +443,14 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         }
 
         let plain_text = spans_text(&normalized);
+        let normalized_plain_text = normalize_hint_text(&plain_text);
         let matches_parent_style = text_spans_match_style(&normalized, style);
         let text_hint = text_id.and_then(|id| self.text_hints.get(id)).copied();
         let resolved_line_height = resolved_line_height_from_db(self.font_system.db(), style);
         let height = if matches_parent_style {
-            if let Some(hint) = text_hint.as_ref().filter(|hint| hint.text == plain_text) {
+            if let Some(hint) = text_hint.as_ref().filter(|hint| {
+                normalize_hint_text(&hint.text) == normalized_plain_text
+            }) {
                 let rust_estimate = self.measure_text_height(&plain_text, width, style)?;
                 let hinted_height = if hint.measured_height.is_finite() {
                     hint.measured_height.max(resolved_line_height)
@@ -448,20 +460,28 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 if hinted_height > rust_estimate * 3.0
                     && hinted_height - rust_estimate > 96.0
                 {
+                    self.text_hint_stats.skipped_height_guard += 1;
                     rust_estimate
                 } else {
                     hinted_height
                 }
             } else {
+                if text_hint.is_some() {
+                    self.text_hint_stats.skipped_text_mismatch += 1;
+                }
                 self.measure_text_height(&plain_text, width, style)?
             }
         } else {
+            if text_hint.is_some() {
+                self.text_hint_stats.skipped_rich_text += 1;
+            }
             self.measure_rich_text_height(&normalized, width, style)?
         };
         let kind = if matches_parent_style {
             if let Some(hint) = text_hint.filter(|hint| {
-                hint.text == plain_text && !hint.lines.is_empty()
+                normalize_hint_text(&hint.text) == normalized_plain_text && !hint.lines.is_empty()
             }) {
+                self.text_hint_stats.used += 1;
                 LayoutKind::HintedText {
                     text: plain_text,
                     lines: hint.lines.clone(),
@@ -1932,4 +1952,8 @@ impl LayoutDebugMeta {
 
 fn normalize_preview_text(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect()
+}
+
+fn normalize_hint_text(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
