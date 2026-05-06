@@ -238,7 +238,7 @@ impl Style {
             border: Edges::ZERO,
             border_radius: 0.0,
             border_color: Rgba::BLACK,
-            border_style: BorderLineStyle::Solid,
+            border_style: BorderLineStyle::None,
             border_collapse: BorderCollapse::Separate,
             table_layout_fixed: false,
             cell_padding: Edges::ZERO,
@@ -322,7 +322,7 @@ impl Style {
             border: Edges::ZERO,
             border_radius: 0.0,
             border_color: parent.border_color,
-            border_style: BorderLineStyle::Solid,
+            border_style: BorderLineStyle::None,
             border_collapse: BorderCollapse::Separate,
             table_layout_fixed: false,
             cell_padding: Edges::ZERO,
@@ -412,6 +412,12 @@ impl Style {
         self.margin_bottom_em = Some(bottom);
         self.margin.top = self.font_size * top;
         self.margin.bottom = self.font_size * bottom;
+    }
+
+    fn finalize_border(&mut self) {
+        if self.border_style == BorderLineStyle::None {
+            self.border = Edges::ZERO;
+        }
     }
 
     fn resolved_padding(&self, basis: f32) -> Edges {
@@ -1217,6 +1223,7 @@ pub(crate) enum BorderCollapse {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BorderLineStyle {
+    None,
     Solid,
     Dashed,
     Inset,
@@ -1404,6 +1411,7 @@ pub(crate) fn style_for_node_with_fonts(
         if let Some(border) = attrs.get("border").and_then(parse_px) {
             if border > 0.0 {
                 style.border = Edges::all(border);
+                style.border_style = BorderLineStyle::Solid;
             }
         }
     }
@@ -1428,6 +1436,7 @@ pub(crate) fn style_for_node_with_fonts(
             }
         }
     }
+    style.finalize_border();
     style
 }
 
@@ -2356,6 +2365,25 @@ pub(crate) fn parse_font_family_selection(
         }
     }
 
+    if !available_font_families.is_empty() {
+        for family in &candidates {
+            if let Some(generic) = generic_font_family(family) {
+                return Some(FontFamilySelection {
+                    family: generic.to_string(),
+                    forced_weight: None,
+                });
+            }
+        }
+        for family in &candidates {
+            if let Some(generic) = crate::font_catalog::safe_system_font_generic(family) {
+                return Some(FontFamilySelection {
+                    family: generic.to_string(),
+                    forced_weight: None,
+                });
+            }
+        }
+    }
+
     for family in &candidates {
         if is_safe_system_font(family) {
             return Some(FontFamilySelection {
@@ -2470,6 +2498,7 @@ pub(crate) fn parse_font_style(value: &str) -> FontStyle {
 pub(crate) fn apply_border(style: &mut Style, value: &str) {
     if value.contains("none") {
         style.border = Edges::ZERO;
+        style.border_style = BorderLineStyle::None;
         return;
     }
     if let Some(border_style) = parse_border_line_style(value) {
@@ -2503,12 +2532,15 @@ pub(crate) enum BorderSide {
 pub(crate) fn apply_border_side(style: &mut Style, side: BorderSide, value: &str) {
     if value.contains("none") {
         set_border_side(&mut style.border, side, 0.0);
+        style.border_style = BorderLineStyle::None;
         return;
     }
-    if let Some(border_style) =
-        parse_border_line_style(value).filter(|style| !matches!(style, BorderLineStyle::Solid))
-    {
-        style.border_style = border_style;
+    if let Some(border_style) = parse_border_line_style(value) {
+        if style.border_style == BorderLineStyle::None
+            || !matches!(border_style, BorderLineStyle::Solid)
+        {
+            style.border_style = border_style;
+        }
     }
 
     let mut saw_width = false;
@@ -2530,6 +2562,7 @@ pub(crate) fn apply_border_side(style: &mut Style, side: BorderSide, value: &str
 pub(crate) fn parse_border_line_style(value: &str) -> Option<BorderLineStyle> {
     for token in value.split_whitespace() {
         match token.to_ascii_lowercase().as_str() {
+            "none" | "hidden" => return Some(BorderLineStyle::None),
             "dashed" | "dotted" => return Some(BorderLineStyle::Dashed),
             "inset" | "groove" => return Some(BorderLineStyle::Inset),
             "solid" => return Some(BorderLineStyle::Solid),

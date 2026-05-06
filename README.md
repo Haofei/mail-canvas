@@ -335,8 +335,17 @@ compatible system fonts.
 
 Committed font fixtures remain available for explicit deterministic runs:
 
+- `fixtures/fonts/Arimo-Regular.ttf`
+- `fixtures/fonts/Arimo-Bold.ttf`
+- `fixtures/fonts/Tinos-Regular.ttf`
+- `fixtures/fonts/Tinos-Bold.ttf`
 - `fixtures/fonts/NotoSans-Regular.ttf`
 - `fixtures/fonts/NotoSans-Bold.ttf`
+
+Arimo is used as the Arial-compatible Latin sans fixture for editor-generated
+marketing templates; Tinos is used as the Times-compatible serif fixture for
+editor templates that fall back to `serif`; Noto Sans remains the broader
+fallback fixture.
 
 `npm run test:playwright-regression` passes `--fixture-fonts` so GitHub Actions
 does not depend on the Linux runner's installed fonts. Pass `--fixture-fonts` to

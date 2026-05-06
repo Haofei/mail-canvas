@@ -1,6 +1,3 @@
-pub(crate) const BLINK_SERIF_FAMILY: &str = "Times";
-pub(crate) const BLINK_SANS_SERIF_FAMILY: &str = "Helvetica";
-
 #[cfg(test)]
 pub(crate) const SANS_FALLBACK_CANDIDATES: &[&str] = &[
     "Arial",
@@ -11,6 +8,7 @@ pub(crate) const SANS_FALLBACK_CANDIDATES: &[&str] = &[
     "Roboto",
     "Open Sans",
     "DejaVu Sans",
+    "Arimo",
     "Noto Sans",
 ];
 
@@ -23,6 +21,7 @@ pub(crate) const SERIF_FALLBACK_CANDIDATES: &[&str] = &[
     "Palatino Linotype",
     "Iowan Old Style",
     "DejaVu Serif",
+    "Tinos",
     "Noto Serif",
 ];
 
@@ -69,4 +68,14 @@ pub(crate) fn is_safe_system_font(value: &str) -> bool {
             | "courier"
             | "courier new"
     )
+}
+
+pub(crate) fn safe_system_font_generic(value: &str) -> Option<&'static str> {
+    match value.to_ascii_lowercase().as_str() {
+        "arial" | "arial nova" | "avenir" | "avenir next" | "avenir next lt pro" | "helvetica"
+        | "helvetica neue" | "nimbus sans" | "segoe ui" | "corbel" => Some("sans-serif"),
+        "georgia" | "times" | "times new roman" | "cambria" => Some("serif"),
+        "courier" | "courier new" => Some("monospace"),
+        _ => None,
+    }
 }

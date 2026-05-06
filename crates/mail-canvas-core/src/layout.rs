@@ -143,17 +143,6 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 if !inline_row.is_empty() && text_value.chars().all(is_collapsible_whitespace) {
                     continue;
                 }
-                if flush_inline_row(
-                    &mut inline_row,
-                    &mut inline_row_width,
-                    &mut inline_row_height,
-                    style,
-                    width,
-                    &mut cursor_y,
-                    &mut children,
-                ) {
-                    previous_margin_bottom = None;
-                }
                 append_text_span(&mut text, &text_value, style);
                 continue;
             }
@@ -221,7 +210,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             let child_clear = child_style.clear;
             let child_is_inline_flow = is_inline_flow(&tag, &child_style);
             let (text_x, text_width) = float_adjusted_line(x, width, cursor_y, &floats);
-            if child_is_inline_flow {
+            if child_is_inline_flow || !inline_row.is_empty() {
                 if self.push_text_inline_row(
                     &mut text,
                     style,
@@ -326,7 +315,11 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 }
                 if child_is_inline_flow {
                     let inline_flow_width =
-                        (flow.node.rect.width + flow.node.style.margin.horizontal()).max(1.0);
+                        (flow.node.rect.width
+                            + flow.node.style.padding.horizontal()
+                            + flow.node.style.border.horizontal()
+                            + flow.node.style.margin.horizontal())
+                        .max(1.0);
                     if inline_row_width > 0.0
                         && inline_row_width + inline_flow_width > width + f32::EPSILON
                     {
@@ -389,6 +382,21 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         }
 
         let (text_x, text_width) = float_adjusted_line(x, width, cursor_y, &floats);
+        if !inline_row.is_empty()
+            && self.push_text_inline_row(
+                &mut text,
+                style,
+                text_x,
+                text_width,
+                &mut inline_row,
+                &mut inline_row_width,
+                &mut inline_row_height,
+                &mut cursor_y,
+                &mut children,
+            )?
+        {
+            previous_margin_bottom = None;
+        }
         if self.flush_text(
             &mut text,
             style,

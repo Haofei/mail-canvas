@@ -39,7 +39,9 @@ impl LayoutPainter<'_> {
         if let Some(background_image) = &layout.style.background_image {
             self.paint_background_image(layout.rect, &layout.style, background_image, opacity);
         }
-        if layout.style.border.max_width() > 0.0 {
+        if layout.style.border.max_width() > 0.0
+            && layout.style.border_style != BorderLineStyle::None
+        {
             stroke_style_border(
                 self.pixmap,
                 self.scale,

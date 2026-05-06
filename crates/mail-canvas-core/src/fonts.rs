@@ -57,12 +57,29 @@ fn fixture_font_database() -> Result<fontdb::Database> {
         .join("..")
         .join("fixtures")
         .join("fonts");
-    let regular = root.join("NotoSans-Regular.ttf");
-    let bold = root.join("NotoSans-Bold.ttf");
-    if !regular.is_file() || !bold.is_file() {
+    let arimo_regular = root.join("Arimo-Regular.ttf");
+    let arimo_bold = root.join("Arimo-Bold.ttf");
+    let tinos_regular = root.join("Tinos-Regular.ttf");
+    let tinos_bold = root.join("Tinos-Bold.ttf");
+    let noto_regular = root.join("NotoSans-Regular.ttf");
+    let noto_bold = root.join("NotoSans-Bold.ttf");
+    if !arimo_regular.is_file()
+        || !arimo_bold.is_file()
+        || !tinos_regular.is_file()
+        || !tinos_bold.is_file()
+        || !noto_regular.is_file()
+        || !noto_bold.is_file()
+    {
         bail!("fixture fonts missing: {}", root.display());
     }
-    font_database_from_paths(&[regular, bold])
+    font_database_from_paths(&[
+        arimo_regular,
+        arimo_bold,
+        tinos_regular,
+        tinos_bold,
+        noto_regular,
+        noto_bold,
+    ])
 }
 
 #[cfg(test)]

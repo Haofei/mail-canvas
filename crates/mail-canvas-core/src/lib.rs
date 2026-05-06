@@ -757,7 +757,7 @@ fn text_content(node: &NodeRef) -> String {
         return HARD_BREAK.to_string();
     }
     if tag == "img" {
-        return attr(node, "alt").unwrap_or_default();
+        return String::new();
     }
 
     let mut out = String::new();
@@ -2588,6 +2588,19 @@ mod tests {
     }
 
     #[test]
+    fn unavailable_safe_system_font_uses_declared_generic_fallback() {
+        let available = vec!["Arimo".to_string(), "Noto Sans".to_string()];
+        let family =
+            parse_font_family_with_available("Arial, Helvetica, sans-serif", &available).unwrap();
+        assert_eq!(family, "sans-serif");
+
+        let family =
+            parse_font_family_with_available("Georgia, Times New Roman, serif", &available)
+                .unwrap();
+        assert_eq!(family, "serif");
+    }
+
+    #[test]
     fn invalid_font_family_declaration_is_ignored() {
         assert!(
             parse_font_family(r#"" undefined: IowanOldStyle" undefined: , P052, serif"#).is_none()
@@ -2676,13 +2689,10 @@ mod tests {
     }
 
     #[test]
-    fn generic_font_families_follow_blink_mac_defaults() {
-        assert_eq!(fontdb_family(None), fontdb::Family::Name("Times"));
-        assert_eq!(
-            fontdb_family(Some("sans-serif")),
-            fontdb::Family::Name("Helvetica")
-        );
-        assert_eq!(fontdb_family(Some("serif")), fontdb::Family::Name("Times"));
+    fn generic_font_families_use_registered_generic_slots() {
+        assert_eq!(fontdb_family(None), fontdb::Family::Serif);
+        assert_eq!(fontdb_family(Some("sans-serif")), fontdb::Family::SansSerif);
+        assert_eq!(fontdb_family(Some("serif")), fontdb::Family::Serif);
     }
 
     #[test]
@@ -2733,6 +2743,23 @@ mod tests {
 
         style.apply_declaration("border-style", "inset");
         assert_eq!(style.border_style, BorderLineStyle::Inset);
+    }
+
+    #[test]
+    fn border_width_without_visible_style_does_not_affect_layout() {
+        let layout = layout_for_test(
+            r#"<a style="display:block;border-left-width:40px;border-right-width:40px;padding:10px 40px;background:#cfe2f3">Learn more</a>"#,
+            300,
+        );
+        let link = find_layout(&layout, |child| child.debug.tag == "a").expect("link");
+        assert_eq!(link.style.border, Edges::ZERO);
+        assert_eq!(link.style.border_style, BorderLineStyle::None);
+        let text = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "Learn more"),
+        )
+        .expect("text");
+        assert!((text.rect.x - 40.0).abs() < 0.1);
     }
 
     #[test]
@@ -3966,6 +3993,30 @@ mod tests {
         .expect("image");
         assert!((image.rect.width - 20.0).abs() < 0.1);
         assert!((image.rect.height - 10.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn inline_image_and_text_share_one_line_inside_block_link() {
+        let layout = layout_for_test(
+            r##"<a style="display:block;font-size:14px;line-height:20px"><img width="16" height="16" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" alt="Phone" style="display:inline-block;padding-right:10px">987-654-321</a>"##,
+            140,
+        );
+        let image = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::Image(Some(_)))
+        })
+        .expect("image");
+        let text = find_layout(
+            &layout,
+            |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "987-654-321"),
+        )
+        .expect("text");
+        assert!(
+            (text.rect.y - image.rect.y).abs() < 1.0,
+            "image y {}, text y {}",
+            image.rect.y,
+            text.rect.y
+        );
+        assert!(text.rect.x > image.rect.x + image.rect.width);
     }
 
     #[test]

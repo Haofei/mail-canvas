@@ -15,6 +15,10 @@ const DEFAULT_WORK_DIR = '/tmp/mail-canvas-playwright-compare';
 const DEFAULT_WIDTH = 600;
 const DEFAULT_TIMEOUT_MS = 15000;
 const FIXTURE_FONT_FILES = [
+  path.join(ROOT_DIR, 'fixtures', 'fonts', 'Arimo-Regular.ttf'),
+  path.join(ROOT_DIR, 'fixtures', 'fonts', 'Arimo-Bold.ttf'),
+  path.join(ROOT_DIR, 'fixtures', 'fonts', 'Tinos-Regular.ttf'),
+  path.join(ROOT_DIR, 'fixtures', 'fonts', 'Tinos-Bold.ttf'),
   path.join(ROOT_DIR, 'fixtures', 'fonts', 'NotoSans-Regular.ttf'),
   path.join(ROOT_DIR, 'fixtures', 'fonts', 'NotoSans-Bold.ttf'),
 ];

@@ -167,6 +167,7 @@ fn set_generic_font_families(db: &mut Database) {
             "Roboto",
             "Open Sans",
             "DejaVu Sans",
+            "Arimo",
             "Noto Sans",
         ],
     )
@@ -181,6 +182,7 @@ fn set_generic_font_families(db: &mut Database) {
             "Palatino Linotype",
             "Iowan Old Style",
             "DejaVu Serif",
+            "Tinos",
             "Noto Serif",
         ],
     )

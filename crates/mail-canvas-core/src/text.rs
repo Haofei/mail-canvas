@@ -10,8 +10,7 @@ use cosmic_text::{
 };
 
 use crate::font_catalog::{
-    BLINK_SANS_SERIF_FAMILY, BLINK_SERIF_FAMILY, generic_font_family as generic_font_family_name,
-    normalized_font_family,
+    generic_font_family as generic_font_family_name, normalized_font_family,
 };
 
 use super::{Style, TextRunStyle, TextSpan, parse_css_length};
@@ -22,6 +21,7 @@ const BLINK_WEB_STANDARD_ASCENT_ADJUSTMENT_BIAS: f32 = 0.5;
 const RICH_TEXT_BASELINE_LEADING_FACTOR: f32 = 0.5;
 const NORMAL_LINE_HEIGHT_FALLBACK_FACTOR: f32 = 1.4;
 const DEFAULT_WRAP_WIDTH_SCALE: f32 = 1.0;
+const WEB_STANDARD_SANS_WRAP_WIDTH_SCALE: f32 = 1.06;
 const POPPINS_WRAP_WIDTH_SCALE: f32 = 1.08;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,10 +63,10 @@ const TEXT_COMPATIBILITY_RULES: &[TextCompatibilityRule] = &[
         wrap_width_scale: DEFAULT_WRAP_WIDTH_SCALE,
     },
     TextCompatibilityRule {
-        families: &["sans-serif", "helvetica"],
+        families: &["sans-serif", "arial", "helvetica"],
         generic_family: Some(BlinkGenericFamily::SansSerif),
         apply_mac_ascent_hack: true,
-        wrap_width_scale: DEFAULT_WRAP_WIDTH_SCALE,
+        wrap_width_scale: WEB_STANDARD_SANS_WRAP_WIDTH_SCALE,
     },
     TextCompatibilityRule {
         families: &["monospace", "courier"],
@@ -113,9 +113,9 @@ pub(super) fn text_style_attrs(
 
 fn cosmic_font_family(font_family: Option<&str>) -> FontFamily<'_> {
     match text_compatibility_profile(font_family).generic_family {
-        Some(BlinkGenericFamily::Serif) => FontFamily::Name(BLINK_SERIF_FAMILY),
+        Some(BlinkGenericFamily::Serif) => FontFamily::Serif,
         Some(BlinkGenericFamily::Monospace) => FontFamily::Monospace,
-        Some(BlinkGenericFamily::SansSerif) => FontFamily::Name(BLINK_SANS_SERIF_FAMILY),
+        Some(BlinkGenericFamily::SansSerif) => FontFamily::SansSerif,
         None => font_family.map_or(FontFamily::SansSerif, FontFamily::Name),
     }
 }
@@ -211,13 +211,10 @@ fn fontdb_family_for_run_style(style: &TextRunStyle) -> fontdb::Family<'_> {
 
 pub(super) fn fontdb_family(font_family: Option<&str>) -> fontdb::Family<'_> {
     match text_compatibility_profile(font_family).generic_family {
-        Some(BlinkGenericFamily::Serif) => fontdb::Family::Name(BLINK_SERIF_FAMILY),
+        Some(BlinkGenericFamily::Serif) => fontdb::Family::Serif,
         Some(BlinkGenericFamily::Monospace) => fontdb::Family::Monospace,
-        Some(BlinkGenericFamily::SansSerif) => fontdb::Family::Name(BLINK_SANS_SERIF_FAMILY),
-        None => font_family.map_or(
-            fontdb::Family::Name(BLINK_SERIF_FAMILY),
-            fontdb::Family::Name,
-        ),
+        Some(BlinkGenericFamily::SansSerif) => fontdb::Family::SansSerif,
+        None => font_family.map_or(fontdb::Family::Serif, fontdb::Family::Name),
     }
 }
 
