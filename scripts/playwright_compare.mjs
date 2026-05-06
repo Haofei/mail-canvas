@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -137,6 +137,7 @@ async function main() {
       htmlPath,
       sourceUrl: source.url,
       sourceBaseUrl: source.baseUrl,
+      corpusIssues: await detectCorpusIssues(source.html, source.htmlPath),
     });
   }
 
@@ -311,6 +312,7 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     supportReason: template.supportReason,
     corpusStatus: template.status,
     corpusReason: template.reason,
+    corpusIssues: template.corpusIssues,
     expectedWarnings: template.expectedWarnings,
     browserPng: browserPath,
     rustPng: rustPath,
@@ -347,6 +349,55 @@ function summarizeAssets(assets) {
     if (asset.status === 'failed') summary.failed += 1;
   }
   return summary;
+}
+
+async function detectCorpusIssues(html, sourcePath) {
+  const issues = [];
+  const invalidStyleUrlQuotes = html.match(/style\s*=\s*"[^"]*url\("/gi)?.length ?? 0;
+  if (invalidStyleUrlQuotes > 0) {
+    issues.push({
+      code: 'invalid-style-url-quotes',
+      count: invalidStyleUrlQuotes,
+    });
+  }
+
+  if (sourcePath) {
+    const emptyLinkedStylesheets = await emptyStylesheetLinks(html, sourcePath);
+    if (emptyLinkedStylesheets.length > 0) {
+      issues.push({
+        code: 'empty-linked-css',
+        count: emptyLinkedStylesheets.length,
+        files: emptyLinkedStylesheets,
+      });
+    }
+  }
+
+  return issues;
+}
+
+async function emptyStylesheetLinks(html, htmlPath) {
+  const links = [];
+  const linkPattern = /<link\b[^>]*\bhref\s*=\s*["']([^"']+\.css(?:[?#][^"']*)?)["'][^>]*>/gi;
+  for (const match of html.matchAll(linkPattern)) {
+    if (!/\brel\s*=\s*["']?stylesheet\b/i.test(match[0])) {
+      continue;
+    }
+    const href = match[1];
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
+      continue;
+    }
+    const pathname = href.split(/[?#]/, 1)[0];
+    const cssPath = path.resolve(path.dirname(htmlPath), pathname);
+    try {
+      const cssStat = await stat(cssPath);
+      if (cssStat.size === 0) {
+        links.push(path.relative(ROOT_DIR, cssPath));
+      }
+    } catch {
+      links.push(path.relative(ROOT_DIR, cssPath));
+    }
+  }
+  return links;
 }
 
 async function writeTriptych(paths, outPath) {
@@ -994,9 +1045,17 @@ function printResult(result) {
   const heightDelta = result.rust.height - result.browser.height;
   const firstBad =
     result.firstBadRegion ? `${result.firstBadRegion.y0}-${result.firstBadRegion.y1}` : '';
+  const corpusIssues = formatCorpusIssues(result.corpusIssues);
   console.log(
-    `${result.name}\tbrowser ${result.browser.width}x${result.browser.height}\trust ${result.rust.width}x${result.rust.height}\theightΔ ${heightDelta}px\tdiff ${percent}%\ttext ${text}\ttext-coverage ${textCoverage}%\ttext-rect ${textRect}%\ttext-pixel ${textPixel}%\tmedia ${media}\tmedia-rect ${mediaRect}%\tnon-media ${nonMedia}%\tnon-media non-text ${nonMediaNonText}%\tfirst-bad ${firstBad}\twarnings ${result.warningCount}`,
+    `${result.name}\tbrowser ${result.browser.width}x${result.browser.height}\trust ${result.rust.width}x${result.rust.height}\theightΔ ${heightDelta}px\tdiff ${percent}%\ttext ${text}\ttext-coverage ${textCoverage}%\ttext-rect ${textRect}%\ttext-pixel ${textPixel}%\tmedia ${media}\tmedia-rect ${mediaRect}%\tnon-media ${nonMedia}%\tnon-media non-text ${nonMediaNonText}%\tfirst-bad ${firstBad}\twarnings ${result.warningCount}\tcorpus ${corpusIssues}`,
   );
+}
+
+function formatCorpusIssues(issues = []) {
+  if (issues.length === 0) {
+    return '';
+  }
+  return issues.map((issue) => `${issue.code}:${issue.count}`).join(',');
 }
 
 function checkExpectations(results, expectations) {
@@ -1238,8 +1297,8 @@ function renderMarkdownReport(results, args, expectations) {
     `- Remote image loading in Rust renderer: ${args.allowRemote ? 'enabled' : 'disabled'}`,
     `- Output directory: \`${args.workDir}\``,
     '',
-    '| Template | Browser | Rust | Diff | Media Diff | Media Rect Δ | Text Diff | Text Coverage Δ | Text Rect Δ | Text Pixel Δ | First Bad Region | Non-Media Diff | Non-Media Non-Text Diff | Diff Target | Non-Media Target | Non-Media Non-Text Target | Warnings | Assets | Files |',
-    '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|',
+    '| Template | Browser | Rust | Diff | Media Diff | Media Rect Δ | Text Diff | Text Coverage Δ | Text Rect Δ | Text Pixel Δ | First Bad Region | Non-Media Diff | Non-Media Non-Text Diff | Diff Target | Non-Media Target | Non-Media Non-Text Target | Warnings | Assets | Corpus Issues | Files |',
+    '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|',
   ];
 
   for (const result of results) {
@@ -1287,8 +1346,9 @@ function renderMarkdownReport(results, args, expectations) {
         ? `<= ${nonMediaNonTextMax.toFixed(2)}%`
         : '';
     const assets = `${result.assetSummary.loaded}/${result.assetSummary.blocked}/${result.assetSummary.failed}`;
+    const corpusIssues = formatCorpusIssues(result.corpusIssues);
     lines.push(
-      `| ${result.name} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${percent} | ${mediaPercent} | ${mediaRectPercent} | ${textPercent} | ${textCoveragePercent} | ${textRectPercent} | ${textPixelPercent} | ${firstBadRegion} | ${nonMediaPercent} | ${nonMediaNonTextPercent} | ${targetText} | ${nonMediaTargetText} | ${nonMediaNonTextTargetText} | ${result.warningCount} | ${assets} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) [diagnostics](${result.diagnosticsJson}) [layout](${result.layoutJson}) |`,
+      `| ${result.name} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${percent} | ${mediaPercent} | ${mediaRectPercent} | ${textPercent} | ${textCoveragePercent} | ${textRectPercent} | ${textPixelPercent} | ${firstBadRegion} | ${nonMediaPercent} | ${nonMediaNonTextPercent} | ${targetText} | ${nonMediaTargetText} | ${nonMediaNonTextTargetText} | ${result.warningCount} | ${assets} | ${corpusIssues} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) [diagnostics](${result.diagnosticsJson}) [layout](${result.layoutJson}) |`,
     );
   }
   lines.push('');
@@ -1305,8 +1365,8 @@ function renderSemanticMarkdownReport(results, args, expectations) {
     `- Output directory: \`${args.workDir}\``,
     '- Total pixel diff is reported as an observation only unless `maxTotalDiffPercent` is set.',
     '',
-    '| Template | Provider | Support | Status | Browser | Rust | Height Delta | Total Diff | Text Diff | Text Coverage Δ | Text Rect Δ | Text Pixel Δ | First Bad Region | Media Diff | Media Rect Δ | Non-Media Non-Text Diff | Semantic Limits | Warnings | Assets | Files |',
-    '|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---|---:|---|---|',
+    '| Template | Provider | Support | Status | Browser | Rust | Height Delta | Total Diff | Text Diff | Text Coverage Δ | Text Rect Δ | Text Pixel Δ | First Bad Region | Media Diff | Media Rect Δ | Non-Media Non-Text Diff | Semantic Limits | Warnings | Assets | Corpus Issues | Files |',
+    '|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---|---:|---|---|---|',
   ];
 
   for (const result of results) {
@@ -1330,8 +1390,9 @@ function renderSemanticMarkdownReport(results, args, expectations) {
       : '';
     const limits = semanticLimitSummary(expectations, expected);
     const assets = `${result.assetSummary.loaded}/${result.assetSummary.blocked}/${result.assetSummary.failed}`;
+    const corpusIssues = formatCorpusIssues(result.corpusIssues);
     lines.push(
-      `| ${result.name} | ${result.provider} | ${result.supportTier} | ${status} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${heightDeltaPx}px (${formatPercent(heightDeltaPercent)}) | ${formatPercent(result.diffRatio)} | ${textPercent} | ${textCoveragePercent} | ${textRectPercent} | ${textPixelPercent} | ${firstBadRegion} | ${mediaPercent} | ${mediaRectPercent} | ${formatPercent(result.nonMediaNonText.diffRatio)} | ${limits} | ${result.warningCount} | ${assets} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) [diagnostics](${result.diagnosticsJson}) [layout](${result.layoutJson}) |`,
+      `| ${result.name} | ${result.provider} | ${result.supportTier} | ${status} | ${result.browser.width}x${result.browser.height} | ${result.rust.width}x${result.rust.height} | ${heightDeltaPx}px (${formatPercent(heightDeltaPercent)}) | ${formatPercent(result.diffRatio)} | ${textPercent} | ${textCoveragePercent} | ${textRectPercent} | ${textPixelPercent} | ${firstBadRegion} | ${mediaPercent} | ${mediaRectPercent} | ${formatPercent(result.nonMediaNonText.diffRatio)} | ${limits} | ${result.warningCount} | ${assets} | ${corpusIssues} | [side-by-side](${result.sideBySidePng}) [browser](${result.browserPng}) [rust](${result.rustPng}) [diff](${result.diffPng}) [log](${result.log}) [diagnostics](${result.diagnosticsJson}) [layout](${result.layoutJson}) |`,
     );
   }
   lines.push('');
@@ -1396,6 +1457,7 @@ function buildComparisonSummary(results, failures, expectations) {
       mediaRectDeltaPercent: Number((result.mediaRects.deltaRatio * 100).toFixed(2)),
       firstBadRegion: result.firstBadRegion,
       warnings: result.warningCount,
+      corpusIssues: result.corpusIssues,
     }));
   return {
     generatedAt: new Date().toISOString(),
