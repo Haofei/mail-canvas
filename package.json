@@ -9,6 +9,7 @@
     "compare:playwright": "node scripts/playwright_compare.mjs --expectations scripts/playwright_expectations.json --work-dir /tmp/mail-canvas-playwright-compare --timeout-ms 30000 --all --no-remote",
     "compare:playwright-editors": "node scripts/playwright_compare.mjs --work-dir /tmp/mail-canvas-playwright-editors --timeout-ms 30000 --width 800 --all --no-remote --fixture-fonts --provider beefree --provider stripo --provider mjml",
     "compare:layout-rects": "node scripts/compare_layout_rects.mjs",
+    "corpus:audit": "node scripts/audit_corpus.mjs",
     "corpus:manifest": "node scripts/export_corpus_manifest.mjs",
     "demo": "npm run build:demo && node scripts/serve_demo.mjs",
     "dump:chrome-layout": "node scripts/playwright_layout_dump.mjs",

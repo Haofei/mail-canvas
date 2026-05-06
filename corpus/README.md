@@ -33,3 +33,13 @@ Refresh vendored local fixtures with:
 ```sh
 node scripts/vendor_corpus_templates.mjs
 ```
+
+Audit local fixtures for corpus issues that can distort visual comparisons:
+
+```sh
+npm run corpus:audit
+```
+
+The audit reports invalid inline `style="...url("...")..."` URL quoting and
+empty linked CSS files, both of which should be treated as fixture quality
+problems before using a high visual diff as renderer evidence.
