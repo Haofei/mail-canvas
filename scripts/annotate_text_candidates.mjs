@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 
 import { parseHTML } from 'linkedom';
 
+const TEXT_ID_ATTR = 'data-mc-text-id';
 const TARGET_TAGS = new Set([
   'DIV',
   'H1',
@@ -114,7 +115,7 @@ async function main() {
 
   let nextId = 1;
   for (const element of candidates) {
-    element.setAttribute('data-mail-canvas-text-id', String(nextId));
+    element.setAttribute(TEXT_ID_ATTR, String(nextId));
     nextId += 1;
   }
 

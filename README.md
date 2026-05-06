@@ -124,7 +124,7 @@ cargo run -p mail-canvas-cli -- \
 Current scope is intentionally narrow:
 
 - plain leaf block text only
-- hint matching uses `data-mail-canvas-text-id`
+- hint matching uses `data-mc-text-id`
 - rich text and inline span mixing still fall back to the native Rust text path
 
 Resource policy defaults:

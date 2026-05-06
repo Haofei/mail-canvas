@@ -2387,7 +2387,7 @@ mod tests {
     #[test]
     fn experimental_text_hint_uses_text_id_for_hinted_text() {
         let layout = layout_for_test_with_hints(
-            r#"<p data-mail-canvas-text-id="hero-copy">Hello world from MailCanvas.</p>"#,
+            r#"<p data-mc-text-id="hero-copy">Hello world from MailCanvas.</p>"#,
             240,
             &[TextLayoutHint {
                 text_id: "hero-copy".to_string(),

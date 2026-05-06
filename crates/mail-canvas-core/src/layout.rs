@@ -139,7 +139,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         let mut last_inline_block_fallback = false;
         let parent_line_height = resolved_line_height_from_db(self.font_system.db(), style);
         let mut floats = Vec::new();
-        let current_text_id = attr(node, "data-mail-canvas-text-id");
+        let current_text_id = attr(node, "data-mc-text-id");
 
         for child in node.children() {
             if let Some(text_node) = child.as_text() {
@@ -1890,7 +1890,7 @@ impl LayoutDebugMeta {
             tag,
             id: attr(node, "id"),
             class_name: attr(node, "class"),
-            text_id: attr(node, "data-mail-canvas-text-id"),
+            text_id: attr(node, "data-mc-text-id"),
             text,
             src: None,
         }

@@ -36,6 +36,8 @@ jobs:
           cache: npm
       - name: Install npm dependencies
         run: npm ci
+      - name: Run text hint smoke
+        run: npm run test:text-hints-smoke
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
       - name: Generate corpus manifest

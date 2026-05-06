@@ -59,6 +59,8 @@ const DEMO_FONTS = [
   "./assets/NotoSans-Bold.ttf",
 ];
 
+const TEXT_ID_ATTR = "data-mc-text-id";
+
 const PRETEXT_TARGET_TAGS = new Set([
   "DIV",
   "H1",
@@ -271,7 +273,7 @@ function annotatePretextCandidates(html) {
   const candidates = collectPretextCandidates(sourceDocument);
   let nextId = 1;
   for (const element of candidates) {
-    element.setAttribute("data-mail-canvas-text-id", String(nextId++));
+    element.setAttribute(TEXT_ID_ATTR, String(nextId++));
   }
   return {
     html: `<!doctype html>\n${sourceDocument.documentElement.outerHTML}`,
@@ -393,7 +395,7 @@ async function applyPretextHints(html, baseUrl, width, textLayouts) {
   for (let index = 0; index < sourceCandidates.length; index += 1) {
     const sourceElement = sourceCandidates[index];
     const measuredElement = measuredCandidates[index];
-    const textId = sourceElement.getAttribute("data-mail-canvas-text-id");
+    const textId = sourceElement.getAttribute(TEXT_ID_ATTR);
     if (!measuredElement || !textId) {
       skipped.missingTextId += 1;
       continue;

@@ -30,6 +30,7 @@ function parseArgs(argv) {
     minWidth: 220,
     minTextLength: 40,
     minHeadingLength: 20,
+    strict: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -65,6 +66,9 @@ function parseArgs(argv) {
         break;
       case '--min-heading-length':
         args.minHeadingLength = Number.parseInt(next(), 10);
+        break;
+      case '--strict':
+        args.strict = true;
         break;
       default:
         throw new Error(`unknown argument: ${arg}`);
@@ -188,6 +192,13 @@ async function main() {
   const layoutJson = JSON.parse(await readFile(args.layoutJson, 'utf8'));
   const textLayouts = Array.isArray(layoutJson.text_layouts) ? layoutJson.text_layouts : [];
   const matchedCount = textLayouts.filter((layout) => Boolean(layout?.text_id)).length;
+  if (textLayouts.length > 0 && matchedCount === 0) {
+    const message = 'No text_id found in layout JSON. Run scripts/annotate_text_candidates.mjs before pass 1.';
+    if (args.strict) {
+      throw new Error(message);
+    }
+    console.error(`warning: ${message}`);
+  }
   const fontPaths = await collectFontPaths(args.fontFiles, args.fontDirs);
   const registeredFonts = registerFonts(fontPaths);
 
