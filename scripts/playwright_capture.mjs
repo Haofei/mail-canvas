@@ -120,9 +120,13 @@ function buildBrowserDocument(sourceHtml, baseUrl, width) {
   if (!looksLikeDocument) {
     return `<!doctype html><html><head>${head}</head><body><div id="email-render-root">${sourceHtml}</div></body></html>`;
   }
-  const headEnd = lower.indexOf('</head>');
-  if (headEnd >= 0) {
-    return `${sourceHtml.slice(0, headEnd)}${head}${sourceHtml.slice(headEnd)}`;
+  const headStart = lower.indexOf('<head');
+  if (headStart >= 0) {
+    const closeOffset = sourceHtml.slice(headStart).indexOf('>');
+    if (closeOffset >= 0) {
+      const insertAt = headStart + closeOffset + 1;
+      return `${sourceHtml.slice(0, insertAt)}${head}${sourceHtml.slice(insertAt)}`;
+    }
   }
   const htmlStart = lower.indexOf('<html');
   if (htmlStart >= 0) {

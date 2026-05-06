@@ -102,7 +102,7 @@ async function main() {
       waitUntil: 'load',
       timeout: args.timeoutMs,
     });
-    await page.waitForTimeout(500);
+    await waitForStableBrowserAssets(page, args.timeoutMs);
     const height = await page.evaluate(() => {
       let maxBottom = 0;
       for (const element of document.body.querySelectorAll('*')) {
@@ -114,7 +114,7 @@ async function main() {
       return Math.max(1, Math.ceil(maxBottom), document.body.scrollHeight);
     });
     await page.setViewportSize({ width: args.width, height });
-    await page.waitForTimeout(100);
+    await waitForStableBrowserAssets(page, args.timeoutMs);
 
     const dump = await page.evaluate(
       ({ selector, yValues }) => {
@@ -254,6 +254,41 @@ async function main() {
   }
 }
 
+async function waitForStableBrowserAssets(page, timeoutMs) {
+  const waitMs = Math.min(Math.max(timeoutMs, 1000), 5000);
+  await page
+    .evaluate(async (timeout) => {
+      const wait = (promise) =>
+        Promise.race([
+          promise.catch(() => undefined),
+          new Promise((resolve) => {
+            setTimeout(resolve, timeout);
+          }),
+        ]);
+
+      if (document.fonts?.ready) {
+        await wait(document.fonts.ready);
+      }
+
+      const pendingImages = [...document.images].filter((image) => !image.complete);
+      if (pendingImages.length > 0) {
+        await wait(
+          Promise.allSettled(
+            pendingImages.map(
+              (image) =>
+                image.decode?.() ??
+                new Promise((resolve) => {
+                  image.addEventListener('load', resolve, { once: true });
+                  image.addEventListener('error', resolve, { once: true });
+                }),
+            ),
+          ),
+        );
+      }
+    }, waitMs)
+    .catch(() => undefined);
+}
+
 async function loadSource(args) {
   if (args.html) {
     const html = await readFile(args.html, 'utf8');
@@ -297,9 +332,13 @@ function buildBrowserDocument(sourceHtml, baseUrl, width) {
   if (!looksLikeDocument) {
     return `<!doctype html><html><head>${head}</head><body><div id="email-render-root">${sourceHtml}</div></body></html>`;
   }
-  const headEnd = lower.indexOf('</head>');
-  if (headEnd >= 0) {
-    return `${sourceHtml.slice(0, headEnd)}${head}${sourceHtml.slice(headEnd)}`;
+  const headStart = lower.indexOf('<head');
+  if (headStart >= 0) {
+    const closeOffset = sourceHtml.slice(headStart).indexOf('>');
+    if (closeOffset >= 0) {
+      const insertAt = headStart + closeOffset + 1;
+      return `${sourceHtml.slice(0, insertAt)}${head}${sourceHtml.slice(insertAt)}`;
+    }
   }
   const htmlStart = lower.indexOf('<html');
   if (htmlStart >= 0) {
