@@ -207,6 +207,8 @@ pixel equality. The pass/fail checks are semantic and tolerant:
   limits that catch missing content or major placement regressions; media checks
   also use an absolute pixel tolerance so small anti-aliased logos are not
   over-penalized;
+- reports include `Media Rect Δ` so image/background placement can be judged
+  separately from JPEG/PNG resampling differences;
 - total pixel diff is still reported for investigation, but it is observational
   unless `maxTotalDiffPercent` is explicitly configured.
 
@@ -574,6 +576,8 @@ npm run test:playwright-regression
 - viewport 宽度和最终渲染高度必须落在语义容差内；
 - 文字、媒体、非文字非媒体区域必须落在粗粒度 diff 限制内，用来发现内容缺失
   或明显布局错误；媒体检查也带绝对像素容差，避免小图标抗锯齿差异被过度惩罚；
+- 报告会输出 `Media Rect Δ`，把图片/背景的位置和尺寸差异从图片内部重采样差异里
+  拆出来看；
 - total pixel diff 仍会输出，方便排查，但除非显式配置 `maxTotalDiffPercent`，
   否则不作为失败条件。
 
