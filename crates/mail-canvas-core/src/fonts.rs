@@ -4,6 +4,7 @@ use std::sync::Arc;
 use anyhow::{Context as _, Result, anyhow, bail};
 use cosmic_text::{Style as FontStyle, Weight as FontWeight};
 use kuchiki::traits::TendrilSink as _;
+use url::Url;
 
 use crate::api::{AssetKind, AssetStatus, RenderDiagnostics};
 use crate::css::{
@@ -179,10 +180,12 @@ enum FontCssSource {
 struct FontCssBlock {
     css: String,
     source: FontCssSource,
+    base_url: Option<String>,
 }
 
 pub(crate) fn load_web_fonts_from_html(
     html: &str,
+    document_base_url: Option<&Url>,
     policy: &impl ResourceProvider,
     db: &mut fontdb::Database,
     diagnostics: &mut RenderDiagnostics,
@@ -192,11 +195,14 @@ pub(crate) fn load_web_fonts_from_html(
         .map(|css| FontCssBlock {
             css: css.to_string(),
             source: FontCssSource::InlineOrImport,
+            base_url: document_base_url.map(Url::to_string),
         })
         .collect();
     let mut imported_urls = Vec::new();
 
     for stylesheet_url in stylesheet_link_urls(html) {
+        let stylesheet_url =
+            resolve_relative_stylesheet_url(&stylesheet_url, document_base_url.map(Url::as_str));
         if imported_urls.len() >= MAX_WEB_FONT_IMPORTS {
             break;
         }
@@ -213,6 +219,7 @@ pub(crate) fn load_web_fonts_from_html(
                     css_blocks.push(FontCssBlock {
                         css,
                         source: FontCssSource::LinkedStylesheet,
+                        base_url: Some(stylesheet_url.clone()),
                     });
                 }
             }
@@ -231,6 +238,8 @@ pub(crate) fn load_web_fonts_from_html(
     while index < css_blocks.len() && imported_urls.len() < MAX_WEB_FONT_IMPORTS {
         let source = css_blocks[index].source;
         for import_url in css_import_urls(&css_blocks[index].css) {
+            let import_url =
+                resolve_relative_stylesheet_url(&import_url, css_blocks[index].base_url.as_deref());
             if imported_urls
                 .iter()
                 .any(|loaded: &String| loaded.eq_ignore_ascii_case(&import_url))
@@ -239,7 +248,11 @@ pub(crate) fn load_web_fonts_from_html(
             }
             imported_urls.push(import_url.clone());
             match load_stylesheet(&import_url, policy) {
-                Ok(css) => css_blocks.push(FontCssBlock { css, source }),
+                Ok(css) => css_blocks.push(FontCssBlock {
+                    css,
+                    source,
+                    base_url: Some(import_url.clone()),
+                }),
                 Err(error) => diagnostics.push_warning(
                     RenderWarning::new(
                         RenderWarningCode::StylesheetLoadFailed,
@@ -292,12 +305,14 @@ pub(crate) fn load_web_fonts_from_html(
             let Some(candidate) = choose_font_source(src) else {
                 continue;
             };
+            let candidate_url =
+                resolve_relative_stylesheet_url(&candidate.url, block.base_url.as_deref());
             let descriptor_weight = declaration_value(&declarations, "font-weight")
                 .and_then(parse_font_face_weight)
                 .unwrap_or(FontWeight::NORMAL);
             if let Some(source) = loaded_font_sources
                 .iter()
-                .find(|loaded| loaded.url.eq_ignore_ascii_case(&candidate.url))
+                .find(|loaded| loaded.url.eq_ignore_ascii_case(&candidate_url))
             {
                 if preserve_descriptors {
                     web_font_faces.push(WebFontFace {
@@ -310,14 +325,14 @@ pub(crate) fn load_web_fonts_from_html(
             }
 
             match policy
-                .load_bytes(&candidate.url, AssetKind::WebFont, "@font-face")
+                .load_bytes(&candidate_url, AssetKind::WebFont, "@font-face")
                 .and_then(|bytes| {
                     decode_font_resource(&bytes, &candidate).inspect_err(|error| {
                         policy.record_asset_report(
                             AssetReport::new(
                                 AssetKind::WebFont,
                                 AssetStatus::Failed,
-                                candidate.url.clone(),
+                                candidate_url.clone(),
                             )
                             .with_initiator("@font-face")
                             .with_detail(error.to_string()),
@@ -345,10 +360,10 @@ pub(crate) fn load_web_fonts_from_html(
                                 });
                                 if !loaded_font_sources
                                     .iter()
-                                    .any(|source| source.url.eq_ignore_ascii_case(&candidate.url))
+                                    .any(|source| source.url.eq_ignore_ascii_case(&candidate_url))
                                 {
                                     loaded_font_sources.push(LoadedFontSource {
-                                        url: candidate.url.clone(),
+                                        url: candidate_url.clone(),
                                         actual_family,
                                     });
                                 }
@@ -360,7 +375,7 @@ pub(crate) fn load_web_fonts_from_html(
                             AssetReport::new(
                                 AssetKind::WebFont,
                                 AssetStatus::Failed,
-                                candidate.url.clone(),
+                                candidate_url.clone(),
                             )
                             .with_initiator("@font-face")
                             .with_detail(format!(
@@ -374,7 +389,7 @@ pub(crate) fn load_web_fonts_from_html(
                             )
                             .with_node("@font-face")
                             .with_property("font-family", family.clone())
-                            .with_url(candidate.url.clone()),
+                            .with_url(candidate_url.clone()),
                         );
                     }
                 }
@@ -383,12 +398,12 @@ pub(crate) fn load_web_fonts_from_html(
                         RenderWarningCode::WebFontLoadFailed,
                         format!(
                             "failed to load web font {family} from {}: {error}",
-                            candidate.url
+                            candidate_url
                         ),
                     )
                     .with_node("@font-face")
                     .with_property("font-family", family)
-                    .with_url(candidate.url),
+                    .with_url(candidate_url),
                 ),
             }
         }
@@ -415,6 +430,16 @@ fn load_stylesheet(url: &str, policy: &impl ResourceProvider) -> Result<String> 
                 })
                 .context("stylesheet is not UTF-8")
         })
+}
+
+fn resolve_relative_stylesheet_url(url: &str, base_url: Option<&str>) -> String {
+    let Some(base_url) = base_url else {
+        return url.to_string();
+    };
+    match Url::parse(base_url).and_then(|base| base.join(url)) {
+        Ok(resolved) => resolved.to_string(),
+        Err(_) => url.to_string(),
+    }
 }
 
 pub(crate) fn stylesheet_link_urls(html: &str) -> Vec<String> {

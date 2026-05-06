@@ -299,7 +299,7 @@ async function writePlaceholderAsset(assetPath, ext, options = {}) {
 
 function tinyTransparentPng() {
   return Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==',
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XkO8AAAAASUVORK5CYII=',
     'base64',
   );
 }

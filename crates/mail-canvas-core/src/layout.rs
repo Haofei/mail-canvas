@@ -470,6 +470,9 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         if tag == "hr" {
             return Ok(Some(self.layout_hr(style, x, y, containing_width)));
         }
+        if tag == "table" && matches!(style.display, Display::InlineBlock) {
+            return self.layout_table(node, style, x, y, containing_width, depth);
+        }
 
         match style.display {
             Display::None => Ok(None),

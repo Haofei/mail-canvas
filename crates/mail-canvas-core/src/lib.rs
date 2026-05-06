@@ -100,11 +100,16 @@ impl RendererCore {
         let render_html = strip_hidden_conditional_comments(&request.html);
         let source_document = kuchiki::parse_html().one(render_html.clone());
         ensure_dom_node_limit(&source_document, request.max_dom_nodes)?;
-        let resources = resource_factory.create(&request, document_base_url(&source_document));
+        let document_base = request
+            .base_url
+            .clone()
+            .or_else(|| document_base_url(&source_document));
+        let resources = resource_factory.create(&request, document_base.clone());
         let limits = RenderLimits::from_request(&request);
         let mut diagnostics = RenderDiagnostics::default();
         let web_font_faces = load_web_fonts_from_html(
             &render_html,
+            document_base.as_ref(),
             &resources,
             self.font_system.db_mut(),
             &mut diagnostics,
@@ -3746,6 +3751,34 @@ mod tests {
         let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
             .expect("image");
         assert!((image.rect.x - 75.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn inline_block_tables_keep_table_cell_row_layout() {
+        let layout = layout_for_test(
+            r##"<table class="social-table" style="display:inline-block"><tbody><tr><td><a><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="32" height="32" alt=""></a></td><td><a><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="32" height="32" alt=""></a></td><td><a><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="32" height="32" alt=""></a></td><td><a><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="32" height="32" alt=""></a></td></tr></tbody></table>"##,
+            200,
+        );
+        let social_table = find_layout(&layout, |child| {
+            child.debug.class_name.as_deref() == Some("social-table")
+        })
+        .expect("social table");
+        let images: Vec<&LayoutBox> = collect_layouts(&layout, &|child| {
+            matches!(child.kind, LayoutKind::Image(Some(_)))
+        });
+
+        assert!((social_table.rect.height - 34.0).abs() < 0.1);
+        assert_eq!(images.len(), 4);
+        assert!(
+            images
+                .windows(2)
+                .all(|pair| pair[1].rect.x > pair[0].rect.x)
+        );
+        assert!(
+            images
+                .windows(2)
+                .all(|pair| (pair[1].rect.y - pair[0].rect.y).abs() < 0.1)
+        );
     }
 
     #[test]
