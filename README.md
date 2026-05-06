@@ -105,6 +105,44 @@ fn main() -> anyhow::Result<()> {
 `RustEmailRenderer` and `ServoEmailRenderer` remain as compatibility aliases for
 older local experiments.
 
+### WASM API
+
+The wasm crate is now a real browser-facing shell. It does not fetch by itself.
+The intended flow is:
+
+1. JS fetches remote stylesheets, images, or fonts.
+2. JS calls `register_asset(url, bytes)` for every fetched resource.
+3. JS optionally calls `register_font(bytes)` for bundled fallback fonts.
+4. JS renders with `render_png_with_base_url(...)` or
+   `render_rgba_with_base_url(...)`.
+5. JS reads `diagnostics_json()` for warnings, blocked assets, and load results.
+
+Minimal sketch:
+
+```js
+const renderer = new WasmRenderer();
+
+const logoBytes = new Uint8Array(await (await fetch("https://cdn.example.com/logo.png")).arrayBuffer());
+renderer.register_asset("https://cdn.example.com/logo.png", logoBytes);
+
+const png = renderer.render_png_with_base_url(
+  '<img src="./logo.png" width="120" alt="">',
+  600,
+  800,
+  1.0,
+  "https://cdn.example.com/email.html"
+);
+
+const diagnostics = JSON.parse(renderer.diagnostics_json());
+```
+
+Current wasm boundary:
+
+- supported: HTML input, registered font bytes, `data:` URLs, pre-registered
+  stylesheet/image/font assets, relative URL resolution through `base_url`
+- not supported yet: direct wasm-side fetch, PDF output, automatic remote asset
+  loading
+
 ### Project Shape
 
 - `crates/mail-canvas-core/`: parse, style, layout, paint model, diagnostics,
@@ -307,6 +345,42 @@ fn main() -> anyhow::Result<()> {
 ```
 
 `RustEmailRenderer` 和 `ServoEmailRenderer` 暂时保留为兼容别名。
+
+### WASM API
+
+wasm crate 现在已经是独立的浏览器侧壳，但它本身不做 fetch。推荐链路是：
+
+1. JS 先拉远程 stylesheet、image、font。
+2. JS 对每个资源调用 `register_asset(url, bytes)`。
+3. 如果要带兜底字体，额外调用 `register_font(bytes)`。
+4. 用 `render_png_with_base_url(...)` 或 `render_rgba_with_base_url(...)`
+   渲染。
+5. 用 `diagnostics_json()` 读取 warning、blocked asset 和加载结果。
+
+最小示意：
+
+```js
+const renderer = new WasmRenderer();
+
+const logoBytes = new Uint8Array(await (await fetch("https://cdn.example.com/logo.png")).arrayBuffer());
+renderer.register_asset("https://cdn.example.com/logo.png", logoBytes);
+
+const png = renderer.render_png_with_base_url(
+  '<img src="./logo.png" width="120" alt="">',
+  600,
+  800,
+  1.0,
+  "https://cdn.example.com/email.html"
+);
+
+const diagnostics = JSON.parse(renderer.diagnostics_json());
+```
+
+当前 wasm 边界：
+
+- 已支持：HTML 输入、注册字体字节、`data:` URL、预注册的
+  stylesheet/image/font 资源、通过 `base_url` 解析相对 URL
+- 暂不支持：wasm 内直接 fetch、PDF 输出、自动远程资源加载
 
 ### 项目结构
 

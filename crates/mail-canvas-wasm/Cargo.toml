@@ -20,6 +20,7 @@ image.workspace = true
 js-sys.workspace = true
 mail-canvas-core = { path = "../mail-canvas-core" }
 serde.workspace = true
+serde_json.workspace = true
 tiny-skia.workspace = true
 wasm-bindgen.workspace = true
 url.workspace = true

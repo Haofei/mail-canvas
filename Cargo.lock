@@ -1073,6 +1073,7 @@ dependencies = [
  "js-sys",
  "mail-canvas-core",
  "serde",
+ "serde_json",
  "tiny-skia",
  "url",
  "wasm-bindgen",
