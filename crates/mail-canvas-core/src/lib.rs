@@ -714,8 +714,7 @@ fn layout_contains_line_box(layout: &LayoutBox) -> bool {
     matches!(
         layout.kind,
         LayoutKind::Text(_) | LayoutKind::HintedText { .. } | LayoutKind::RichText(_)
-    )
-        || layout.children.iter().any(layout_contains_line_box)
+    ) || layout.children.iter().any(layout_contains_line_box)
 }
 
 fn inline_style_has_own_box(style: &Style) -> bool {

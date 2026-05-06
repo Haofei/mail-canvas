@@ -64,6 +64,8 @@ Important options:
   renderer warnings and asset reports.
 - `--layout-json`: optional JSON layout dump output path for MailCanvas box
   geometry and text rects.
+- `--text-hints-json`: optional JSON input for experimental second-pass text
+  layout hints.
 - `--pdf-output`: optional raster PDF output path.
 - `--base-url`: base URL for relative assets; defaults to the HTML file
   directory.
@@ -92,6 +94,38 @@ The diagnostics JSON currently includes:
 - `console_messages`: the compatibility stderr messages printed by the CLI
 - `image_diagnostics`: image/background intrinsic size, target rect, and crop
   diagnostics
+
+Experimental two-pass text flow pipeline:
+
+```sh
+node scripts/annotate_text_candidates.mjs \
+  --html corpus/beefree/beefree-confirm-and-you-are-official.html \
+  --out /tmp/annotated.html
+
+cargo run -p mail-canvas-cli -- \
+  --html /tmp/annotated.html \
+  --base-url file:///ABS/PATH/TO/corpus/beefree/ \
+  --layout-json /tmp/pass1.layout.json \
+  --output /tmp/pass1.png \
+  --width 800
+
+node scripts/generate_text_hints.mjs \
+  --layout-json /tmp/pass1.layout.json \
+  --out /tmp/text-hints.json
+
+cargo run -p mail-canvas-cli -- \
+  --html /tmp/annotated.html \
+  --base-url file:///ABS/PATH/TO/corpus/beefree/ \
+  --text-hints-json /tmp/text-hints.json \
+  --output /tmp/pass2.png \
+  --width 800
+```
+
+Current scope is intentionally narrow:
+
+- plain leaf block text only
+- hint matching uses `data-mail-canvas-text-id`
+- rich text and inline span mixing still fall back to the native Rust text path
 
 Resource policy defaults:
 

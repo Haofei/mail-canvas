@@ -39,6 +39,10 @@ struct Args {
     #[arg(long)]
     layout_json: Option<PathBuf>,
 
+    /// Optional JSON text layout hints input for experimental second-pass rendering.
+    #[arg(long)]
+    text_hints_json: Option<PathBuf>,
+
     /// Optional raster PDF output path.
     #[arg(long)]
     pdf_output: Option<PathBuf>,
@@ -135,6 +139,17 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
     let font_paths = collect_font_paths(&args.font_files, &args.font_dirs)?;
+    let experimental = match &args.text_hints_json {
+        Some(path) => {
+            let raw = fs::read_to_string(path)
+                .with_context(|| format!("failed to read {}", path.display()))?;
+            RenderExperimentalOptions {
+                text_hints: serde_json::from_str(&raw)
+                    .context("failed to parse --text-hints-json")?,
+            }
+        }
+        None => RenderExperimentalOptions::default(),
+    };
 
     let document = build_document_from_files(
         &args.html,
@@ -167,7 +182,7 @@ fn main() -> Result<()> {
         max_dom_nodes: args.max_dom_nodes,
         max_layout_depth: args.max_layout_depth,
         max_table_cells: args.max_table_cells,
-        experimental: RenderExperimentalOptions::default(),
+        experimental,
     };
 
     let mut renderer = MailCanvasRenderer::with_fonts(

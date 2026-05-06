@@ -4,6 +4,7 @@
   "description": "Chrome-free HTML/CSS email template renderer for PNG and raster PDF output.",
   "private": true,
   "scripts": {
+    "annotate:text-candidates": "node scripts/annotate_text_candidates.mjs",
     "benchmark:memory": "node scripts/benchmark_memory.mjs",
     "build:demo": "bash scripts/build_wasm_demo.sh",
     "compare:playwright": "node scripts/playwright_compare.mjs --expectations scripts/playwright_expectations.json --work-dir /tmp/mail-canvas-playwright-compare --timeout-ms 30000 --all --no-remote",
@@ -11,6 +12,7 @@
     "corpus:manifest": "node scripts/export_corpus_manifest.mjs",
     "demo": "npm run build:demo && node scripts/serve_demo.mjs",
     "dump:chrome-layout": "node scripts/playwright_layout_dump.mjs",
+    "generate:text-hints": "node scripts/generate_text_hints.mjs",
     "test:playwright-all": "node scripts/playwright_compare.mjs --expectations scripts/playwright_expectations.json --work-dir /tmp/mail-canvas-playwright-all --timeout-ms 30000 --all --no-remote",
     "test:playwright-corpus": "node scripts/playwright_compare.mjs --expectations scripts/playwright_expectations.json --work-dir /tmp/mail-canvas-playwright-corpus --timeout-ms 30000 --all --no-remote",
     "test:playwright-regression": "node scripts/playwright_compare.mjs --expectations scripts/playwright_expectations.json --work-dir /tmp/mail-canvas-playwright-regression --timeout-ms 30000 --no-remote"
@@ -21,6 +23,8 @@
   "type": "commonjs",
   "devDependencies": {
     "@chenglou/pretext": "^0.0.6",
+    "@napi-rs/canvas": "^1.0.0",
+    "linkedom": "^0.18.12",
     "pixelmatch": "^7.2.0",
     "playwright": "^1.59.1",
     "pngjs": "^7.0.0"

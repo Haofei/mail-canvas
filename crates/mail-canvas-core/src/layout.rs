@@ -436,9 +436,22 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         let plain_text = spans_text(&normalized);
         let matches_parent_style = text_spans_match_style(&normalized, style);
         let text_hint = text_id.and_then(|id| self.text_hints.get(id)).copied();
+        let resolved_line_height = resolved_line_height_from_db(self.font_system.db(), style);
         let height = if matches_parent_style {
             if let Some(hint) = text_hint.as_ref().filter(|hint| hint.text == plain_text) {
-                hint.measured_height.max(resolved_line_height_from_db(self.font_system.db(), style))
+                let rust_estimate = self.measure_text_height(&plain_text, width, style)?;
+                let hinted_height = if hint.measured_height.is_finite() {
+                    hint.measured_height.max(resolved_line_height)
+                } else {
+                    rust_estimate
+                };
+                if hinted_height > rust_estimate * 3.0
+                    && hinted_height - rust_estimate > 96.0
+                {
+                    rust_estimate
+                } else {
+                    hinted_height
+                }
             } else {
                 self.measure_text_height(&plain_text, width, style)?
             }

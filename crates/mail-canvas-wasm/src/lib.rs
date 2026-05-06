@@ -9,9 +9,9 @@ use fontdb::Database;
 use image::{DynamicImage, ImageDecoder, ImageReader, Limits};
 use js_sys::Uint8Array;
 use mail_canvas_core::{
-    AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, RenderOutputBackend,
-    RenderExperimentalOptions, RenderRequest, RenderWarning, RenderedImage, RendererCore,
-    ResourcePolicy, ResourceProvider, ResourceProviderFactory, TextLayoutHint,
+    AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, RenderExperimentalOptions,
+    RenderOutputBackend, RenderRequest, RenderWarning, RenderedImage, RendererCore, ResourcePolicy,
+    ResourceProvider, ResourceProviderFactory, TextLayoutHint,
 };
 use serde::Serialize;
 use tiny_skia::Pixmap;
