@@ -32,6 +32,10 @@ struct Args {
     #[arg(long)]
     warnings_json: Option<PathBuf>,
 
+    /// Optional JSON layout dump output path for renderer box geometry.
+    #[arg(long)]
+    layout_json: Option<PathBuf>,
+
     /// Optional raster PDF output path.
     #[arg(long)]
     pdf_output: Option<PathBuf>,
@@ -180,6 +184,9 @@ fn main() -> Result<()> {
     if let Some(path) = &args.warnings_json {
         write_warnings_json(path, &image.diagnostics())?;
     }
+    if let Some(path) = &args.layout_json {
+        write_layout_json(path, &image.layout, &image.text_rects)?;
+    }
 
     eprintln!(
         "rendered {}x{} CSS px at {}x scale -> {}x{} px ({})",
@@ -225,6 +232,30 @@ fn write_warnings_json(path: &std::path::Path, report: &RenderDiagnosticsReport)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
     let json = serde_json::to_vec_pretty(&report).context("failed to serialize warnings JSON")?;
+    fs::write(path, json).with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(())
+}
+
+fn write_layout_json(
+    path: &std::path::Path,
+    layout: &mail_canvas_core::LayoutNodeSnapshot,
+    text_rects: &[mail_canvas_core::TextRectSnapshot],
+) -> Result<()> {
+    #[derive(serde::Serialize)]
+    struct LayoutDump<'a> {
+        tree: &'a mail_canvas_core::LayoutNodeSnapshot,
+        text_rects: &'a [mail_canvas_core::TextRectSnapshot],
+    }
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    let json = serde_json::to_vec_pretty(&LayoutDump {
+        tree: layout,
+        text_rects,
+    })
+    .context("failed to serialize layout JSON")?;
     fs::write(path, json).with_context(|| format!("failed to write {}", path.display()))?;
     Ok(())
 }

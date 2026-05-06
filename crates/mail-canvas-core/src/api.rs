@@ -99,6 +99,9 @@ pub struct RenderedImage {
     pub console_messages: Vec<ConsoleMessage>,
     pub warnings: Vec<RenderWarning>,
     pub assets: Vec<AssetReport>,
+    pub layout: LayoutNodeSnapshot,
+    pub text_rects: Vec<TextRectSnapshot>,
+    pub image_diagnostics: Vec<ImageLayoutDiagnostic>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +115,9 @@ pub struct RenderedPdf {
     pub console_messages: Vec<ConsoleMessage>,
     pub warnings: Vec<RenderWarning>,
     pub assets: Vec<AssetReport>,
+    pub layout: LayoutNodeSnapshot,
+    pub text_rects: Vec<TextRectSnapshot>,
+    pub image_diagnostics: Vec<ImageLayoutDiagnostic>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -119,6 +125,8 @@ pub struct RenderDiagnosticsReport {
     pub warnings: Vec<RenderWarning>,
     pub assets: Vec<AssetReport>,
     pub console_messages: Vec<ConsoleMessage>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub image_diagnostics: Vec<ImageLayoutDiagnostic>,
 }
 
 impl RenderedImage {
@@ -127,6 +135,7 @@ impl RenderedImage {
             warnings: self.warnings.clone(),
             assets: self.assets.clone(),
             console_messages: self.console_messages.clone(),
+            image_diagnostics: self.image_diagnostics.clone(),
         }
     }
 }
@@ -137,8 +146,94 @@ impl RenderedPdf {
             warnings: self.warnings.clone(),
             assets: self.assets.clone(),
             console_messages: self.console_messages.clone(),
+            image_diagnostics: self.image_diagnostics.clone(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct RectSnapshot {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LayoutStyleSnapshot {
+    pub display: String,
+    pub font_size: f32,
+    pub line_height: f32,
+    pub text_align: String,
+    pub vertical_align: String,
+    pub object_fit: String,
+    pub object_position: String,
+    pub background_image: bool,
+    pub background_size: String,
+    pub background_position: String,
+    pub background_repeat: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LayoutNodeSnapshot {
+    pub tag: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub class_name: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub text: String,
+    pub rect: RectSnapshot,
+    pub style: LayoutStyleSnapshot,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<LayoutNodeSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TextRectSnapshot {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub text: String,
+    pub rect: RectSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageDiagnosticKind {
+    Img,
+    Background,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IntrinsicSizeSnapshot {
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ImageLayoutDiagnostic {
+    pub kind: ImageDiagnosticKind,
+    pub tag: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub class_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub src: Option<String>,
+    pub intrinsic: IntrinsicSizeSnapshot,
+    pub css_rect: RectSnapshot,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub object_fit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub object_position: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background_size: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background_position: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background_repeat: Option<String>,
+    pub draw_rect: RectSnapshot,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_crop: Option<RectSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize)]

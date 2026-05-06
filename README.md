@@ -62,6 +62,8 @@ Important options:
 - `--max-height`: fail if rendered content exceeds this CSS height.
 - `--warnings-json`: optional JSON diagnostics output path for structured
   renderer warnings and asset reports.
+- `--layout-json`: optional JSON layout dump output path for MailCanvas box
+  geometry and text rects.
 - `--pdf-output`: optional raster PDF output path.
 - `--base-url`: base URL for relative assets; defaults to the HTML file
   directory.
@@ -88,6 +90,8 @@ The diagnostics JSON currently includes:
 - `assets`: every attempted stylesheet, image, and web font load with final
   status
 - `console_messages`: the compatibility stderr messages printed by the CLI
+- `image_diagnostics`: image/background intrinsic size, target rect, and crop
+  diagnostics
 
 Resource policy defaults:
 
@@ -254,6 +258,30 @@ npm run dump:chrome-layout -- \
   --out /tmp/colorlib-1-layout.json
 ```
 
+MailCanvas can dump its own layout tree too:
+
+```sh
+cargo run -p mail-canvas-cli -- \
+  --html examples/basic.html \
+  --output /tmp/out.png \
+  --layout-json /tmp/mail-canvas-layout.json
+```
+
+And you can compare Chrome vs MailCanvas rects:
+
+```sh
+npm run compare:layout-rects -- \
+  --browser /tmp/colorlib-1-layout.json \
+  --rust /tmp/mail-canvas-layout.json
+```
+
+The Playwright comparison report now also includes:
+
+- `firstBadRegion`: the first 100px horizontal band where the diff spikes
+- `textCoverage`: text ink coverage delta
+- `textRects`: text position/wrap delta
+- `textPixel`: text rasterization delta
+
 To download the pinned Blink reference subset locally:
 
 ```sh
@@ -396,6 +424,8 @@ cargo run -p mail-canvas-cli -- \
 - `--max-height`: 内容超过该 CSS 高度时失败。
 - `--warnings-json`: 可选的 JSON diagnostics 输出，包含结构化 renderer
   warnings 和 asset report。
+- `--layout-json`: 可选的 MailCanvas layout dump JSON 输出，包含 box 几何和
+  text rect。
 - `--pdf-output`: 可选的栅格 PDF 输出路径。
 - `--base-url`: 相对资源的 base URL，默认是 HTML 文件目录。
 - `--allow-remote`: 允许远程 `http(s)` 图片和字体。
@@ -417,6 +447,8 @@ cargo run -p mail-canvas-cli -- \
 - `warnings`: 机器可读的 renderer warning
 - `assets`: 每一次 stylesheet、image、web font 加载的最终状态
 - `console_messages`: CLI 为兼容性保留的 stderr 文本消息
+- `image_diagnostics`: image/background 的 intrinsic size、目标 rect 和 crop
+  诊断
 
 ### Rust API
 
@@ -550,6 +582,30 @@ npm run dump:chrome-layout -- \
   --y 2066 \
   --out /tmp/colorlib-1-layout.json
 ```
+
+MailCanvas 自己也可以输出 layout tree：
+
+```sh
+cargo run -p mail-canvas-cli -- \
+  --html examples/basic.html \
+  --output /tmp/out.png \
+  --layout-json /tmp/mail-canvas-layout.json
+```
+
+然后直接对比 Chrome 和 MailCanvas 的 rect：
+
+```sh
+npm run compare:layout-rects -- \
+  --browser /tmp/colorlib-1-layout.json \
+  --rust /tmp/mail-canvas-layout.json
+```
+
+现在 Playwright 对比报告还会额外给出：
+
+- `firstBadRegion`: 第一个 diff 明显升高的 100px 横向 band
+- `textCoverage`: 文字墨水覆盖差异
+- `textRects`: 文字位置/换行差异
+- `textPixel`: 文字栅格化差异
 
 下载固定版本的 Blink 参考代码：
 
