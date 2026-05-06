@@ -19,10 +19,6 @@
     "mailgun-action": {},
     "leemunroe-inlined": {},
     "waypoint-marketplace-first-listing-notification": {},
-    "sendgrid-merriweather-receipt": {},
-    "postmark-example": {},
-    "colorlib-template-1": {},
-    "colorlib-template-3": {},
-    "colorlib-template-4": {}
+    "sendgrid-merriweather-receipt": {}
   }
 }

@@ -1,0 +1,30 @@
+@font-face {
+  font-family: 'Work Sans';
+  font-style: normal;
+  font-weight: 300;
+  src: url("3f551c4448b4fb62.ttf") format('truetype');
+}
+@font-face {
+  font-family: 'Work Sans';
+  font-style: normal;
+  font-weight: 400;
+  src: url("b31068ff59a222ec.ttf") format('truetype');
+}
+@font-face {
+  font-family: 'Work Sans';
+  font-style: normal;
+  font-weight: 500;
+  src: url("5a03de1596b187ab.ttf") format('truetype');
+}
+@font-face {
+  font-family: 'Work Sans';
+  font-style: normal;
+  font-weight: 600;
+  src: url("f061d2cebf12582d.ttf") format('truetype');
+}
+@font-face {
+  font-family: 'Work Sans';
+  font-style: normal;
+  font-weight: 700;
+  src: url("4ebedac3c6eeba79.ttf") format('truetype');
+}

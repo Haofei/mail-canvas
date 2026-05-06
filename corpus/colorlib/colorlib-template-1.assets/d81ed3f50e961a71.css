@@ -1,0 +1,24 @@
+@font-face {
+  font-family: 'Playfair Display';
+  font-style: italic;
+  font-weight: 400;
+  src: url("2bd24de88849cb83.ttf") format('truetype');
+}
+@font-face {
+  font-family: 'Playfair Display';
+  font-style: italic;
+  font-weight: 700;
+  src: url("09de1275f983b6cb.ttf") format('truetype');
+}
+@font-face {
+  font-family: 'Playfair Display';
+  font-style: normal;
+  font-weight: 400;
+  src: url("839397f5a36280b0.ttf") format('truetype');
+}
+@font-face {
+  font-family: 'Playfair Display';
+  font-style: normal;
+  font-weight: 700;
+  src: url("809d4bc72e1bfc40.ttf") format('truetype');
+}

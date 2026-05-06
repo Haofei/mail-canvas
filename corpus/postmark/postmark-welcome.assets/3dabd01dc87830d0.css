@@ -1,0 +1,16 @@
+@font-face {
+  font-family: 'Nunito Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-stretch: normal;
+  font-display: swap;
+  src: url("b9b96d5500003eda.ttf") format('truetype');
+}
+@font-face {
+  font-family: 'Nunito Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-stretch: normal;
+  font-display: swap;
+  src: url("0c7d482e190c0ba9.ttf") format('truetype');
+}

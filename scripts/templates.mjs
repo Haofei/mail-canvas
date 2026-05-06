@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import beefreeCatalog from '../corpus/beefree/catalog.json' with { type: 'json' };
+import vendoredCatalog from '../corpus/catalog.json' with { type: 'json' };
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -482,12 +482,15 @@ const TEMPLATE_METADATA = {
   },
 };
 
-const BEEFREE_FIXTURES = beefreeCatalog.map((entry) => ({
-  name: entry.name,
-  url: entry.pageUrl,
-  sourcePath: entry.sourcePath,
-  baseUrl: entry.baseUrl,
-}));
+const VENDORED_INDEX = new Map(vendoredCatalog.map((entry) => [entry.name, entry]));
+
+const BEEFREE_FIXTURES = vendoredCatalog
+  .filter((entry) => entry.name.startsWith('beefree-'))
+  .map((entry) => ({
+    name: entry.name,
+    url: entry.url,
+    sourcePath: entry.sourcePath,
+  }));
 
 export const TEMPLATES = [
   ...REMOTE_TEMPLATES,
@@ -499,6 +502,7 @@ export const TEMPLATE_CORPUS = [
   ...BEEFREE_FIXTURES,
 ].map((template) => ({
   ...template,
+  ...(VENDORED_INDEX.get(template.name) ?? {}),
   provider: templateProvider(template.name),
   category: templateCategory(template.name),
   supportTier: 'modern-supported',

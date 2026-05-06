@@ -1,9 +1,10 @@
 {
-  "generatedAt": "2026-05-06T04:17:10.782Z",
+  "generatedAt": "2026-05-06T05:17:25.291Z",
   "templates": [
     {
       "name": "leemunroe-inlined",
       "url": "https://raw.githubusercontent.com/leemunroe/responsive-html-email-template/master/email-inlined.html",
+      "sourcePath": "corpus/leemunroe/leemunroe-inlined.html",
       "provider": "leemunroe",
       "category": "general",
       "supportTier": "modern-supported",
@@ -15,6 +16,7 @@
     {
       "name": "mailgun-action",
       "url": "https://raw.githubusercontent.com/mailgun/transactional-email-templates/master/templates/inlined/action.html",
+      "sourcePath": "corpus/mailgun/mailgun-action.html",
       "provider": "mailgun",
       "category": "general",
       "supportTier": "modern-supported",
@@ -26,6 +28,7 @@
     {
       "name": "mailgun-alert",
       "url": "https://raw.githubusercontent.com/mailgun/transactional-email-templates/master/templates/inlined/alert.html",
+      "sourcePath": "corpus/mailgun/mailgun-alert.html",
       "provider": "mailgun",
       "category": "general",
       "supportTier": "modern-supported",
@@ -37,6 +40,7 @@
     {
       "name": "mailgun-billing",
       "url": "https://raw.githubusercontent.com/mailgun/transactional-email-templates/master/templates/inlined/billing.html",
+      "sourcePath": "corpus/mailgun/mailgun-billing.html",
       "provider": "mailgun",
       "category": "receipt",
       "supportTier": "modern-supported",
@@ -48,6 +52,7 @@
     {
       "name": "waypoint-banking-payout",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/banking-payout.html",
+      "sourcePath": "corpus/waypoint/waypoint-banking-payout.html",
       "provider": "waypoint",
       "category": "general",
       "supportTier": "modern-supported",
@@ -59,6 +64,7 @@
     {
       "name": "waypoint-banking-refund-approved",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/banking-refund-approved.html",
+      "sourcePath": "corpus/waypoint/waypoint-banking-refund-approved.html",
       "provider": "waypoint",
       "category": "general",
       "supportTier": "modern-supported",
@@ -70,6 +76,7 @@
     {
       "name": "waypoint-banking-withdrawal",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/banking-withdrawal.html",
+      "sourcePath": "corpus/waypoint/waypoint-banking-withdrawal.html",
       "provider": "waypoint",
       "category": "general",
       "supportTier": "modern-supported",
@@ -81,6 +88,7 @@
     {
       "name": "waypoint-ecommerce-delivery",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-delivery-notification.html",
+      "sourcePath": "corpus/waypoint/waypoint-ecommerce-delivery.html",
       "provider": "waypoint",
       "category": "commerce",
       "supportTier": "modern-supported",
@@ -92,6 +100,7 @@
     {
       "name": "waypoint-ecommerce-milestone-reward",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-milestone-reward.html",
+      "sourcePath": "corpus/waypoint/waypoint-ecommerce-milestone-reward.html",
       "provider": "waypoint",
       "category": "commerce",
       "supportTier": "modern-supported",
@@ -103,6 +112,7 @@
     {
       "name": "waypoint-ecommerce-new-order-receipt",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-new-order-receipt.html",
+      "sourcePath": "corpus/waypoint/waypoint-ecommerce-new-order-receipt.html",
       "provider": "waypoint",
       "category": "receipt",
       "supportTier": "modern-supported",
@@ -114,6 +124,7 @@
     {
       "name": "waypoint-ecommerce-promo-code",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-promo-code.html",
+      "sourcePath": "corpus/waypoint/waypoint-ecommerce-promo-code.html",
       "provider": "waypoint",
       "category": "commerce",
       "supportTier": "modern-supported",
@@ -125,6 +136,7 @@
     {
       "name": "waypoint-ecommerce-reengagement",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-reengagement.html",
+      "sourcePath": "corpus/waypoint/waypoint-ecommerce-reengagement.html",
       "provider": "waypoint",
       "category": "commerce",
       "supportTier": "modern-supported",
@@ -136,6 +148,7 @@
     {
       "name": "waypoint-ecommerce-welcome",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/ecommerce-welcome.html",
+      "sourcePath": "corpus/waypoint/waypoint-ecommerce-welcome.html",
       "provider": "waypoint",
       "category": "onboarding",
       "supportTier": "modern-supported",
@@ -147,6 +160,7 @@
     {
       "name": "waypoint-marketplace-credit-expiring",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/marketplace-credit-expiring.html",
+      "sourcePath": "corpus/waypoint/waypoint-marketplace-credit-expiring.html",
       "provider": "waypoint",
       "category": "marketplace",
       "supportTier": "modern-supported",
@@ -158,6 +172,7 @@
     {
       "name": "waypoint-marketplace-first-listing-notification",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/marketplace-first-listing-notification.html",
+      "sourcePath": "corpus/waypoint/waypoint-marketplace-first-listing-notification.html",
       "provider": "waypoint",
       "category": "marketplace",
       "supportTier": "modern-supported",
@@ -169,6 +184,7 @@
     {
       "name": "waypoint-marketplace-new-delivery",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/marketplace-new-delivery.html",
+      "sourcePath": "corpus/waypoint/waypoint-marketplace-new-delivery.html",
       "provider": "waypoint",
       "category": "commerce",
       "supportTier": "modern-supported",
@@ -180,6 +196,7 @@
     {
       "name": "waypoint-marketplace-qr",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/marketplace-qr-tickets.html",
+      "sourcePath": "corpus/waypoint/waypoint-marketplace-qr.html",
       "provider": "waypoint",
       "category": "marketplace",
       "supportTier": "modern-supported",
@@ -191,6 +208,7 @@
     {
       "name": "waypoint-marketplace-reservation-reminder",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/marketplace-reservation-reminder.html",
+      "sourcePath": "corpus/waypoint/waypoint-marketplace-reservation-reminder.html",
       "provider": "waypoint",
       "category": "marketplace",
       "supportTier": "modern-supported",
@@ -202,6 +220,7 @@
     {
       "name": "waypoint-marketplace-respond-to-inquiry",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/marketplace-respond-to-inquiry.html",
+      "sourcePath": "corpus/waypoint/waypoint-marketplace-respond-to-inquiry.html",
       "provider": "waypoint",
       "category": "marketplace",
       "supportTier": "modern-supported",
@@ -213,6 +232,7 @@
     {
       "name": "waypoint-marketplace-saved-search",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/marketplace-saved-search.html",
+      "sourcePath": "corpus/waypoint/waypoint-marketplace-saved-search.html",
       "provider": "waypoint",
       "category": "marketplace",
       "supportTier": "modern-supported",
@@ -224,6 +244,7 @@
     {
       "name": "waypoint-saas-accept-invite",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-accept-invite.html",
+      "sourcePath": "corpus/waypoint/waypoint-saas-accept-invite.html",
       "provider": "waypoint",
       "category": "onboarding",
       "supportTier": "modern-supported",
@@ -235,6 +256,7 @@
     {
       "name": "waypoint-saas-app-store-links",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-app-store-links.html",
+      "sourcePath": "corpus/waypoint/waypoint-saas-app-store-links.html",
       "provider": "waypoint",
       "category": "general",
       "supportTier": "modern-supported",
@@ -246,6 +268,7 @@
     {
       "name": "waypoint-saas-credit-usage-report",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-credit-usage-report.html",
+      "sourcePath": "corpus/waypoint/waypoint-saas-credit-usage-report.html",
       "provider": "waypoint",
       "category": "general",
       "supportTier": "modern-supported",
@@ -257,6 +280,7 @@
     {
       "name": "waypoint-saas-download-ready",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-download-ready.html",
+      "sourcePath": "corpus/waypoint/waypoint-saas-download-ready.html",
       "provider": "waypoint",
       "category": "general",
       "supportTier": "modern-supported",
@@ -268,6 +292,7 @@
     {
       "name": "waypoint-saas-first-time-watched",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-first-time-watched.html",
+      "sourcePath": "corpus/waypoint/waypoint-saas-first-time-watched.html",
       "provider": "waypoint",
       "category": "general",
       "supportTier": "modern-supported",
@@ -279,6 +304,7 @@
     {
       "name": "waypoint-saas-milestone-next-steps",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-milestone-next-steps.html",
+      "sourcePath": "corpus/waypoint/waypoint-saas-milestone-next-steps.html",
       "provider": "waypoint",
       "category": "general",
       "supportTier": "modern-supported",
@@ -290,6 +316,7 @@
     {
       "name": "waypoint-saas-otp",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-one-time-passcode-otp.html",
+      "sourcePath": "corpus/waypoint/waypoint-saas-otp.html",
       "provider": "waypoint",
       "category": "account-security",
       "supportTier": "modern-supported",
@@ -301,6 +328,7 @@
     {
       "name": "waypoint-saas-password-changed",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-password-changed.html",
+      "sourcePath": "corpus/waypoint/waypoint-saas-password-changed.html",
       "provider": "waypoint",
       "category": "account-security",
       "supportTier": "modern-supported",
@@ -312,6 +340,7 @@
     {
       "name": "waypoint-saas-payment-declined",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-payment-declined.html",
+      "sourcePath": "corpus/waypoint/waypoint-saas-payment-declined.html",
       "provider": "waypoint",
       "category": "lifecycle",
       "supportTier": "modern-supported",
@@ -323,6 +352,7 @@
     {
       "name": "waypoint-saas-reset-password",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-reset-password.html",
+      "sourcePath": "corpus/waypoint/waypoint-saas-reset-password.html",
       "provider": "waypoint",
       "category": "account-security",
       "supportTier": "modern-supported",
@@ -334,6 +364,7 @@
     {
       "name": "waypoint-saas-receipt",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-subscription-receipt.html",
+      "sourcePath": "corpus/waypoint/waypoint-saas-receipt.html",
       "provider": "waypoint",
       "category": "receipt",
       "supportTier": "modern-supported",
@@ -345,6 +376,7 @@
     {
       "name": "waypoint-saas-trial-ends-soon",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-trial-ends-soon.html",
+      "sourcePath": "corpus/waypoint/waypoint-saas-trial-ends-soon.html",
       "provider": "waypoint",
       "category": "lifecycle",
       "supportTier": "modern-supported",
@@ -356,6 +388,7 @@
     {
       "name": "waypoint-saas-weekly-metrics-report",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-weekly-metrics-report.html",
+      "sourcePath": "corpus/waypoint/waypoint-saas-weekly-metrics-report.html",
       "provider": "waypoint",
       "category": "general",
       "supportTier": "modern-supported",
@@ -367,6 +400,7 @@
     {
       "name": "waypoint-saas-welcome",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-welcome.html",
+      "sourcePath": "corpus/waypoint/waypoint-saas-welcome.html",
       "provider": "waypoint",
       "category": "onboarding",
       "supportTier": "modern-supported",
@@ -378,6 +412,7 @@
     {
       "name": "waypoint-social-new-comment",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/social-new-comment.html",
+      "sourcePath": "corpus/waypoint/waypoint-social-new-comment.html",
       "provider": "waypoint",
       "category": "social",
       "supportTier": "modern-supported",
@@ -389,6 +424,7 @@
     {
       "name": "waypoint-social-new-follower",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/social-new-follower.html",
+      "sourcePath": "corpus/waypoint/waypoint-social-new-follower.html",
       "provider": "waypoint",
       "category": "social",
       "supportTier": "modern-supported",
@@ -400,6 +436,7 @@
     {
       "name": "waypoint-social-post-metrics",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/social-post-metrics.html",
+      "sourcePath": "corpus/waypoint/waypoint-social-post-metrics.html",
       "provider": "waypoint",
       "category": "social",
       "supportTier": "modern-supported",
@@ -411,6 +448,7 @@
     {
       "name": "waypoint-social-yearly-wrapped-report",
       "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/social-yearly-wrapped-report.html",
+      "sourcePath": "corpus/waypoint/waypoint-social-yearly-wrapped-report.html",
       "provider": "waypoint",
       "category": "social",
       "supportTier": "modern-supported",
@@ -422,6 +460,7 @@
     {
       "name": "mailpace-welcome",
       "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/welcome.html",
+      "sourcePath": "corpus/mailpace/mailpace-welcome.html",
       "provider": "mailpace",
       "category": "onboarding",
       "supportTier": "modern-supported",
@@ -433,6 +472,7 @@
     {
       "name": "mailpace-confirmation",
       "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/confirmation.html",
+      "sourcePath": "corpus/mailpace/mailpace-confirmation.html",
       "provider": "mailpace",
       "category": "onboarding",
       "supportTier": "modern-supported",
@@ -444,6 +484,7 @@
     {
       "name": "mailpace-password-reset",
       "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/password_reset.html",
+      "sourcePath": "corpus/mailpace/mailpace-password-reset.html",
       "provider": "mailpace",
       "category": "account-security",
       "supportTier": "modern-supported",
@@ -455,6 +496,7 @@
     {
       "name": "mailpace-receipt",
       "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/receipt.html",
+      "sourcePath": "corpus/mailpace/mailpace-receipt.html",
       "provider": "mailpace",
       "category": "receipt",
       "supportTier": "modern-supported",
@@ -466,6 +508,7 @@
     {
       "name": "mailpace-security-alert",
       "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/security_alert.html",
+      "sourcePath": "corpus/mailpace/mailpace-security-alert.html",
       "provider": "mailpace",
       "category": "general",
       "supportTier": "modern-supported",
@@ -477,6 +520,7 @@
     {
       "name": "mailpace-account-deleted",
       "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/account_deleted.html",
+      "sourcePath": "corpus/mailpace/mailpace-account-deleted.html",
       "provider": "mailpace",
       "category": "general",
       "supportTier": "modern-supported",
@@ -488,6 +532,7 @@
     {
       "name": "postmark-comment-notification",
       "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/comment-notification/content.html",
+      "sourcePath": "corpus/postmark/postmark-comment-notification.html",
       "provider": "postmark",
       "category": "general",
       "supportTier": "modern-supported",
@@ -499,6 +544,7 @@
     {
       "name": "postmark-dunning",
       "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/dunning/content.html",
+      "sourcePath": "corpus/postmark/postmark-dunning.html",
       "provider": "postmark",
       "category": "lifecycle",
       "supportTier": "modern-supported",
@@ -510,6 +556,7 @@
     {
       "name": "postmark-example",
       "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/example/content.html",
+      "sourcePath": "corpus/postmark/postmark-example.html",
       "provider": "postmark",
       "category": "general",
       "supportTier": "modern-supported",
@@ -521,6 +568,7 @@
     {
       "name": "postmark-invoice",
       "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/invoice/content.html",
+      "sourcePath": "corpus/postmark/postmark-invoice.html",
       "provider": "postmark",
       "category": "receipt",
       "supportTier": "modern-supported",
@@ -532,6 +580,7 @@
     {
       "name": "postmark-password-reset-help",
       "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/password-reset-help/content.html",
+      "sourcePath": "corpus/postmark/postmark-password-reset-help.html",
       "provider": "postmark",
       "category": "account-security",
       "supportTier": "modern-supported",
@@ -543,6 +592,7 @@
     {
       "name": "postmark-password-reset",
       "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/password-reset/content.html",
+      "sourcePath": "corpus/postmark/postmark-password-reset.html",
       "provider": "postmark",
       "category": "account-security",
       "supportTier": "modern-supported",
@@ -554,6 +604,7 @@
     {
       "name": "postmark-receipt",
       "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/receipt/content.html",
+      "sourcePath": "corpus/postmark/postmark-receipt.html",
       "provider": "postmark",
       "category": "receipt",
       "supportTier": "modern-supported",
@@ -565,6 +616,7 @@
     {
       "name": "postmark-trial-expired",
       "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/trial-expired/content.html",
+      "sourcePath": "corpus/postmark/postmark-trial-expired.html",
       "provider": "postmark",
       "category": "lifecycle",
       "supportTier": "modern-supported",
@@ -576,6 +628,7 @@
     {
       "name": "postmark-trial-expiring",
       "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/trial-expiring/content.html",
+      "sourcePath": "corpus/postmark/postmark-trial-expiring.html",
       "provider": "postmark",
       "category": "lifecycle",
       "supportTier": "modern-supported",
@@ -587,6 +640,7 @@
     {
       "name": "postmark-user-invitation",
       "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/user-invitation/content.html",
+      "sourcePath": "corpus/postmark/postmark-user-invitation.html",
       "provider": "postmark",
       "category": "general",
       "supportTier": "modern-supported",
@@ -598,6 +652,7 @@
     {
       "name": "postmark-welcome",
       "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/welcome/content.html",
+      "sourcePath": "corpus/postmark/postmark-welcome.html",
       "provider": "postmark",
       "category": "onboarding",
       "supportTier": "modern-supported",
@@ -609,6 +664,7 @@
     {
       "name": "mailersend-password-reminder",
       "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/01-%20Setting%20Up%20Account%20/password-reminder.html",
+      "sourcePath": "corpus/mailersend/mailersend-password-reminder.html",
       "provider": "mailersend",
       "category": "account-security",
       "supportTier": "modern-supported",
@@ -620,6 +676,7 @@
     {
       "name": "mailersend-password-reminder-2",
       "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/01-%20Setting%20Up%20Account%20/password-reminder-2.html",
+      "sourcePath": "corpus/mailersend/mailersend-password-reminder-2.html",
       "provider": "mailersend",
       "category": "account-security",
       "supportTier": "modern-supported",
@@ -631,6 +688,7 @@
     {
       "name": "mailersend-welcome-01",
       "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/01-%20Setting%20Up%20Account%20/welcome-email-01.html",
+      "sourcePath": "corpus/mailersend/mailersend-welcome-01.html",
       "provider": "mailersend",
       "category": "onboarding",
       "supportTier": "modern-supported",
@@ -642,6 +700,7 @@
     {
       "name": "mailersend-welcome-2",
       "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/01-%20Setting%20Up%20Account%20/welcome-email-2.html",
+      "sourcePath": "corpus/mailersend/mailersend-welcome-2.html",
       "provider": "mailersend",
       "category": "onboarding",
       "supportTier": "modern-supported",
@@ -653,6 +712,7 @@
     {
       "name": "mailersend-invoice",
       "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/02-%20Order%20Management%20/invoice.html",
+      "sourcePath": "corpus/mailersend/mailersend-invoice.html",
       "provider": "mailersend",
       "category": "receipt",
       "supportTier": "modern-supported",
@@ -664,6 +724,7 @@
     {
       "name": "mailersend-invoice-2",
       "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/02-%20Order%20Management%20/invoice-2.html",
+      "sourcePath": "corpus/mailersend/mailersend-invoice-2.html",
       "provider": "mailersend",
       "category": "receipt",
       "supportTier": "modern-supported",
@@ -675,6 +736,7 @@
     {
       "name": "mailersend-order-confirmation",
       "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/02-%20Order%20Management%20/order-confirmation.html",
+      "sourcePath": "corpus/mailersend/mailersend-order-confirmation.html",
       "provider": "mailersend",
       "category": "onboarding",
       "supportTier": "modern-supported",
@@ -686,6 +748,7 @@
     {
       "name": "mailersend-feedback",
       "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/03-%20Keeping%20in%20Touch%20/feedback.html",
+      "sourcePath": "corpus/mailersend/mailersend-feedback.html",
       "provider": "mailersend",
       "category": "general",
       "supportTier": "modern-supported",
@@ -697,6 +760,7 @@
     {
       "name": "mailersend-product-announcement",
       "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/03-%20Keeping%20in%20Touch%20/product-announcement.html",
+      "sourcePath": "corpus/mailersend/mailersend-product-announcement.html",
       "provider": "mailersend",
       "category": "general",
       "supportTier": "modern-supported",
@@ -708,6 +772,7 @@
     {
       "name": "sendgrid-dynamic-receipt",
       "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/dynamic-templates/receipt/receipt.html",
+      "sourcePath": "corpus/sendgrid/sendgrid-dynamic-receipt.html",
       "provider": "sendgrid",
       "category": "receipt",
       "supportTier": "modern-supported",
@@ -719,6 +784,7 @@
     {
       "name": "sendgrid-call-to-action",
       "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/dynamic-templates/transactional-actions/call_to_action.html",
+      "sourcePath": "corpus/sendgrid/sendgrid-call-to-action.html",
       "provider": "sendgrid",
       "category": "general",
       "supportTier": "modern-supported",
@@ -730,6 +796,7 @@
     {
       "name": "sendgrid-paste-password-reset",
       "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/paste-templates/password-reset.html",
+      "sourcePath": "corpus/sendgrid/sendgrid-paste-password-reset.html",
       "provider": "sendgrid",
       "category": "account-security",
       "supportTier": "modern-supported",
@@ -741,6 +808,7 @@
     {
       "name": "sendgrid-paste-welcome",
       "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/paste-templates/welcome.html",
+      "sourcePath": "corpus/sendgrid/sendgrid-paste-welcome.html",
       "provider": "sendgrid",
       "category": "onboarding",
       "supportTier": "modern-supported",
@@ -752,6 +820,7 @@
     {
       "name": "sendgrid-merriweather-receipt",
       "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/merriweather-templates/receipt.html",
+      "sourcePath": "corpus/sendgrid/sendgrid-merriweather-receipt.html",
       "provider": "sendgrid",
       "category": "receipt",
       "supportTier": "modern-supported",
@@ -763,6 +832,7 @@
     {
       "name": "sendgrid-merriweather-welcome",
       "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/merriweather-templates/welcome.html",
+      "sourcePath": "corpus/sendgrid/sendgrid-merriweather-welcome.html",
       "provider": "sendgrid",
       "category": "onboarding",
       "supportTier": "modern-supported",
@@ -774,6 +844,7 @@
     {
       "name": "ckissi-welcome",
       "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Welcome/welcome.html",
+      "sourcePath": "corpus/ckissi/ckissi-welcome.html",
       "provider": "ckissi",
       "category": "onboarding",
       "supportTier": "modern-supported",
@@ -785,6 +856,7 @@
     {
       "name": "ckissi-reset-password",
       "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Reset%20password/reset-password.html",
+      "sourcePath": "corpus/ckissi/ckissi-reset-password.html",
       "provider": "ckissi",
       "category": "account-security",
       "supportTier": "modern-supported",
@@ -796,6 +868,7 @@
     {
       "name": "ckissi-confirm-email",
       "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Confirm%20Email/confirm-email.html",
+      "sourcePath": "corpus/ckissi/ckissi-confirm-email.html",
       "provider": "ckissi",
       "category": "general",
       "supportTier": "modern-supported",
@@ -807,6 +880,7 @@
     {
       "name": "ckissi-invoice",
       "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Invoice/invoice.html",
+      "sourcePath": "corpus/ckissi/ckissi-invoice.html",
       "provider": "ckissi",
       "category": "receipt",
       "supportTier": "modern-supported",
@@ -818,6 +892,7 @@
     {
       "name": "ckissi-trial-expired",
       "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Trial%20Expired/trial-expired.html",
+      "sourcePath": "corpus/ckissi/ckissi-trial-expired.html",
       "provider": "ckissi",
       "category": "lifecycle",
       "supportTier": "modern-supported",
@@ -829,6 +904,7 @@
     {
       "name": "davidamunga-welcome",
       "url": "https://raw.githubusercontent.com/DavidAmunga/html-email-templates/master/welcome.html",
+      "sourcePath": "corpus/davidamunga/davidamunga-welcome.html",
       "provider": "davidamunga",
       "category": "onboarding",
       "supportTier": "modern-supported",
@@ -840,6 +916,7 @@
     {
       "name": "davidamunga-reset-password",
       "url": "https://raw.githubusercontent.com/DavidAmunga/html-email-templates/master/reset-password.html",
+      "sourcePath": "corpus/davidamunga/davidamunga-reset-password.html",
       "provider": "davidamunga",
       "category": "account-security",
       "supportTier": "modern-supported",
@@ -851,6 +928,7 @@
     {
       "name": "colorlib-template-1",
       "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/1/index.html",
+      "sourcePath": "corpus/colorlib/colorlib-template-1.html",
       "provider": "colorlib",
       "category": "general",
       "supportTier": "modern-supported",
@@ -862,6 +940,7 @@
     {
       "name": "colorlib-template-2",
       "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/2/index.html",
+      "sourcePath": "corpus/colorlib/colorlib-template-2.html",
       "provider": "colorlib",
       "category": "general",
       "supportTier": "modern-supported",
@@ -873,6 +952,7 @@
     {
       "name": "colorlib-template-3",
       "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/3/index.html",
+      "sourcePath": "corpus/colorlib/colorlib-template-3.html",
       "provider": "colorlib",
       "category": "general",
       "supportTier": "modern-supported",
@@ -884,6 +964,7 @@
     {
       "name": "colorlib-template-4",
       "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/4/index.html",
+      "sourcePath": "corpus/colorlib/colorlib-template-4.html",
       "provider": "colorlib",
       "category": "general",
       "supportTier": "modern-supported",
@@ -895,6 +976,7 @@
     {
       "name": "colorlib-template-5",
       "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/5/index.html",
+      "sourcePath": "corpus/colorlib/colorlib-template-5.html",
       "provider": "colorlib",
       "category": "general",
       "supportTier": "modern-supported",
@@ -906,6 +988,7 @@
     {
       "name": "emailoctopus-abacus-transactional",
       "url": "https://raw.githubusercontent.com/threeheartsdigital/emailoctopus-templates/master/abacus/transactional.html",
+      "sourcePath": "corpus/emailoctopus/emailoctopus-abacus-transactional.html",
       "provider": "emailoctopus",
       "category": "general",
       "supportTier": "modern-supported",
@@ -917,6 +1000,7 @@
     {
       "name": "emailoctopus-karakol-transactional",
       "url": "https://raw.githubusercontent.com/threeheartsdigital/emailoctopus-templates/master/karakol/transactional.html",
+      "sourcePath": "corpus/emailoctopus/emailoctopus-karakol-transactional.html",
       "provider": "emailoctopus",
       "category": "general",
       "supportTier": "modern-supported",
@@ -928,6 +1012,7 @@
     {
       "name": "emailoctopus-wayfair-transactional",
       "url": "https://raw.githubusercontent.com/threeheartsdigital/emailoctopus-templates/master/wayfair/transactional.html",
+      "sourcePath": "corpus/emailoctopus/emailoctopus-wayfair-transactional.html",
       "provider": "emailoctopus",
       "category": "general",
       "supportTier": "modern-supported",
@@ -939,6 +1024,7 @@
     {
       "name": "codedmails-welcome-aleos",
       "url": "https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/welcome-email-aleos.html",
+      "sourcePath": "corpus/codedmails/codedmails-welcome-aleos.html",
       "provider": "codedmails",
       "category": "onboarding",
       "supportTier": "legacy-hacks",
@@ -950,6 +1036,7 @@
     {
       "name": "codedmails-reset-dineos",
       "url": "https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/reset-email-dineos.html",
+      "sourcePath": "corpus/codedmails/codedmails-reset-dineos.html",
       "provider": "codedmails",
       "category": "account-security",
       "supportTier": "legacy-hacks",
@@ -961,6 +1048,7 @@
     {
       "name": "codedmails-receipt-faedra",
       "url": "https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/receipt-email-faedra.html",
+      "sourcePath": "corpus/codedmails/codedmails-receipt-faedra.html",
       "provider": "codedmails",
       "category": "receipt",
       "supportTier": "legacy-hacks",
@@ -972,6 +1060,7 @@
     {
       "name": "codedmails-notification-ormes",
       "url": "https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/notification-email-ormes.html",
+      "sourcePath": "corpus/codedmails/codedmails-notification-ormes.html",
       "provider": "codedmails",
       "category": "general",
       "supportTier": "legacy-hacks",
@@ -983,6 +1072,7 @@
     {
       "name": "cerberus-fluid",
       "url": "https://raw.githubusercontent.com/emailmonday/Cerberus/master/cerberus-fluid.html",
+      "sourcePath": "corpus/cerberus/cerberus-fluid.html",
       "provider": "cerberus",
       "category": "general",
       "supportTier": "legacy-hacks",
@@ -994,6 +1084,7 @@
     {
       "name": "cerberus-hybrid",
       "url": "https://raw.githubusercontent.com/emailmonday/Cerberus/master/cerberus-hybrid.html",
+      "sourcePath": "corpus/cerberus/cerberus-hybrid.html",
       "provider": "cerberus",
       "category": "general",
       "supportTier": "legacy-hacks",
@@ -1005,6 +1096,7 @@
     {
       "name": "cerberus-responsive",
       "url": "https://raw.githubusercontent.com/emailmonday/Cerberus/master/cerberus-responsive.html",
+      "sourcePath": "corpus/cerberus/cerberus-responsive.html",
       "provider": "cerberus",
       "category": "general",
       "supportTier": "legacy-hacks",
@@ -1016,6 +1108,7 @@
     {
       "name": "konsav-general",
       "url": "https://raw.githubusercontent.com/konsav/email-templates/master/general.html",
+      "sourcePath": "corpus/konsav/konsav-general.html",
       "provider": "konsav",
       "category": "general",
       "supportTier": "modern-supported",
@@ -1027,6 +1120,7 @@
     {
       "name": "konsav-promotional",
       "url": "https://raw.githubusercontent.com/konsav/email-templates/master/promotional.html",
+      "sourcePath": "corpus/konsav/konsav-promotional.html",
       "provider": "konsav",
       "category": "general",
       "supportTier": "modern-supported",
@@ -1038,6 +1132,7 @@
     {
       "name": "konsav-explorational",
       "url": "https://raw.githubusercontent.com/konsav/email-templates/master/explorational.html",
+      "sourcePath": "corpus/konsav/konsav-explorational.html",
       "provider": "konsav",
       "category": "general",
       "supportTier": "modern-supported",
@@ -1049,6 +1144,7 @@
     {
       "name": "inkandthunder-notification",
       "url": "https://raw.githubusercontent.com/inkandthunder/email-templates/master/notification.html",
+      "sourcePath": "corpus/inkandthunder/inkandthunder-notification.html",
       "provider": "inkandthunder",
       "category": "general",
       "supportTier": "invalid-structure",
@@ -1060,8 +1156,7 @@
     {
       "name": "beefree-confirm-and-you-are-official",
       "url": "https://beefree.io/template/confirm-and-you-are-official",
-      "sourcePath": "corpus/beefree/confirm-and-you-are-official.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-confirm-and-you-are-official.html",
       "provider": "beefree",
       "category": "marketing",
       "supportTier": "modern-supported",
@@ -1073,8 +1168,7 @@
     {
       "name": "beefree-discover-ireland-this-st-patricks-day-2022",
       "url": "https://beefree.io/template/discover-ireland-this-st-patricks-day-2022",
-      "sourcePath": "corpus/beefree/discover-ireland-this-st-patricks-day-2022.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-discover-ireland-this-st-patricks-day-2022.html",
       "provider": "beefree",
       "category": "marketing",
       "supportTier": "modern-supported",
@@ -1086,8 +1180,7 @@
     {
       "name": "beefree-empty",
       "url": "https://beefree.io/template/empty",
-      "sourcePath": "corpus/beefree/empty.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-empty.html",
       "provider": "beefree",
       "category": "general",
       "supportTier": "modern-supported",
@@ -1099,8 +1192,7 @@
     {
       "name": "beefree-get-ready-for-the-big-game",
       "url": "https://beefree.io/template/get-ready-for-the-big-game",
-      "sourcePath": "corpus/beefree/get-ready-for-the-big-game.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-get-ready-for-the-big-game.html",
       "provider": "beefree",
       "category": "marketing",
       "supportTier": "modern-supported",
@@ -1112,8 +1204,7 @@
     {
       "name": "beefree-highlights-and-shared-wins",
       "url": "https://beefree.io/template/highlights-and-shared-wins",
-      "sourcePath": "corpus/beefree/highlights-and-shared-wins.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-highlights-and-shared-wins.html",
       "provider": "beefree",
       "category": "marketing",
       "supportTier": "modern-supported",
@@ -1125,8 +1216,7 @@
     {
       "name": "beefree-inside-insights-monthly-marketing-roundup",
       "url": "https://beefree.io/template/inside-insights-monthly-marketing-roundup",
-      "sourcePath": "corpus/beefree/inside-insights-monthly-marketing-roundup.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-inside-insights-monthly-marketing-roundup.html",
       "provider": "beefree",
       "category": "newsletter",
       "supportTier": "modern-supported",
@@ -1138,8 +1228,7 @@
     {
       "name": "beefree-just-one-last-step",
       "url": "https://beefree.io/template/just-one-last-step",
-      "sourcePath": "corpus/beefree/just-one-last-step.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-just-one-last-step.html",
       "provider": "beefree",
       "category": "onboarding",
       "supportTier": "modern-supported",
@@ -1151,8 +1240,7 @@
     {
       "name": "beefree-love-me-gift-me-kiss-me",
       "url": "https://beefree.io/template/love-me-gift-me-kiss-me",
-      "sourcePath": "corpus/beefree/love-me-gift-me-kiss-me.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-love-me-gift-me-kiss-me.html",
       "provider": "beefree",
       "category": "marketing",
       "supportTier": "modern-supported",
@@ -1164,8 +1252,7 @@
     {
       "name": "beefree-monthly-marketing-dispatch",
       "url": "https://beefree.io/template/monthly-marketing-dispatch",
-      "sourcePath": "corpus/beefree/monthly-marketing-dispatch.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-monthly-marketing-dispatch.html",
       "provider": "beefree",
       "category": "newsletter",
       "supportTier": "modern-supported",
@@ -1177,8 +1264,7 @@
     {
       "name": "beefree-new-terms-same-commitment-to-you",
       "url": "https://beefree.io/template/new-terms-same-commitment-to-you",
-      "sourcePath": "corpus/beefree/new-terms-same-commitment-to-you.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-new-terms-same-commitment-to-you.html",
       "provider": "beefree",
       "category": "lifecycle",
       "supportTier": "modern-supported",
@@ -1190,8 +1276,7 @@
     {
       "name": "beefree-surprise-your-valentine",
       "url": "https://beefree.io/template/surprise-your-valentine",
-      "sourcePath": "corpus/beefree/surprise-your-valentine.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-surprise-your-valentine.html",
       "provider": "beefree",
       "category": "marketing",
       "supportTier": "modern-supported",
@@ -1203,8 +1288,7 @@
     {
       "name": "beefree-the-big-game-viewing-event",
       "url": "https://beefree.io/template/the-big-game-viewing-event",
-      "sourcePath": "corpus/beefree/the-big-game-viewing-event.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-the-big-game-viewing-event.html",
       "provider": "beefree",
       "category": "marketing",
       "supportTier": "modern-supported",
@@ -1216,8 +1300,7 @@
     {
       "name": "beefree-try-premium-for-free-this-valentines-day",
       "url": "https://beefree.io/template/try-premium-for-free-this-valentines-day",
-      "sourcePath": "corpus/beefree/try-premium-for-free-this-valentines-day.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-try-premium-for-free-this-valentines-day.html",
       "provider": "beefree",
       "category": "marketing",
       "supportTier": "modern-supported",
@@ -1229,8 +1312,7 @@
     {
       "name": "beefree-voices-that-shape-us",
       "url": "https://beefree.io/template/voices-that-shape-us",
-      "sourcePath": "corpus/beefree/voices-that-shape-us.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-voices-that-shape-us.html",
       "provider": "beefree",
       "category": "newsletter",
       "supportTier": "modern-supported",
@@ -1242,8 +1324,7 @@
     {
       "name": "beefree-we-have-updated-our-terms",
       "url": "https://beefree.io/template/we-have-updated-our-terms",
-      "sourcePath": "corpus/beefree/we-have-updated-our-terms.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-we-have-updated-our-terms.html",
       "provider": "beefree",
       "category": "lifecycle",
       "supportTier": "modern-supported",
@@ -1255,8 +1336,7 @@
     {
       "name": "beefree-we-have-updated-the-fine-print",
       "url": "https://beefree.io/template/we-have-updated-the-fine-print",
-      "sourcePath": "corpus/beefree/we-have-updated-the-fine-print.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-we-have-updated-the-fine-print.html",
       "provider": "beefree",
       "category": "lifecycle",
       "supportTier": "modern-supported",
@@ -1268,8 +1348,7 @@
     {
       "name": "beefree-we-would-love-your-feedback",
       "url": "https://beefree.io/template/we-would-love-your-feedback",
-      "sourcePath": "corpus/beefree/we-would-love-your-feedback.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-we-would-love-your-feedback.html",
       "provider": "beefree",
       "category": "lifecycle",
       "supportTier": "modern-supported",
@@ -1281,8 +1360,7 @@
     {
       "name": "beefree-wine-down-valentines-day-promo",
       "url": "https://beefree.io/template/wine-down-valentines-day-promo",
-      "sourcePath": "corpus/beefree/wine-down-valentines-day-promo.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-wine-down-valentines-day-promo.html",
       "provider": "beefree",
       "category": "marketing",
       "supportTier": "modern-supported",
@@ -1294,8 +1372,7 @@
     {
       "name": "beefree-your-journey-in-review",
       "url": "https://beefree.io/template/your-journey-in-review",
-      "sourcePath": "corpus/beefree/your-journey-in-review.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-your-journey-in-review.html",
       "provider": "beefree",
       "category": "newsletter",
       "supportTier": "modern-supported",
@@ -1307,8 +1384,7 @@
     {
       "name": "beefree-your-voice-matters",
       "url": "https://beefree.io/template/your-voice-matters",
-      "sourcePath": "corpus/beefree/your-voice-matters.html",
-      "baseUrl": "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/",
+      "sourcePath": "corpus/beefree/beefree-your-voice-matters.html",
       "provider": "beefree",
       "category": "newsletter",
       "supportTier": "modern-supported",
