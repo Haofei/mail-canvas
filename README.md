@@ -216,6 +216,16 @@ Run the full corpus comparison with the same semantic gate:
 npm run compare:playwright
 ```
 
+Run only the modern editor/generated marketing corpus:
+
+```sh
+npm run compare:playwright-editors
+```
+
+This filters the local, vendored corpus to Beefree, Stripo, and MJML templates.
+It is intended for renderer-fidelity work on valid generated email HTML, not
+legacy hand-written compatibility fixtures.
+
 The corpus lives in `scripts/templates.mjs` as structured metadata: provider,
 category, status, expected warning count, and the reason for any known warning.
 Known-warning templates are skipped in the broad corpus unless they are
@@ -572,6 +582,15 @@ npm run test:playwright-regression
 ```sh
 npm run compare:playwright
 ```
+
+只跑现代编辑器/生成器模板：
+
+```sh
+npm run compare:playwright-editors
+```
+
+这个命令只筛选本地 vendored 语料里的 Beefree、Stripo 和 MJML 模板，主要用于
+合法生成 HTML 的渲染质量迭代，不针对老旧手写兼容 hack。
 
 `scripts/templates.mjs` 现在是带 metadata 的语料：provider、category、status、
 expected warning count，以及 known warning 的原因。全量语料里，known-warning

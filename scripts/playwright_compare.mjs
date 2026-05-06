@@ -30,6 +30,8 @@ function parseArgs(argv) {
     timeoutMs: DEFAULT_TIMEOUT_MS,
     limit: TEMPLATE_CORPUS.length,
     only: [],
+    providers: [],
+    categories: [],
     all: false,
     allowRemote: true,
     keep: false,
@@ -62,6 +64,12 @@ function parseArgs(argv) {
         break;
       case '--only':
         args.only.push(next());
+        break;
+      case '--provider':
+        args.providers.push(next());
+        break;
+      case '--category':
+        args.categories.push(next());
         break;
       case '--all':
         args.all = true;
@@ -172,17 +180,29 @@ async function loadExpectations(expectationsPath) {
 }
 
 function selectTemplates(args, expectations) {
+  let pool = TEMPLATE_CORPUS;
+  if (args.providers.length > 0) {
+    const providers = new Set(args.providers);
+    pool = pool.filter((template) => providers.has(template.provider));
+  }
+  if (args.categories.length > 0) {
+    const categories = new Set(args.categories);
+    pool = pool.filter((template) => categories.has(template.category));
+  }
+
   const expectedNames = expectations ? Object.keys(expectations.templates ?? {}) : [];
   const wanted =
     args.only.length > 0
       ? args.only
       : args.all
-        ? TEMPLATE_CORPUS.filter((template) => template.supportTier === 'modern-supported')
+        ? pool
+            .filter((template) => template.supportTier === 'modern-supported')
             .slice(0, args.limit)
             .map((template) => template.name)
       : expectedNames.length > 0
         ? expectedNames
-        : TEMPLATE_CORPUS.filter((template) => template.supportTier === 'modern-supported')
+        : pool
+            .filter((template) => template.supportTier === 'modern-supported')
             .slice(0, args.limit)
             .map((template) => template.name);
   const wantedSet = new Set(wanted);
