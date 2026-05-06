@@ -11,6 +11,7 @@ use crate::document::inject_head_markup;
 pub(crate) fn inline_css(html: &str, viewport_width: u32) -> Result<String> {
     let html = strip_hidden_conditional_comments(html);
     let html = inject_active_media_styles(&html, viewport_width);
+    let html = strip_media_rules_from_style_blocks(&html);
     CSSInliner::options()
         .load_remote_stylesheets(false)
         .keep_style_tags(false)
@@ -31,24 +32,43 @@ pub(crate) fn strip_hidden_conditional_comments(html: &str) -> String {
         let start = offset + start_rel;
         out.push_str(&html[offset..start]);
 
+        if let Some(content_start) = downlevel_revealed_content_start(&lower, start) {
+            let Some(close_rel) = lower[content_start..].find("<!--<![endif]-->") else {
+                out.push_str(&html[start..]);
+                return out;
+            };
+            let content_end = content_start + close_rel;
+            out.push_str(&strip_hidden_conditional_comments(
+                &html[content_start..content_end],
+            ));
+            offset = content_end + "<!--<![endif]-->".len();
+            continue;
+        }
+
         let Some(end_rel) = lower[start..].find("<![endif]-->") else {
             out.push_str(&html[start..]);
             return out;
         };
         let end = start + end_rel;
-        let opener = &lower[start..end.min(start + 128)];
-        if opener.contains("><!-->") {
-            let marker_len = "<!--[if".len();
-            out.push_str(&html[start..start + marker_len]);
-            offset = start + marker_len;
-            continue;
-        }
-
         offset = end + "<![endif]-->".len();
     }
 
     out.push_str(&html[offset..]);
     out
+}
+
+fn downlevel_revealed_content_start(lower: &str, start: usize) -> Option<usize> {
+    let condition_end = start + lower[start..].find("]>")? + "]>".len();
+    let marker = lower[condition_end..].strip_prefix("<!--")?;
+    let whitespace_len = marker.bytes().take_while(u8::is_ascii_whitespace).count();
+    let marker_after_whitespace = &marker[whitespace_len..];
+    if marker_after_whitespace.starts_with("-->") {
+        return Some(condition_end + "<!--".len() + whitespace_len + "-->".len());
+    }
+    if marker_after_whitespace.starts_with('>') {
+        return Some(condition_end + "<!--".len() + whitespace_len + ">".len());
+    }
+    None
 }
 
 fn inject_active_media_styles(html: &str, viewport_width: u32) -> String {
@@ -59,6 +79,55 @@ fn inject_active_media_styles(html: &str, viewport_width: u32) -> String {
 
     let style = format!("\n<style id=\"email-render-active-media\">\n{css}\n</style>\n");
     inject_head_markup(html, &style)
+}
+
+fn strip_media_rules_from_style_blocks(html: &str) -> String {
+    let lower = html.to_ascii_lowercase();
+    let mut out = String::with_capacity(html.len());
+    let mut offset = 0;
+
+    while let Some(start_rel) = lower[offset..].find("<style") {
+        let start = offset + start_rel;
+        let Some(open_rel) = lower[start..].find('>') else {
+            break;
+        };
+        let content_start = start + open_rel + 1;
+        let Some(end_rel) = lower[content_start..].find("</style>") else {
+            break;
+        };
+        let content_end = content_start + end_rel;
+
+        out.push_str(&html[offset..content_start]);
+        out.push_str(&strip_media_rules(&html[content_start..content_end]));
+        offset = content_end;
+    }
+
+    out.push_str(&html[offset..]);
+    out
+}
+
+fn strip_media_rules(css: &str) -> String {
+    let lower = css.to_ascii_lowercase();
+    let mut out = String::with_capacity(css.len());
+    let mut offset = 0;
+
+    while let Some(media_rel) = lower[offset..].find("@media") {
+        let media_start = offset + media_rel;
+        let condition_start = media_start + "@media".len();
+        let Some(open_rel) = css[condition_start..].find('{') else {
+            break;
+        };
+        let open = condition_start + open_rel;
+        let Some(close) = find_matching_brace(css, open) else {
+            break;
+        };
+
+        out.push_str(&css[offset..media_start]);
+        offset = close + 1;
+    }
+
+    out.push_str(&css[offset..]);
+    out
 }
 
 fn active_media_css(html: &str, viewport_width: u32) -> String {
@@ -585,5 +654,75 @@ mod tests {
                 .is_some_and(|value| value.contains("inter.woff2") && value.contains("woff2"))
         );
         assert_eq!(declaration_value(&faces[0], "unicode-range"), Some("U+??"));
+    }
+
+    #[test]
+    fn keeps_downlevel_revealed_conditional_content_with_spaced_marker() {
+        let html = r#"<!--[if !mso]><!-- -->
+            <link href="fonts.css" rel="stylesheet">
+            <!--<![endif]-->"#;
+
+        let stripped = strip_hidden_conditional_comments(html);
+
+        assert!(!stripped.contains("[if"));
+        assert!(!stripped.contains("[endif]"));
+        assert!(stripped.contains(r#"<link href="fonts.css" rel="stylesheet">"#));
+    }
+
+    #[test]
+    fn keeps_downlevel_revealed_conditional_content_with_compact_marker() {
+        let html = r#"<!--[if !mso]><!--><style>.x { color: red; }</style><!--<![endif]-->"#;
+
+        let stripped = strip_hidden_conditional_comments(html);
+
+        assert_eq!(style_blocks(&stripped), vec![".x { color: red; }"]);
+    }
+
+    #[test]
+    fn strips_media_rules_after_extracting_active_viewport_css() {
+        let html = r#"
+            <html><head><style>
+              .desktop_hide { display: none; }
+              @media (max-width:720px) { .desktop_hide { display: table !important; } }
+            </style></head>
+            <body><table class="desktop_hide"><tr><td>Hidden on desktop</td></tr></table></body></html>
+        "#;
+
+        let inlined = inline_css(html, 800).unwrap();
+
+        assert!(inlined.contains("display: none"));
+        assert!(!inlined.contains("display: table"));
+    }
+
+    #[test]
+    fn keeps_matching_media_rules_as_active_inline_css() {
+        let html = r#"
+            <html><head><style>
+              .stack { width: 280px; }
+              @media (max-width:720px) { .stack { width: 320px !important; } }
+            </style></head>
+            <body><table class="stack"><tr><td>Stacked</td></tr></table></body></html>
+        "#;
+
+        let inlined = inline_css(html, 600).unwrap();
+
+        assert!(inlined.contains("width: 320px"));
+        assert!(!inlined.contains("@media"));
+    }
+
+    #[test]
+    fn downlevel_revealed_content_can_contain_nested_mso_conditionals() {
+        let html = r#"<!--[if !mso]><!-->
+            <table class="desktop_hide"><tr><td><a><!--[if mso]><v:roundrect><![endif]--><span>Mobile</span></a></td></tr></table>
+            <!--<![endif]-->
+            <table class="row-8"><tr><td>Desktop row</td></tr></table>"#;
+
+        let stripped = strip_hidden_conditional_comments(html);
+
+        assert!(stripped.contains(r#"<table class="desktop_hide">"#));
+        assert!(stripped.contains(r#"<span>Mobile</span>"#));
+        assert!(stripped.contains(r#"<table class="row-8">"#));
+        assert!(!stripped.contains("v:roundrect"));
+        assert!(!stripped.contains("[endif]"));
     }
 }
