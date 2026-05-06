@@ -353,11 +353,13 @@ Committed font fixtures remain available for explicit deterministic runs:
 - `fixtures/fonts/Tinos-Bold.ttf`
 - `fixtures/fonts/NotoSans-Regular.ttf`
 - `fixtures/fonts/NotoSans-Bold.ttf`
+- `fixtures/fonts/NotoSansMath-Regular.ttf`
 
 Arimo is used as the Arial-compatible Latin sans fixture for editor-generated
 marketing templates; Tinos is used as the Times-compatible serif fixture for
 editor templates that fall back to `serif`; Noto Sans remains the broader
-fallback fixture.
+fallback fixture. Noto Sans Math covers common symbols and arrows that editor
+templates often place in CTA labels.
 
 `npm run test:playwright-regression` passes `--fixture-fonts` so GitHub Actions
 does not depend on the Linux runner's installed fonts. Pass `--fixture-fonts` to

@@ -2,8 +2,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use cosmic_text::{Style as FontStyle, Weight as FontWeight};
+use cosmic_text::{Fallback, Style as FontStyle, Weight as FontWeight};
 use kuchiki::traits::TendrilSink as _;
+use unicode_script::Script;
 use url::Url;
 
 use crate::api::{AssetKind, AssetStatus, RenderDiagnostics};
@@ -20,6 +21,58 @@ use crate::{AssetReport, RenderWarning, RenderWarningCode, parse_font_style};
 
 const MAX_WEB_FONT_IMPORTS: usize = 16;
 const MAX_WEB_FONTS: usize = 32;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MailCanvasFontFallback;
+
+impl Fallback for MailCanvasFontFallback {
+    fn common_fallback(&self) -> &[&'static str] {
+        &[
+            "Noto Sans",
+            "Noto Sans Math",
+            "Noto Sans Symbols",
+            "Noto Sans Symbols2",
+            "Arial Unicode MS",
+            "Apple Symbols",
+            "Segoe UI Symbol",
+            "DejaVu Sans",
+            "FreeSans",
+            "Arimo",
+            "Tinos",
+            "Noto Color Emoji",
+            "Apple Color Emoji",
+            "Segoe UI Emoji",
+        ]
+    }
+
+    fn forbidden_fallback(&self) -> &[&'static str] {
+        &[".LastResort"]
+    }
+
+    fn script_fallback(&self, script: Script, locale: &str) -> &[&'static str] {
+        match script {
+            Script::Han | Script::Bopomofo => han_fallback(locale),
+            Script::Hiragana | Script::Katakana => &["Noto Sans CJK JP", "Hiragino Sans"],
+            Script::Hangul => &["Noto Sans CJK KR", "Apple SD Gothic Neo"],
+            Script::Arabic => &["Noto Sans Arabic"],
+            Script::Devanagari => &["Noto Sans Devanagari"],
+            Script::Bengali => &["Noto Sans Bengali"],
+            Script::Hebrew => &["Noto Sans Hebrew"],
+            Script::Thai => &["Noto Sans Thai"],
+            _ => &[],
+        }
+    }
+}
+
+fn han_fallback(locale: &str) -> &'static [&'static str] {
+    match locale {
+        "ja" | "ja-JP" => &["Noto Sans CJK JP", "Hiragino Sans"],
+        "ko" | "ko-KR" => &["Noto Sans CJK KR", "Apple SD Gothic Neo"],
+        "zh-HK" => &["Noto Sans CJK HK", "PingFang HK"],
+        "zh-TW" => &["Noto Sans CJK TC", "PingFang TC"],
+        _ => &["Noto Sans CJK SC", "PingFang SC"],
+    }
+}
 
 #[cfg(test)]
 pub(crate) fn system_font_database() -> fontdb::Database {
@@ -63,12 +116,14 @@ fn fixture_font_database() -> Result<fontdb::Database> {
     let tinos_bold = root.join("Tinos-Bold.ttf");
     let noto_regular = root.join("NotoSans-Regular.ttf");
     let noto_bold = root.join("NotoSans-Bold.ttf");
+    let noto_math_regular = root.join("NotoSansMath-Regular.ttf");
     if !arimo_regular.is_file()
         || !arimo_bold.is_file()
         || !tinos_regular.is_file()
         || !tinos_bold.is_file()
         || !noto_regular.is_file()
         || !noto_bold.is_file()
+        || !noto_math_regular.is_file()
     {
         bail!("fixture fonts missing: {}", root.display());
     }
@@ -79,6 +134,7 @@ fn fixture_font_database() -> Result<fontdb::Database> {
         tinos_bold,
         noto_regular,
         noto_bold,
+        noto_math_regular,
     ])
 }
 

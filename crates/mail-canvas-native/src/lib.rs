@@ -5,7 +5,8 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use cosmic_text::FontSystem;
 use fontdb::Database;
 use mail_canvas_core::{
-    EmailRenderer, RenderOutputBackend, RenderRequest, RenderedImage, RenderedPdf, RendererCore,
+    EmailRenderer, MailCanvasFontFallback, RenderOutputBackend, RenderRequest, RenderedImage,
+    RenderedPdf, RendererCore,
 };
 use tiny_skia::Pixmap;
 
@@ -45,7 +46,7 @@ impl MailCanvasRenderer {
         let font_system = FontSystem::new_with_locale_and_db_and_fallback(
             "en-US".to_string(),
             font_db,
-            cosmic_text::PlatformFallback,
+            MailCanvasFontFallback,
         );
         Ok(Self {
             inner: RendererCore::new(font_system),

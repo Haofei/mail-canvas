@@ -9,9 +9,9 @@ use fontdb::Database;
 use image::{DynamicImage, ImageDecoder, ImageReader, Limits};
 use js_sys::Uint8Array;
 use mail_canvas_core::{
-    AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, RenderOutputBackend,
-    RenderRequest, RenderWarning, RenderedImage, RendererCore, ResourcePolicy, ResourceProvider,
-    ResourceProviderFactory, repair_png_chunk_crcs,
+    AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, MailCanvasFontFallback,
+    RenderOutputBackend, RenderRequest, RenderWarning, RenderedImage, RendererCore, ResourcePolicy,
+    ResourceProvider, ResourceProviderFactory, repair_png_chunk_crcs,
 };
 use serde::Serialize;
 use tiny_skia::Pixmap;
@@ -63,7 +63,7 @@ impl WasmRenderer {
         let font_system = FontSystem::new_with_locale_and_db_and_fallback(
             "en-US".to_string(),
             db,
-            cosmic_text::PlatformFallback,
+            MailCanvasFontFallback,
         );
         Ok(Self {
             inner: RendererCore::new(font_system),

@@ -21,6 +21,7 @@ const FIXTURE_FONT_FILES = [
   path.join(ROOT_DIR, 'fixtures', 'fonts', 'Tinos-Bold.ttf'),
   path.join(ROOT_DIR, 'fixtures', 'fonts', 'NotoSans-Regular.ttf'),
   path.join(ROOT_DIR, 'fixtures', 'fonts', 'NotoSans-Bold.ttf'),
+  path.join(ROOT_DIR, 'fixtures', 'fonts', 'NotoSansMath-Regular.ttf'),
 ];
 
 function parseArgs(argv) {
@@ -971,6 +972,7 @@ function fixtureFontCss() {
   const tinosBold = pathToFileURL(FIXTURE_FONT_FILES[3]).href;
   const notoRegular = pathToFileURL(FIXTURE_FONT_FILES[4]).href;
   const notoBold = pathToFileURL(FIXTURE_FONT_FILES[5]).href;
+  const notoMathRegular = pathToFileURL(FIXTURE_FONT_FILES[6]).href;
   const sansAliases = [
     'Arial',
     'Arial Nova',
@@ -1008,6 +1010,11 @@ function fixtureFontCss() {
     css.push(fontFaceCss(family, 400, tinosRegular), fontFaceCss(family, 700, tinosBold));
   }
   css.push(fontFaceCss('Noto Sans', 400, notoRegular), fontFaceCss('Noto Sans', 700, notoBold));
+  css.push(
+    fontFaceCss('Noto Sans Math', 400, notoMathRegular),
+    fontFaceCss('Apple Symbols', 400, notoMathRegular),
+    fontFaceCss('Segoe UI Symbol', 400, notoMathRegular),
+  );
   css.push('</style>');
   return css.join('\n');
 }

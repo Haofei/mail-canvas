@@ -49,6 +49,7 @@ pub use document::{PreparedDocument, build_document};
 use dom::{
     attr, document_base_url, element_tag, ensure_dom_node_limit, find_first_tag, is_metadata_tag,
 };
+pub use fonts::MailCanvasFontFallback;
 use fonts::{WebFontFace, font_database_families, load_web_fonts_from_html};
 #[cfg(test)]
 use fonts::{
@@ -245,7 +246,7 @@ impl MailCanvasRenderer {
         let font_system = FontSystem::new_with_locale_and_db_and_fallback(
             "en-US".to_string(),
             font_db,
-            cosmic_text::PlatformFallback,
+            MailCanvasFontFallback,
         );
         Ok(Self {
             inner: RendererCore::new(font_system),
@@ -2688,6 +2689,39 @@ mod tests {
     }
 
     #[test]
+    fn mail_canvas_fallback_uses_symbol_fonts_for_missing_glyphs() {
+        let mut font_system = FontSystem::new_with_locale_and_db_and_fallback(
+            "en-US".to_string(),
+            system_font_database(),
+            MailCanvasFontFallback,
+        );
+        let mut buffer = Buffer::new_empty(Metrics::new(20.0, 24.0));
+        buffer.set_size(&mut font_system, Some(240.0), Some(48.0));
+        buffer.set_text(
+            &mut font_system,
+            "Submit ⇒",
+            &Attrs::new().family(cosmic_text::Family::SansSerif),
+            Shaping::Advanced,
+            None,
+        );
+
+        let arrow = buffer
+            .layout_runs()
+            .flat_map(|run| run.glyphs.iter())
+            .find(|glyph| "Submit ⇒"[glyph.start..glyph.end].contains('⇒'))
+            .expect("arrow glyph");
+        let face = font_system.db().face(arrow.font_id).expect("font face");
+        assert_ne!(arrow.glyph_id, 0);
+        assert!(
+            face.families
+                .iter()
+                .any(|(family, _)| family.eq_ignore_ascii_case("Noto Sans Math")),
+            "expected Noto Sans Math fallback, got {:?}",
+            face.families
+        );
+    }
+
+    #[test]
     fn important_longhand_declarations_override_later_shorthand() {
         let layout = layout_for_test(
             r#"<div style="padding-left: 24px !important; padding: 48px; background: #000">Hello</div>"#,
@@ -3133,7 +3167,7 @@ mod tests {
         let mut font_system = FontSystem::new_with_locale_and_db_and_fallback(
             "en-US".to_string(),
             system_font_database(),
-            cosmic_text::PlatformFallback,
+            MailCanvasFontFallback,
         );
         let mut engine = LayoutEngine::new(
             &mut font_system,

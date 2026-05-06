@@ -1015,6 +1015,7 @@ dependencies = [
  "taffy",
  "tiny-skia",
  "ttf-parser",
+ "unicode-script",
  "url",
  "wuff",
 ]
