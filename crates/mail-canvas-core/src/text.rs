@@ -22,7 +22,6 @@ const RICH_TEXT_BASELINE_LEADING_FACTOR: f32 = 0.5;
 const NORMAL_LINE_HEIGHT_FALLBACK_FACTOR: f32 = 1.4;
 const DEFAULT_WRAP_WIDTH_SCALE: f32 = 1.0;
 const WEB_STANDARD_SANS_WRAP_WIDTH_SCALE: f32 = 1.06;
-const POPPINS_WRAP_WIDTH_SCALE: f32 = 1.08;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BlinkGenericFamily {
@@ -73,12 +72,6 @@ const TEXT_COMPATIBILITY_RULES: &[TextCompatibilityRule] = &[
         generic_family: Some(BlinkGenericFamily::Monospace),
         apply_mac_ascent_hack: true,
         wrap_width_scale: DEFAULT_WRAP_WIDTH_SCALE,
-    },
-    TextCompatibilityRule {
-        families: &["poppins"],
-        generic_family: None,
-        apply_mac_ascent_hack: false,
-        wrap_width_scale: POPPINS_WRAP_WIDTH_SCALE,
     },
 ];
 
