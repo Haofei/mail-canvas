@@ -1,5 +1,5 @@
 {
-  "width": 600,
+  "width": 800,
   "validationMode": "semantic",
   "skipKnownWarningTemplates": true,
   "maxWarnings": 0,

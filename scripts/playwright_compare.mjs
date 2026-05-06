@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import pixelmatch from 'pixelmatch';
 import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
-import { TEMPLATE_CORPUS } from './templates.mjs';
+import { TEMPLATE_CORPUS, loadTemplateSource } from './templates.mjs';
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_WORK_DIR = '/tmp/mail-canvas-playwright-compare';
@@ -112,10 +112,15 @@ async function main() {
   }
   const downloaded = [];
   for (const template of templates) {
-    const html = await download(template.url, args.timeoutMs);
+    const source = await loadTemplateSource(template, args.timeoutMs);
     const htmlPath = path.join(dirs.html, `${template.name}.html`);
-    await writeFile(htmlPath, html);
-    downloaded.push({ ...template, htmlPath });
+    await writeFile(htmlPath, source.html);
+    downloaded.push({
+      ...template,
+      htmlPath,
+      sourceUrl: source.url,
+      sourceBaseUrl: source.baseUrl,
+    });
   }
 
   const browser = await chromium.launch({ headless: true });
@@ -194,20 +199,6 @@ async function ensureRenderer() {
   return renderer;
 }
 
-async function download(url, timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) {
-      throw new Error(`${response.status} ${response.statusText}`);
-    }
-    return await response.text();
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 async function compareTemplate(template, args, dirs, renderer, browser) {
   const browserPath = path.join(dirs.browser, `${template.name}.png`);
   const rustPath = path.join(dirs.rust, `${template.name}.png`);
@@ -218,7 +209,7 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
   const preparedPath = path.join(dirs.prepared, `${template.name}.html`);
 
   const sourceHtml = await readFile(template.htmlPath, 'utf8');
-  const baseUrl = new URL('.', template.url).href;
+  const baseUrl = template.sourceBaseUrl ?? template.baseUrl ?? new URL('.', template.url).href;
   await writeFile(preparedPath, buildBrowserDocument(sourceHtml, baseUrl, args.width));
 
   const browserMetrics = await browserScreenshot(
@@ -272,7 +263,7 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
   const warningCount = diagnostics.warnings?.length ?? 0;
   return {
     name: template.name,
-    url: template.url,
+    url: template.sourceUrl ?? template.url,
     provider: template.provider,
     category: template.category,
     supportTier: template.supportTier,

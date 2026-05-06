@@ -1,4 +1,12 @@
-export const TEMPLATES = [
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import beefreeCatalog from '../corpus/beefree/catalog.json' with { type: 'json' };
+
+const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+const REMOTE_TEMPLATES = [
   [
     'leemunroe-inlined',
     'https://raw.githubusercontent.com/leemunroe/responsive-html-email-template/master/email-inlined.html',
@@ -474,21 +482,75 @@ const TEMPLATE_METADATA = {
   },
 };
 
-export const TEMPLATE_CORPUS = TEMPLATES.map(([name, url]) => ({
-  name,
-  url,
-  provider: templateProvider(name),
-  category: templateCategory(name),
+const BEEFREE_FIXTURES = beefreeCatalog.map((entry) => ({
+  name: entry.name,
+  url: entry.pageUrl,
+  sourcePath: entry.sourcePath,
+  baseUrl: entry.baseUrl,
+}));
+
+export const TEMPLATES = [
+  ...REMOTE_TEMPLATES,
+  ...BEEFREE_FIXTURES.map((entry) => [entry.name, entry.url]),
+];
+
+export const TEMPLATE_CORPUS = [
+  ...REMOTE_TEMPLATES.map(([name, url]) => ({ name, url })),
+  ...BEEFREE_FIXTURES,
+].map((template) => ({
+  ...template,
+  provider: templateProvider(template.name),
+  category: templateCategory(template.name),
   supportTier: 'modern-supported',
   supportReason: '',
   status: 'active',
   expectedWarnings: 0,
   reason: '',
-  ...(TEMPLATE_METADATA[name] ?? {}),
+  ...(TEMPLATE_METADATA[template.name] ?? {}),
 }));
+
+const TEMPLATE_INDEX = new Map(TEMPLATE_CORPUS.map((template) => [template.name, template]));
+
+export function getTemplate(name) {
+  return TEMPLATE_INDEX.get(name) ?? null;
+}
+
+export async function loadTemplateSource(templateOrName, timeoutMs = 30000) {
+  const template =
+    typeof templateOrName === 'string' ? getTemplate(templateOrName) : templateOrName;
+  if (!template) {
+    throw new Error(`unknown template: ${templateOrName}`);
+  }
+
+  if (template.sourcePath) {
+    const htmlPath = path.resolve(ROOT_DIR, template.sourcePath);
+    const html = await readFile(htmlPath, 'utf8');
+    return {
+      template,
+      html,
+      htmlPath,
+      url: template.url,
+      baseUrl:
+        template.baseUrl ?? pathToFileURL(`${path.dirname(htmlPath)}${path.sep}`).href,
+    };
+  }
+
+  const response = await fetch(template.url, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!response.ok) {
+    throw new Error(`${template.url}: ${response.status} ${response.statusText}`);
+  }
+  return {
+    template,
+    html: await response.text(),
+    htmlPath: null,
+    url: template.url,
+    baseUrl: template.baseUrl ?? new URL('.', template.url).href,
+  };
+}
 
 function templateProvider(name) {
   if (name.startsWith('waypoint-')) return 'waypoint';
+  if (name.startsWith('beefree-')) return 'beefree';
   if (name.startsWith('postmark-')) return 'postmark';
   if (name.startsWith('mailersend-')) return 'mailersend';
   if (name.startsWith('mailpace-')) return 'mailpace';
@@ -506,6 +568,9 @@ function templateProvider(name) {
 }
 
 function templateCategory(name) {
+  if (name.startsWith('beefree-')) {
+    return beefreeCategory(name);
+  }
   if (name.includes('receipt') || name.includes('invoice') || name.includes('billing')) {
     return 'receipt';
   }
@@ -528,4 +593,20 @@ function templateCategory(name) {
     return 'social';
   }
   return 'general';
+}
+
+function beefreeCategory(name) {
+  if (name.includes('terms') || name.includes('fine-print') || name.includes('feedback')) {
+    return 'lifecycle';
+  }
+  if (name.includes('journey-in-review') || name.includes('monthly') || name.includes('voice')) {
+    return 'newsletter';
+  }
+  if (name.includes('last-step')) {
+    return 'onboarding';
+  }
+  if (name.includes('empty')) {
+    return 'general';
+  }
+  return 'marketing';
 }

@@ -6,7 +6,9 @@ comparison scripts.
 Fields:
 
 - `name`: stable template id
-- `url`: upstream source URL
+- `url`: upstream catalog or source URL used for reporting
+- `sourcePath`: optional committed local HTML fixture path
+- `baseUrl`: optional base URL for resolving relative remote assets from local fixtures
 - `provider`: source family
 - `category`: coarse email category
 - `supportTier`: `modern-supported`, `legacy-hacks`, or `invalid-structure`

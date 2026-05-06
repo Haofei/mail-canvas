@@ -10,6 +10,7 @@
     "corpus:manifest": "node scripts/export_corpus_manifest.mjs",
     "demo": "npm run build:demo && node scripts/serve_demo.mjs",
     "dump:chrome-layout": "node scripts/playwright_layout_dump.mjs",
+    "test:playwright-all": "node scripts/playwright_compare.mjs --expectations scripts/playwright_expectations.json --work-dir /tmp/mail-canvas-playwright-all --timeout-ms 30000 --all",
     "test:playwright-corpus": "node scripts/playwright_compare.mjs --expectations scripts/playwright_expectations.json --work-dir /tmp/mail-canvas-playwright-corpus --timeout-ms 30000 --all",
     "test:playwright-regression": "node scripts/playwright_compare.mjs --expectations scripts/playwright_expectations.json --work-dir /tmp/mail-canvas-playwright-regression --timeout-ms 30000"
   },

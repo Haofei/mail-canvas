@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { TEMPLATE_CORPUS } from './templates.mjs';
+import { TEMPLATE_CORPUS, loadTemplateSource } from './templates.mjs';
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE_FONT_FILES = [
@@ -58,12 +58,12 @@ async function main() {
   }
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'mail-canvas-benchmark-'));
   try {
-    const html = await download(template.url, args.timeoutMs);
+    const source = await loadTemplateSource(template, args.timeoutMs);
     const htmlPath = path.join(tmpDir, `${template.name}.html`);
     const browserPng = path.join(tmpDir, `${template.name}.browser.png`);
     const rustPng = path.join(tmpDir, `${template.name}.rust.png`);
-    await writeFile(htmlPath, html);
-    const baseUrl = new URL('.', template.url).href;
+    await writeFile(htmlPath, source.html);
+    const baseUrl = source.baseUrl;
 
     await runOrThrow('cargo', ['build'], ROOT_DIR);
     const renderer = path.join(ROOT_DIR, 'target', 'debug', 'mail-canvas');
@@ -109,7 +109,7 @@ async function main() {
     const report = {
       generatedAt: new Date().toISOString(),
       template: template.name,
-      url: template.url,
+      url: source.url,
       width: args.width,
       mailCanvas: rust,
       chromium,
@@ -234,20 +234,6 @@ async function sampleProcessTreeRss(rootPid) {
     }
   }
   return total;
-}
-
-async function download(url, timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) {
-      throw new Error(`${response.status} ${response.statusText}`);
-    }
-    return await response.text();
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 main().catch((error) => {

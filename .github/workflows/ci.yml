@@ -57,3 +57,52 @@ jobs:
             /tmp/mail-canvas-playwright-regression/side-by-side
             /tmp/mail-canvas-playwright-regression/logs
           if-no-files-found: warn
+
+  playwright-full-corpus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install npm dependencies
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Generate corpus manifest
+        run: npm run corpus:manifest
+      - name: Run full Playwright corpus
+        id: full-corpus
+        continue-on-error: true
+        run: npm run test:playwright-corpus
+      - name: Append corpus summary
+        if: always()
+        run: |
+          echo "## Full corpus report" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f /tmp/mail-canvas-playwright-corpus/report.md ]; then
+            cat /tmp/mail-canvas-playwright-corpus/report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No corpus report produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ "${{ steps.full-corpus.outcome }}" != "success" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Corpus run completed with expectation failures. See uploaded artifact for latest diffs." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload full corpus artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-full-corpus
+          path: |
+            /tmp/mail-canvas-playwright-corpus/comparison.json
+            /tmp/mail-canvas-playwright-corpus/comparison.report.json
+            /tmp/mail-canvas-playwright-corpus/report.md
+            /tmp/mail-canvas-playwright-corpus/browser
+            /tmp/mail-canvas-playwright-corpus/rust
+            /tmp/mail-canvas-playwright-corpus/diff
+            /tmp/mail-canvas-playwright-corpus/side-by-side
+            /tmp/mail-canvas-playwright-corpus/logs
+          if-no-files-found: warn

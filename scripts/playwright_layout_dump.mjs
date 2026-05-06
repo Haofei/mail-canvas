@@ -5,7 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { chromium } from 'playwright';
-import { TEMPLATES } from './templates.mjs';
+import { loadTemplateSource } from './templates.mjs';
 
 const DEFAULT_WIDTH = 600;
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -267,20 +267,12 @@ async function loadSource(args) {
     };
   }
 
-  const template = TEMPLATES.find(([name]) => name === args.template);
-  if (!template) {
-    throw new Error(`unknown template: ${args.template}`);
-  }
-  const [name, url] = template;
-  const response = await fetch(url, { signal: AbortSignal.timeout(args.timeoutMs) });
-  if (!response.ok) {
-    throw new Error(`${url}: ${response.status} ${response.statusText}`);
-  }
+  const source = await loadTemplateSource(args.template, args.timeoutMs);
   return {
-    name,
-    url,
-    baseUrl: new URL('.', url).href,
-    html: await response.text(),
+    name: source.template.name,
+    url: source.url,
+    baseUrl: source.baseUrl,
+    html: source.html,
   };
 }
 
