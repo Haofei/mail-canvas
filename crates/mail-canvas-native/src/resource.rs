@@ -24,11 +24,9 @@ const BLINK_RESOURCE_USER_AGENT: &str = concat!(
 #[derive(Debug, Clone)]
 pub struct ResourcePolicy {
     pub(crate) base_url: Option<Url>,
-    pub(crate) allow_remote: bool,
-    pub(crate) https_only: bool,
-    pub(crate) timeout: Duration,
-    pub(crate) max_image_bytes: usize,
-    pub(crate) max_decoded_pixels: u64,
+    pub(crate) policy: mail_canvas_core::ResourcePolicy,
+    pub(crate) total_bytes: Arc<Mutex<usize>>,
+    pub(crate) resource_count: Arc<Mutex<usize>>,
     pub(crate) asset_reports: Arc<Mutex<Vec<AssetReport>>>,
 }
 
@@ -36,15 +34,9 @@ impl ResourcePolicy {
     pub(crate) fn from_request(request: &RenderRequest, document_base_url: Option<Url>) -> Self {
         Self {
             base_url: request.base_url.clone().or(document_base_url),
-            allow_remote: request.allow_remote,
-            https_only: request.https_only,
-            timeout: if request.timeout.is_zero() {
-                Duration::from_secs(8)
-            } else {
-                request.timeout
-            },
-            max_image_bytes: request.max_image_bytes.max(1),
-            max_decoded_pixels: request.max_decoded_pixels.max(1),
+            policy: request.resource_policy.clone(),
+            total_bytes: Arc::new(Mutex::new(0)),
+            resource_count: Arc::new(Mutex::new(0)),
             asset_reports: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -78,6 +70,35 @@ impl ResourcePolicy {
             return;
         }
         reports.push(report);
+    }
+
+    fn record_resource_usage(&self, bytes: usize) -> Result<()> {
+        let mut count = self
+            .resource_count
+            .lock()
+            .expect("resource count mutex poisoned");
+        *count = count.saturating_add(1);
+        if *count > self.policy.max_resource_count {
+            bail!(
+                "resource count exceeds max-resource-count: {} > {}",
+                *count,
+                self.policy.max_resource_count
+            );
+        }
+
+        let mut total = self
+            .total_bytes
+            .lock()
+            .expect("resource bytes mutex poisoned");
+        *total = total.saturating_add(bytes);
+        if *total > self.policy.max_total_resource_bytes {
+            bail!(
+                "resource bytes exceed max-total-resource-bytes: {} > {}",
+                *total,
+                self.policy.max_total_resource_bytes
+            );
+        }
+        Ok(())
     }
 }
 
@@ -121,10 +142,7 @@ pub(crate) fn load_image(
     policy: &ResourcePolicy,
     initiator: &'static str,
 ) -> Result<ImageData> {
-    let loaded = match load_resource_bytes_inner(src, policy, AssetKind::Image, initiator, false) {
-        Ok(loaded) => loaded,
-        Err(error) => return Err(error),
-    };
+    let loaded = load_resource_bytes_inner(src, policy, AssetKind::Image, initiator, false)?;
     match decode_image_bytes(&loaded.bytes, policy) {
         Ok(image) => {
             policy.push_asset_report(
@@ -196,7 +214,7 @@ fn load_resource_bytes_inner(
                 return Err(error);
             }
         };
-        if let Err(error) = ensure_resource_size(bytes.len(), policy.max_image_bytes) {
+        if let Err(error) = ensure_resource_size(bytes.len(), policy.policy.max_resource_bytes) {
             policy.push_asset_report(
                 asset_report(kind, AssetStatus::Failed, src)
                     .with_source(AssetSource::DataUrl)
@@ -206,6 +224,7 @@ fn load_resource_bytes_inner(
             );
             return Err(error);
         }
+        policy.record_resource_usage(bytes.len())?;
         let loaded = LoadedResourceBytes {
             resolved_url: None,
             source: AssetSource::DataUrl,
@@ -349,18 +368,21 @@ fn load_file_url(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
         }
     }
     let bytes = fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
-    ensure_resource_size(bytes.len(), policy.max_image_bytes)?;
+    ensure_resource_size(bytes.len(), policy.policy.max_resource_bytes)?;
+    policy.record_resource_usage(bytes.len())?;
     Ok(bytes)
 }
 
 fn load_remote_url(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
-    if !policy.allow_remote {
+    if !policy.policy.allow_remote {
         bail!("remote resources are disabled");
     }
-    if policy.https_only && url.scheme() != "https" {
+    if policy.policy.https_only && url.scheme() != "https" {
         bail!("non-HTTPS remote resource rejected");
     }
-    reject_private_host(url)?;
+    if policy.policy.deny_private_networks {
+        reject_private_host(url)?;
+    }
 
     let mut last_error = None;
     for _ in 0..3 {
@@ -374,9 +396,9 @@ fn load_remote_url(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
 
 fn load_remote_url_once(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
     let agent = ureq::Agent::config_builder()
-        .https_only(policy.https_only)
+        .https_only(policy.policy.https_only)
         .max_redirects(3)
-        .timeout_global(Some(policy.timeout))
+        .timeout_global(Some(effective_timeout(policy)))
         .build()
         .new_agent();
     let mut response = agent
@@ -388,11 +410,20 @@ fn load_remote_url_once(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
     let bytes = response
         .body_mut()
         .with_config()
-        .limit(policy.max_image_bytes as u64)
+        .limit(policy.policy.max_resource_bytes as u64)
         .read_to_vec()
         .with_context(|| format!("failed to read response body from {url}"))?;
-    ensure_resource_size(bytes.len(), policy.max_image_bytes)?;
+    ensure_resource_size(bytes.len(), policy.policy.max_resource_bytes)?;
+    policy.record_resource_usage(bytes.len())?;
     Ok(bytes)
+}
+
+fn effective_timeout(policy: &ResourcePolicy) -> Duration {
+    if policy.policy.timeout.is_zero() {
+        Duration::from_secs(8)
+    } else {
+        policy.policy.timeout
+    }
 }
 
 fn reject_private_host(url: &Url) -> Result<()> {
@@ -429,13 +460,14 @@ fn ensure_resource_size(len: usize, max_len: usize) -> Result<()> {
 }
 
 fn decode_image_bytes(bytes: &[u8], policy: &ResourcePolicy) -> Result<ImageData> {
-    ensure_resource_size(bytes.len(), policy.max_image_bytes)?;
-    let max_side = policy.max_decoded_pixels.min(u64::from(u32::MAX)) as u32;
+    ensure_resource_size(bytes.len(), policy.policy.max_resource_bytes)?;
+    let max_side = u32::try_from(policy.policy.max_decoded_pixels.min(u64::from(u32::MAX)))
+        .expect("bounded decoded pixel limit");
     let mut reader = ImageReader::new(Cursor::new(bytes));
     let mut limits = Limits::default();
     limits.max_image_width = Some(max_side);
     limits.max_image_height = Some(max_side);
-    limits.max_alloc = Some(policy.max_decoded_pixels.saturating_mul(4));
+    limits.max_alloc = Some(policy.policy.max_decoded_pixels.saturating_mul(4));
     reader.limits(limits);
     let mut decoder = reader
         .with_guessed_format()
@@ -450,10 +482,10 @@ fn decode_image_bytes(bytes: &[u8], policy: &ResourcePolicy) -> Result<ImageData
     let rgba = image.to_rgba8();
     let (width, height) = rgba.dimensions();
     let pixels = u64::from(width).saturating_mul(u64::from(height));
-    if pixels > policy.max_decoded_pixels {
+    if pixels > policy.policy.max_decoded_pixels {
         bail!(
             "decoded image is too large: {pixels} pixels > {} pixels",
-            policy.max_decoded_pixels
+            policy.policy.max_decoded_pixels
         );
     }
     Ok(ImageData {
@@ -474,11 +506,18 @@ mod tests {
     fn test_policy() -> ResourcePolicy {
         ResourcePolicy {
             base_url: None,
-            allow_remote: false,
-            https_only: true,
-            timeout: Duration::from_secs(1),
-            max_image_bytes: 1024 * 1024,
-            max_decoded_pixels: 1024,
+            policy: mail_canvas_core::ResourcePolicy {
+                allow_remote: false,
+                https_only: true,
+                deny_private_networks: true,
+                timeout: Duration::from_secs(1),
+                max_resource_bytes: 1024 * 1024,
+                max_total_resource_bytes: 2 * 1024 * 1024,
+                max_decoded_pixels: 1024,
+                max_resource_count: 8,
+            },
+            total_bytes: Arc::new(Mutex::new(0)),
+            resource_count: Arc::new(Mutex::new(0)),
             asset_reports: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -494,6 +533,38 @@ mod tests {
         let image = decode_image_bytes(&oriented, &test_policy()).expect("decode");
 
         assert_eq!((image.width, image.height), (2, 1));
+    }
+
+    #[test]
+    fn resource_policy_enforces_total_resource_bytes() {
+        let policy = test_policy();
+        policy
+            .record_resource_usage(1024 * 1024)
+            .expect("first megabyte");
+        let error = policy
+            .record_resource_usage(1024 * 1024 + 1)
+            .expect_err("should exceed aggregate bytes");
+        assert!(
+            error.to_string().contains("max-total-resource-bytes"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn resource_policy_enforces_resource_count() {
+        let policy = test_policy();
+        for _ in 0..8 {
+            policy
+                .record_resource_usage(1)
+                .expect("within count budget");
+        }
+        let error = policy
+            .record_resource_usage(1)
+            .expect_err("should exceed aggregate count");
+        assert!(
+            error.to_string().contains("max-resource-count"),
+            "unexpected error: {error}"
+        );
     }
 
     fn jpeg_with_exif_orientation(jpeg: Vec<u8>, orientation: u16) -> Vec<u8> {

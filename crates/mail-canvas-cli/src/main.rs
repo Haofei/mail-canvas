@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, ValueEnum};
-use mail_canvas_core::{AssetReport, ConsoleMessage, EmailRenderer, RenderRequest, RenderWarning};
+use mail_canvas_core::{EmailRenderer, RenderDiagnosticsReport, RenderRequest, ResourcePolicy};
 use mail_canvas_native::{MailCanvasRenderer, build_document_from_files};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -92,6 +92,18 @@ struct Args {
     #[arg(long, default_value_t = 16_000_000)]
     max_decoded_pixels: u64,
 
+    /// Maximum total resource bytes across all fetched assets in a single render.
+    #[arg(long, default_value_t = 64 * 1024 * 1024)]
+    max_total_resource_bytes: usize,
+
+    /// Maximum number of external resources fetched in a single render.
+    #[arg(long, default_value_t = 128)]
+    max_resource_count: usize,
+
+    /// Allow private/localhost network resource access when remote loading is enabled.
+    #[arg(long)]
+    allow_private_network: bool,
+
     /// Maximum DOM nodes accepted before rendering.
     #[arg(long, default_value_t = 100_000)]
     max_dom_nodes: usize,
@@ -129,17 +141,22 @@ fn main() -> Result<()> {
         viewport_height: args.viewport_height,
         min_height: args.min_height,
         scale: args.scale,
-        timeout: args
-            .timeout_ms
-            .map(Duration::from_millis)
-            .unwrap_or_else(|| Duration::from_secs(args.timeout)),
         settle: Duration::from_millis(args.settle_ms),
         base_url: document.base_url,
         max_height: args.max_height,
-        allow_remote: args.allow_remote,
-        https_only: !args.allow_http,
-        max_image_bytes: args.max_image_bytes,
-        max_decoded_pixels: args.max_decoded_pixels,
+        resource_policy: ResourcePolicy {
+            allow_remote: args.allow_remote,
+            https_only: !args.allow_http,
+            deny_private_networks: !args.allow_private_network,
+            timeout: args
+                .timeout_ms
+                .map(Duration::from_millis)
+                .unwrap_or_else(|| Duration::from_secs(args.timeout)),
+            max_resource_bytes: args.max_image_bytes,
+            max_total_resource_bytes: args.max_total_resource_bytes,
+            max_decoded_pixels: args.max_decoded_pixels,
+            max_resource_count: args.max_resource_count,
+        },
         max_dom_nodes: args.max_dom_nodes,
         max_layout_depth: args.max_layout_depth,
         max_table_cells: args.max_table_cells,
@@ -161,12 +178,7 @@ fn main() -> Result<()> {
         .with_context(|| format!("failed to write {}", args.output.display()))?;
 
     if let Some(path) = &args.warnings_json {
-        write_warnings_json(
-            path,
-            &image.warnings,
-            &image.assets,
-            &image.console_messages,
-        )?;
+        write_warnings_json(path, &image.diagnostics())?;
     }
 
     eprintln!(
@@ -207,28 +219,11 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-#[derive(serde::Serialize)]
-struct DiagnosticsReport<'a> {
-    warnings: &'a [RenderWarning],
-    assets: &'a [AssetReport],
-    console_messages: &'a [ConsoleMessage],
-}
-
-fn write_warnings_json(
-    path: &std::path::Path,
-    warnings: &[RenderWarning],
-    assets: &[AssetReport],
-    console_messages: &[ConsoleMessage],
-) -> Result<()> {
+fn write_warnings_json(path: &std::path::Path, report: &RenderDiagnosticsReport) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
-    let report = DiagnosticsReport {
-        warnings,
-        assets,
-        console_messages,
-    };
     let json = serde_json::to_vec_pretty(&report).context("failed to serialize warnings JSON")?;
     fs::write(path, json).with_context(|| format!("failed to write {}", path.display()))?;
     Ok(())

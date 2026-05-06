@@ -4,8 +4,10 @@
   "description": "Chrome-free HTML/CSS email template renderer for PNG and raster PDF output.",
   "private": true,
   "scripts": {
+    "benchmark:memory": "node scripts/benchmark_memory.mjs",
     "build:demo": "bash scripts/build_wasm_demo.sh",
     "compare:playwright": "node scripts/playwright_compare.mjs --expectations scripts/playwright_expectations.json --work-dir /tmp/mail-canvas-playwright-compare --timeout-ms 30000 --all",
+    "corpus:manifest": "node scripts/export_corpus_manifest.mjs",
     "demo": "npm run build:demo && node scripts/serve_demo.mjs",
     "dump:chrome-layout": "node scripts/playwright_layout_dump.mjs",
     "test:playwright-corpus": "node scripts/playwright_compare.mjs --expectations scripts/playwright_expectations.json --work-dir /tmp/mail-canvas-playwright-corpus --timeout-ms 30000 --all",

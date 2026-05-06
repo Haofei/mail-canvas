@@ -2,6 +2,7 @@ use anyhow::{Context as _, Result};
 use mail_canvas_core::RenderedImage;
 use pdf_writer::{Content, Name, Pdf, Rect as PdfRect, Ref};
 
+#[allow(clippy::cast_precision_loss)]
 pub(crate) fn raster_pdf_from_png(rendered: &RenderedImage) -> Result<Vec<u8>> {
     let width = rendered.pixel_width.max(1);
     let height = rendered.pixel_height.max(1);

@@ -70,7 +70,10 @@ Important options:
   enabled.
 - `--timeout-ms`: resource timeout in milliseconds.
 - `--max-image-bytes`: encoded image byte limit.
+- `--max-total-resource-bytes`: aggregate encoded byte limit across all fetched assets.
+- `--max-resource-count`: aggregate fetched asset count limit.
 - `--max-decoded-pixels`: decoded image pixel limit.
+- `--allow-private-network`: allow localhost/private IP fetches when remote loading is enabled.
 - `--max-dom-nodes`: maximum DOM nodes accepted before rendering.
 - `--max-layout-depth`: maximum nested layout depth before truncating nested
   content with a structured warning.
@@ -85,6 +88,15 @@ The diagnostics JSON currently includes:
 - `assets`: every attempted stylesheet, image, and web font load with final
   status
 - `console_messages`: the compatibility stderr messages printed by the CLI
+
+Resource policy defaults:
+
+- per-resource bytes: `10 MiB`
+- total fetched bytes per render: `64 MiB`
+- max fetched resource count: `128`
+- decoded image pixels: `16,000,000`
+- remote loading: disabled by default
+- private-network access: denied by default when remote loading is enabled
 
 ### Rust API
 
@@ -143,6 +155,13 @@ Current wasm boundary:
 - not supported yet: direct wasm-side fetch, PDF output, automatic remote asset
   loading
 
+The browser demo now runs in a worker and uses explicit asset injection:
+
+1. Main thread fetches stylesheet/image/font bytes.
+2. Main thread posts those bytes to `demo/worker.js`.
+3. The worker registers assets in `mail-canvas-wasm`.
+4. The worker returns PNG bytes and diagnostics JSON.
+
 ### Project Shape
 
 - `crates/mail-canvas-core/`: parse, style, layout, paint model, diagnostics,
@@ -155,6 +174,16 @@ Current wasm boundary:
 - `crates/mail-canvas-cli/`: CLI wrapper around the native renderer.
 - `scripts/`: Chromium comparison, layout dump, template corpus, and Blink
   reference helpers.
+
+Inside `mail-canvas-core`, the large renderer implementation is physically split
+across:
+
+- `src/layout.rs`
+- `src/style.rs`
+- `src/paint.rs`
+
+The crate root still owns shared helpers and tests, but the renderer is no
+longer a single-file implementation.
 
 ### Fidelity Workflow
 
@@ -189,6 +218,16 @@ Known-warning templates are skipped in the broad corpus unless they are
 explicitly listed in `scripts/playwright_expectations.json`; this keeps broken
 upstream image URLs and unfilled template-variable images out of the pass rate.
 
+The committed corpus index is also exported to:
+
+- `corpus/manifest.json`
+
+Refresh it with:
+
+```sh
+npm run corpus:manifest
+```
+
 ```sh
 node scripts/playwright_compare.mjs \
   --expectations scripts/playwright_expectations.json \
@@ -199,8 +238,11 @@ node scripts/playwright_compare.mjs \
 
 Artifacts are written under `/tmp/mail-canvas-playwright-regression` or
 `/tmp/mail-canvas-playwright-compare`, including browser screenshots, MailCanvas
-screenshots, diff images, side-by-side images, `comparison.json`, and
-`report.md`.
+screenshots, diff images, side-by-side images, `comparison.json`,
+`comparison.report.json`, and `report.md`.
+
+`comparison.report.json` is the machine-readable summary intended for CI and
+artifact upload.
 
 For detailed layout investigation:
 
@@ -241,6 +283,51 @@ the smallest email-relevant rule in Rust.
 - The fixed Playwright regression suite currently passes. Total pixel diff is
   reported as a diagnostic signal, while the gate focuses on content presence,
   layout stability, media regions, and non-text/non-media structure.
+
+### Supported CSS Matrix
+
+| Area | Supported | Notes |
+|---|---|---|
+| Block flow | `display:block`, margins, padding, borders, background color/image | Email-oriented subset only |
+| Inline text | `font-*`, `line-height`, `letter-spacing`, `text-align`, `text-transform`, `white-space:nowrap` | Uses `cosmic-text`, not Skia |
+| Tables | nested tables, `rowspan`, `colspan`, `cellpadding`, `cellspacing`, `table-layout:fixed`, `col` width hints | Primary modern email target |
+| Images | `img`, `background-image`, `object-fit`, `object-position`, width/height attributes | Remote and `data:` assets supported |
+| Flex subset | `display:flex`, direction, wrap, align/justify, gap | Only common email-safe subset |
+| Float subset | `float:left/right`, `clear`, basic wrap avoidance | Supported for modern templates only |
+| Positioning | static, relative, absolute/fixed child placement | No full browser stacking model |
+| Unsupported / partial | JS, forms, video, canvas, grid, VML/MSO, malformed table DOM repair, legacy hybrid hacks | Out of scope |
+
+### Deterministic Regression Fonts
+
+Regression screenshots use committed font fixtures:
+
+- `fixtures/fonts/NotoSans-Regular.ttf`
+- `fixtures/fonts/NotoSans-Bold.ttf`
+
+The Playwright comparison script passes these fixtures through `--font-file` so
+layout and text wrapping do not depend on the host machine's system fonts.
+
+### Examples
+
+- Node wrapper: `examples/node-render.mjs`
+- HTTP service shell: `examples/http-service.mjs`
+
+Both examples currently shell out to the native CLI instead of embedding a Node
+native module. That keeps the example path simple while the Rust public API
+stabilizes.
+
+### Memory Benchmark
+
+Compare one corpus template against Chromium:
+
+```sh
+npm run benchmark:memory -- --template colorlib-template-1 --out /tmp/mail-canvas-benchmark.json
+```
+
+This writes RSS and elapsed-time measurements for:
+
+- `mail-canvas` CLI
+- Chromium screenshot capture through Playwright
 
 ### Development Checks
 
@@ -315,7 +402,10 @@ cargo run -p mail-canvas-cli -- \
 - `--allow-http`: 开启远程资源后，允许非 HTTPS。
 - `--timeout-ms`: 资源加载超时，单位毫秒。
 - `--max-image-bytes`: 编码后图片字节限制。
+- `--max-total-resource-bytes`: 单次渲染所有外部资源累计字节限制。
+- `--max-resource-count`: 单次渲染允许拉取的外部资源总数。
 - `--max-decoded-pixels`: 解码后图片像素数限制。
+- `--allow-private-network`: 开启远程资源后，允许访问 localhost / 私网地址。
 - `--max-dom-nodes`: 渲染前允许的最大 DOM node 数。
 - `--max-layout-depth`: 最大嵌套 layout 深度，超过后截断嵌套内容并输出结构化
   warning。
@@ -382,6 +472,13 @@ const diagnostics = JSON.parse(renderer.diagnostics_json());
   stylesheet/image/font 资源、通过 `base_url` 解析相对 URL
 - 暂不支持：wasm 内直接 fetch、PDF 输出、自动远程资源加载
 
+浏览器 demo 现在已经改成 worker 模式：
+
+1. 主线程负责 fetch stylesheet / image / font；
+2. 主线程把字节通过 `postMessage` 发给 `demo/worker.js`；
+3. worker 在 `mail-canvas-wasm` 里注册资源并渲染；
+4. worker 返回 PNG 字节和 diagnostics JSON。
+
 ### 项目结构
 
 - `crates/mail-canvas-core/`: parse、style、layout、paint model、diagnostics，
@@ -392,6 +489,16 @@ const diagnostics = JSON.parse(renderer.diagnostics_json());
   `HTML + 注册字体 + data:image` 渲染链路。
 - `crates/mail-canvas-cli/`: 基于 native renderer 的 CLI。
 - `scripts/`: Chromium 对比、布局 dump、模板语料和 Blink 参考代码工具。
+
+语料索引会导出到：
+
+- `corpus/manifest.json`
+
+可用下面命令刷新：
+
+```sh
+npm run corpus:manifest
+```
 
 ### 对比和调试
 

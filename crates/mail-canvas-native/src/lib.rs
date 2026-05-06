@@ -231,6 +231,7 @@ fn validate_scale(scale: f32) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn scaled_dimension(value: u32, scale: f32, label: &str) -> Result<u32> {
     const MAX_RENDER_PIXELS_PER_AXIS: u32 = 16_384;
     if value == 0 {

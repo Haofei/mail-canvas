@@ -1,0 +1,59 @@
+name: ci
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Cargo fmt
+        run: cargo fmt --all --check
+      - name: Cargo test
+        run: cargo test --workspace
+      - name: Cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Wasm target check
+        run: cargo check -p mail-canvas-wasm --target wasm32-unknown-unknown
+
+  playwright-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install npm dependencies
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Generate corpus manifest
+        run: npm run corpus:manifest
+      - name: Run Playwright regression
+        run: npm run test:playwright-regression
+      - name: Upload visual diff artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-regression
+          path: |
+            /tmp/mail-canvas-playwright-regression/comparison.json
+            /tmp/mail-canvas-playwright-regression/comparison.report.json
+            /tmp/mail-canvas-playwright-regression/report.md
+            /tmp/mail-canvas-playwright-regression/browser
+            /tmp/mail-canvas-playwright-regression/rust
+            /tmp/mail-canvas-playwright-regression/diff
+            /tmp/mail-canvas-playwright-regression/side-by-side
+            /tmp/mail-canvas-playwright-regression/logs
+          if-no-files-found: warn

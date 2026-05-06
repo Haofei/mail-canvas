@@ -18,6 +18,9 @@ const MAX_WEB_FONTS: usize = 32;
 
 #[cfg(test)]
 pub(crate) fn system_font_database() -> fontdb::Database {
+    if let Ok(db) = fixture_font_database() {
+        return db;
+    }
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
     #[cfg(target_os = "macos")]
@@ -40,6 +43,21 @@ pub(crate) fn font_database_from_paths(paths: &[std::path::PathBuf]) -> Result<f
     }
     set_generic_font_families(&mut db);
     Ok(db)
+}
+
+#[cfg(test)]
+fn fixture_font_database() -> Result<fontdb::Database> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("fixtures")
+        .join("fonts");
+    let regular = root.join("NotoSans-Regular.ttf");
+    let bold = root.join("NotoSans-Bold.ttf");
+    if !regular.is_file() || !bold.is_file() {
+        bail!("fixture fonts missing: {}", root.display());
+    }
+    font_database_from_paths(&[regular, bold])
 }
 
 #[cfg(test)]

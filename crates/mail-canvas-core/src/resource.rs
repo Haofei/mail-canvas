@@ -1,4 +1,6 @@
 use anyhow::Result;
+#[cfg(test)]
+use anyhow::bail;
 use url::Url;
 
 use crate::{AssetKind, AssetReport};
@@ -30,10 +32,9 @@ pub trait ResourceProviderFactory {
 #[cfg(test)]
 #[derive(Debug, Clone)]
 pub(crate) struct TestResourceProvider {
-    allow_remote: bool,
-    https_only: bool,
-    max_image_bytes: usize,
-    max_decoded_pixels: u64,
+    policy: crate::ResourcePolicy,
+    total_bytes: std::sync::Arc<std::sync::Mutex<usize>>,
+    resource_count: std::sync::Arc<std::sync::Mutex<usize>>,
     asset_reports: std::sync::Arc<std::sync::Mutex<Vec<AssetReport>>>,
 }
 
@@ -41,10 +42,9 @@ pub(crate) struct TestResourceProvider {
 impl TestResourceProvider {
     pub(crate) fn from_request(request: &crate::RenderRequest) -> Self {
         Self {
-            allow_remote: request.allow_remote,
-            https_only: request.https_only,
-            max_image_bytes: request.max_image_bytes.max(1),
-            max_decoded_pixels: request.max_decoded_pixels.max(1),
+            policy: request.resource_policy.clone(),
+            total_bytes: std::sync::Arc::new(std::sync::Mutex::new(0)),
+            resource_count: std::sync::Arc::new(std::sync::Mutex::new(0)),
             asset_reports: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
@@ -83,19 +83,20 @@ impl ResourceProvider for TestResourceProvider {
         use image::{DynamicImage, ImageDecoder, ImageReader, Limits};
 
         if !src.trim_start().starts_with("data:") {
-            if src.starts_with("http://") || src.starts_with("https://") {
-                if !self.allow_remote || (self.https_only && src.starts_with("http://")) {
-                    self.push_asset_report(
-                        crate::AssetReport::new(
-                            crate::AssetKind::Image,
-                            crate::AssetStatus::Blocked,
-                            src.to_string(),
-                        )
-                        .with_source(crate::AssetSource::Remote)
-                        .with_initiator(initiator),
-                    );
-                    bail!("remote resources are disabled");
-                }
+            if (src.starts_with("http://") || src.starts_with("https://"))
+                && (!self.policy.allow_remote
+                    || (self.policy.https_only && src.starts_with("http://")))
+            {
+                self.push_asset_report(
+                    crate::AssetReport::new(
+                        crate::AssetKind::Image,
+                        crate::AssetStatus::Blocked,
+                        src.to_string(),
+                    )
+                    .with_source(crate::AssetSource::Remote)
+                    .with_initiator(initiator),
+                );
+                bail!("remote resources are disabled");
             }
             bail!("image not available in core test provider");
         }
@@ -105,14 +106,17 @@ impl ResourceProvider for TestResourceProvider {
         let (bytes, _) = data_url
             .decode_to_vec()
             .map_err(|error| anyhow!("invalid data URL body: {error:?}"))?;
-        if bytes.len() > self.max_image_bytes {
+        if bytes.len() > self.policy.max_resource_bytes {
             bail!("image resource exceeds max-image-bytes");
         }
+        self.record_resource_usage(bytes.len())?;
         let mut reader = ImageReader::new(std::io::Cursor::new(&bytes));
         let mut limits = Limits::default();
-        limits.max_image_width = Some(self.max_decoded_pixels.min(u64::from(u32::MAX)) as u32);
-        limits.max_image_height = Some(self.max_decoded_pixels.min(u64::from(u32::MAX)) as u32);
-        limits.max_alloc = Some(self.max_decoded_pixels.saturating_mul(4));
+        limits.max_image_width =
+            Some(self.policy.max_decoded_pixels.min(u64::from(u32::MAX)) as u32);
+        limits.max_image_height =
+            Some(self.policy.max_decoded_pixels.min(u64::from(u32::MAX)) as u32);
+        limits.max_alloc = Some(self.policy.max_decoded_pixels.saturating_mul(4));
         reader.limits(limits);
         let mut decoder = reader
             .with_guessed_format()?
@@ -126,7 +130,7 @@ impl ResourceProvider for TestResourceProvider {
         let rgba = image.to_rgba8();
         let width = rgba.width();
         let height = rgba.height();
-        if u64::from(width) * u64::from(height) > self.max_decoded_pixels {
+        if u64::from(width) * u64::from(height) > self.policy.max_decoded_pixels {
             bail!("decoded image exceeds max-decoded-pixels");
         }
         self.push_asset_report(
@@ -156,6 +160,7 @@ impl ResourceProvider for TestResourceProvider {
             let (bytes, _) = data_url
                 .decode_to_vec()
                 .map_err(|error| anyhow!("invalid data URL body: {error:?}"))?;
+            self.record_resource_usage(bytes.len())?;
             self.push_asset_report(
                 crate::AssetReport::new(kind, crate::AssetStatus::Loaded, src.to_string())
                     .with_source(crate::AssetSource::DataUrl)
@@ -165,15 +170,15 @@ impl ResourceProvider for TestResourceProvider {
             return Ok(bytes);
         }
 
-        if src.starts_with("http://") || src.starts_with("https://") {
-            if !self.allow_remote || (self.https_only && src.starts_with("http://")) {
-                self.push_asset_report(
-                    crate::AssetReport::new(kind, crate::AssetStatus::Blocked, src.to_string())
-                        .with_source(crate::AssetSource::Remote)
-                        .with_initiator(initiator),
-                );
-                bail!("remote resources are disabled");
-            }
+        if (src.starts_with("http://") || src.starts_with("https://"))
+            && (!self.policy.allow_remote || (self.policy.https_only && src.starts_with("http://")))
+        {
+            self.push_asset_report(
+                crate::AssetReport::new(kind, crate::AssetStatus::Blocked, src.to_string())
+                    .with_source(crate::AssetSource::Remote)
+                    .with_initiator(initiator),
+            );
+            bail!("remote resources are disabled");
         }
 
         bail!("resource not available in core test provider")
@@ -189,5 +194,37 @@ impl ResourceProvider for TestResourceProvider {
 
     fn record_asset_report(&self, report: AssetReport) {
         self.push_asset_report(report);
+    }
+}
+
+#[cfg(test)]
+impl TestResourceProvider {
+    fn record_resource_usage(&self, bytes: usize) -> Result<()> {
+        let mut count = self
+            .resource_count
+            .lock()
+            .expect("resource count mutex poisoned");
+        *count = count.saturating_add(1);
+        if *count > self.policy.max_resource_count {
+            bail!(
+                "resource count exceeds max-resource-count: {} > {}",
+                *count,
+                self.policy.max_resource_count
+            );
+        }
+
+        let mut total = self
+            .total_bytes
+            .lock()
+            .expect("resource bytes mutex poisoned");
+        *total = total.saturating_add(bytes);
+        if *total > self.policy.max_total_resource_bytes {
+            bail!(
+                "resource bytes exceed max-total-resource-bytes: {} > {}",
+                *total,
+                self.policy.max_total_resource_bytes
+            );
+        }
+        Ok(())
     }
 }

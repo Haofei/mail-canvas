@@ -10,7 +10,7 @@ use image::{DynamicImage, ImageDecoder, ImageReader, Limits};
 use js_sys::Uint8Array;
 use mail_canvas_core::{
     AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, RenderOutputBackend,
-    RenderRequest, RenderWarning, RenderedImage, RendererCore, ResourceProvider,
+    RenderRequest, RenderWarning, RenderedImage, RendererCore, ResourcePolicy, ResourceProvider,
     ResourceProviderFactory,
 };
 use serde::Serialize;
@@ -20,6 +20,8 @@ use wasm_bindgen::prelude::*;
 
 const DEFAULT_MAX_RESOURCE_BYTES: usize = 10 * 1024 * 1024;
 const DEFAULT_MAX_DECODED_PIXELS: u64 = 16_000_000;
+const DEFAULT_MAX_TOTAL_RESOURCE_BYTES: usize = 64 * 1024 * 1024;
+const DEFAULT_MAX_RESOURCE_COUNT: usize = 128;
 
 #[wasm_bindgen]
 pub struct WasmRenderer {
@@ -91,7 +93,7 @@ impl WasmRenderer {
     }
 
     pub fn asset_count(&self) -> u32 {
-        self.assets.len() as u32
+        u32::try_from(self.assets.len()).unwrap_or(u32::MAX)
     }
 
     pub fn render_png(
@@ -194,10 +196,16 @@ fn build_request(
     let mut request =
         RenderRequest::defaults_for_html(html.to_string(), width, viewport_height, scale);
     request.base_url = base_url;
-    request.allow_remote = false;
-    request.https_only = true;
-    request.max_image_bytes = DEFAULT_MAX_RESOURCE_BYTES;
-    request.max_decoded_pixels = DEFAULT_MAX_DECODED_PIXELS;
+    request.resource_policy = ResourcePolicy {
+        allow_remote: false,
+        https_only: true,
+        deny_private_networks: true,
+        timeout: std::time::Duration::from_secs(30),
+        max_resource_bytes: DEFAULT_MAX_RESOURCE_BYTES,
+        max_total_resource_bytes: DEFAULT_MAX_TOTAL_RESOURCE_BYTES,
+        max_decoded_pixels: DEFAULT_MAX_DECODED_PIXELS,
+        max_resource_count: DEFAULT_MAX_RESOURCE_COUNT,
+    };
     request
 }
 
@@ -432,8 +440,14 @@ fn decode_registered_image(bytes: &[u8]) -> Result<mail_canvas_core::ImageData> 
     }
     let mut reader = ImageReader::new(std::io::Cursor::new(bytes));
     let mut limits = Limits::default();
-    limits.max_image_width = Some(DEFAULT_MAX_DECODED_PIXELS.min(u64::from(u32::MAX)) as u32);
-    limits.max_image_height = Some(DEFAULT_MAX_DECODED_PIXELS.min(u64::from(u32::MAX)) as u32);
+    limits.max_image_width = Some(
+        u32::try_from(DEFAULT_MAX_DECODED_PIXELS.min(u64::from(u32::MAX)))
+            .expect("bounded decoded pixel limit"),
+    );
+    limits.max_image_height = Some(
+        u32::try_from(DEFAULT_MAX_DECODED_PIXELS.min(u64::from(u32::MAX)))
+            .expect("bounded decoded pixel limit"),
+    );
     limits.max_alloc = Some(DEFAULT_MAX_DECODED_PIXELS.saturating_mul(4));
     reader.limits(limits);
     let mut decoder = reader

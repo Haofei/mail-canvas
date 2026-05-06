@@ -162,9 +162,19 @@ fn collect_col_widths_inner(node: &NodeRef, widths: &mut Vec<Option<Length>>) {
     for child in node.children() {
         match element_tag(&child).as_deref() {
             Some("col") => {
-                widths.push(attr(&child, "width").and_then(|value| parse_length(&value)))
+                let width = attr(&child, "width").and_then(|value| parse_length(&value));
+                let span = parse_span_attr(&child, "span");
+                widths.extend(std::iter::repeat_n(width, span));
             }
-            Some("colgroup") => collect_col_widths_inner(&child, widths),
+            Some("colgroup") => {
+                let before = widths.len();
+                collect_col_widths_inner(&child, widths);
+                if widths.len() == before {
+                    let width = attr(&child, "width").and_then(|value| parse_length(&value));
+                    let span = parse_span_attr(&child, "span");
+                    widths.extend(std::iter::repeat_n(width, span));
+                }
+            }
             _ => {}
         }
     }
@@ -176,4 +186,44 @@ fn parse_span_attr(node: &NodeRef, attr_name: &str) -> usize {
         .filter(|value| *value > 0)
         .unwrap_or(1)
         .min(32)
+}
+
+#[cfg(test)]
+mod tests {
+    use kuchiki::traits::TendrilSink as _;
+
+    use super::*;
+    use crate::dom::find_first_tag;
+
+    #[test]
+    fn col_span_expands_column_widths() {
+        let document = kuchiki::parse_html()
+            .one(r#"<table><col width="120" span="2"><tr><td>A</td><td>B</td></tr></table>"#);
+        let table = find_first_tag(&document, "table").expect("table");
+        let grid = build_table_grid(&table, 100).expect("grid");
+        assert_eq!(grid.column_count, 2);
+        assert_eq!(grid.col_widths.len(), 2);
+        assert!(matches!(grid.col_widths[0], Some(Length::Px(120.0))));
+        assert!(matches!(grid.col_widths[1], Some(Length::Px(120.0))));
+    }
+
+    #[test]
+    fn empty_colgroup_width_expands_columns() {
+        let document = kuchiki::parse_html().one(
+            r#"<table><colgroup width="50%" span="3"></colgroup><tr><td>A</td><td>B</td><td>C</td></tr></table>"#,
+        );
+        let table = find_first_tag(&document, "table").expect("table");
+        let grid = build_table_grid(&table, 100).expect("grid");
+        assert_eq!(grid.column_count, 3);
+        assert_eq!(grid.col_widths.len(), 3);
+        assert!(
+            matches!(grid.col_widths[0], Some(Length::Percent(value)) if (value - 0.5).abs() < f32::EPSILON)
+        );
+        assert!(
+            matches!(grid.col_widths[1], Some(Length::Percent(value)) if (value - 0.5).abs() < f32::EPSILON)
+        );
+        assert!(
+            matches!(grid.col_widths[2], Some(Length::Percent(value)) if (value - 0.5).abs() < f32::EPSILON)
+        );
+    }
 }

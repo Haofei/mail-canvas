@@ -8,10 +8,39 @@ pub(crate) const MAX_CONSOLE_MESSAGES: usize = 50;
 pub(crate) const MAX_CONSOLE_MESSAGE_LEN: usize = 2048;
 pub(crate) const MAX_RENDER_WARNINGS: usize = 100;
 pub(crate) const DEFAULT_MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+pub(crate) const DEFAULT_MAX_TOTAL_RESOURCE_BYTES: usize = 64 * 1024 * 1024;
 pub(crate) const DEFAULT_MAX_DECODED_PIXELS: u64 = 16_000_000;
+pub(crate) const DEFAULT_MAX_RESOURCE_COUNT: usize = 128;
 pub(crate) const DEFAULT_MAX_DOM_NODES: usize = 100_000;
 pub(crate) const DEFAULT_MAX_LAYOUT_DEPTH: usize = 64;
 pub(crate) const DEFAULT_MAX_TABLE_CELLS: usize = 100_000;
+
+#[derive(Debug, Clone)]
+pub struct ResourcePolicy {
+    pub allow_remote: bool,
+    pub https_only: bool,
+    pub deny_private_networks: bool,
+    pub timeout: Duration,
+    pub max_resource_bytes: usize,
+    pub max_total_resource_bytes: usize,
+    pub max_decoded_pixels: u64,
+    pub max_resource_count: usize,
+}
+
+impl Default for ResourcePolicy {
+    fn default() -> Self {
+        Self {
+            allow_remote: false,
+            https_only: true,
+            deny_private_networks: true,
+            timeout: Duration::from_secs(30),
+            max_resource_bytes: DEFAULT_MAX_IMAGE_BYTES,
+            max_total_resource_bytes: DEFAULT_MAX_TOTAL_RESOURCE_BYTES,
+            max_decoded_pixels: DEFAULT_MAX_DECODED_PIXELS,
+            max_resource_count: DEFAULT_MAX_RESOURCE_COUNT,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct RenderRequest {
@@ -20,14 +49,10 @@ pub struct RenderRequest {
     pub viewport_height: u32,
     pub min_height: u32,
     pub scale: f32,
-    pub timeout: Duration,
     pub settle: Duration,
     pub base_url: Option<Url>,
     pub max_height: Option<u32>,
-    pub allow_remote: bool,
-    pub https_only: bool,
-    pub max_image_bytes: usize,
-    pub max_decoded_pixels: u64,
+    pub resource_policy: ResourcePolicy,
     pub max_dom_nodes: usize,
     pub max_layout_depth: usize,
     pub max_table_cells: usize,
@@ -41,18 +66,24 @@ impl RenderRequest {
             viewport_height,
             min_height: 1,
             scale,
-            timeout: Duration::from_secs(30),
             settle: Duration::ZERO,
             base_url: None,
             max_height: None,
-            allow_remote: false,
-            https_only: true,
-            max_image_bytes: DEFAULT_MAX_IMAGE_BYTES,
-            max_decoded_pixels: DEFAULT_MAX_DECODED_PIXELS,
+            resource_policy: ResourcePolicy::default(),
             max_dom_nodes: DEFAULT_MAX_DOM_NODES,
             max_layout_depth: DEFAULT_MAX_LAYOUT_DEPTH,
             max_table_cells: DEFAULT_MAX_TABLE_CELLS,
         }
+    }
+
+    pub fn with_base_url(mut self, base_url: Option<Url>) -> Self {
+        self.base_url = base_url;
+        self
+    }
+
+    pub fn with_resource_policy(mut self, resource_policy: ResourcePolicy) -> Self {
+        self.resource_policy = resource_policy;
+        self
     }
 }
 
@@ -81,6 +112,33 @@ pub struct RenderedPdf {
     pub console_messages: Vec<ConsoleMessage>,
     pub warnings: Vec<RenderWarning>,
     pub assets: Vec<AssetReport>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RenderDiagnosticsReport {
+    pub warnings: Vec<RenderWarning>,
+    pub assets: Vec<AssetReport>,
+    pub console_messages: Vec<ConsoleMessage>,
+}
+
+impl RenderedImage {
+    pub fn diagnostics(&self) -> RenderDiagnosticsReport {
+        RenderDiagnosticsReport {
+            warnings: self.warnings.clone(),
+            assets: self.assets.clone(),
+            console_messages: self.console_messages.clone(),
+        }
+    }
+}
+
+impl RenderedPdf {
+    pub fn diagnostics(&self) -> RenderDiagnosticsReport {
+        RenderDiagnosticsReport {
+            warnings: self.warnings.clone(),
+            assets: self.assets.clone(),
+            console_messages: self.console_messages.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

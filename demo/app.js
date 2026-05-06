@@ -1,5 +1,3 @@
-import init, { WasmRenderer } from "./pkg/mail_canvas_wasm.js";
-
 const htmlInput = document.querySelector("#html-input");
 const widthInput = document.querySelector("#width");
 const viewportHeightInput = document.querySelector("#viewport-height");
@@ -22,7 +20,7 @@ const SAMPLE_HTML = `<!doctype html>
           <td class="hero">
             <div class="eyebrow">MailCanvas Demo</div>
             <h1 class="title">Generate email previews in the browser.</h1>
-            <p class="summary">The page fetches linked assets, registers them in wasm, then renders the final HTML to a PNG without launching Chrome.</p>
+            <p class="summary">The page fetches linked assets on the main thread, injects them into a worker, then renders the final HTML to a PNG without launching Chrome.</p>
           </td>
         </tr>
         <tr>
@@ -32,13 +30,13 @@ const SAMPLE_HTML = `<!doctype html>
                 <td class="metric-cell">
                   <div class="metric-box">
                     <div class="metric-label">Runtime</div>
-                    <div class="metric-value">Browser + WASM</div>
+                    <div class="metric-value">Worker + WASM</div>
                   </div>
                 </td>
                 <td class="metric-cell">
                   <div class="metric-box">
                     <div class="metric-label">Asset Flow</div>
-                    <div class="metric-value">Fetch -> register_asset -> render</div>
+                    <div class="metric-value">Fetch -> postMessage -> register_asset -> render</div>
                   </div>
                 </td>
               </tr>
@@ -58,8 +56,9 @@ const DEMO_FONTS = [
   "./assets/NotoSans-Bold.ttf",
 ];
 
-let renderer;
+let worker;
 let currentObjectUrl = null;
+let nextRequestId = 1;
 
 const assetPattern = /url\(\s*(['"]?)([^'")]+)\1\s*\)|@import\s+(?:url\(\s*)?(['"]?)([^'")\s]+)\3\s*\)?/gi;
 
@@ -121,9 +120,9 @@ async function fetchBytes(url) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
-async function registerAssetGraph(html, baseUrl) {
-  renderer.clear_assets();
+async function fetchAssetGraph(html, baseUrl) {
   const visited = new Set();
+  const assets = [];
   const pending = [...collectHtmlAssetUrls(html)].map((url) => absoluteUrl(url, baseUrl));
 
   while (pending.length > 0) {
@@ -134,7 +133,7 @@ async function registerAssetGraph(html, baseUrl) {
     visited.add(url);
 
     const bytes = await fetchBytes(url);
-    renderer.register_asset(url, bytes);
+    assets.push({ url, bytes });
 
     if (url.endsWith(".css") || isStylesheetBytes(bytes)) {
       const cssText = new TextDecoder().decode(bytes);
@@ -143,6 +142,8 @@ async function registerAssetGraph(html, baseUrl) {
       }
     }
   }
+
+  return assets;
 }
 
 function isStylesheetBytes(bytes) {
@@ -153,24 +154,60 @@ function isStylesheetBytes(bytes) {
   return head.startsWith("@") || head.includes("{");
 }
 
-async function loadDemoFonts() {
-  for (const fontPath of DEMO_FONTS) {
-    const bytes = await fetchBytes(fontPath);
-    renderer.register_font(bytes);
-  }
+async function fetchFontAssets() {
+  return Promise.all(
+    DEMO_FONTS.map(async (url) => ({
+      url: new URL(url, window.location.href).toString(),
+      bytes: await fetchBytes(url),
+    })),
+  );
+}
+
+function callWorker(message, transfer = []) {
+  return new Promise((resolve, reject) => {
+    const requestId = nextRequestId++;
+    const onMessage = (event) => {
+      if (event.data?.requestId !== requestId) {
+        return;
+      }
+      worker.removeEventListener("message", onMessage);
+      worker.removeEventListener("error", onError);
+      if (event.data.ok) {
+        resolve(event.data);
+      } else {
+        reject(new Error(event.data.error || "worker request failed"));
+      }
+    };
+    const onError = (event) => {
+      worker.removeEventListener("message", onMessage);
+      worker.removeEventListener("error", onError);
+      reject(event.error || new Error("worker crashed"));
+    };
+    worker.addEventListener("message", onMessage);
+    worker.addEventListener("error", onError);
+    worker.postMessage({ ...message, requestId }, transfer);
+  });
 }
 
 async function boot() {
-  setStatus("Loading wasm module...");
-  await init();
-  renderer = new WasmRenderer();
-  await loadDemoFonts();
+  setStatus("Starting worker...");
+  worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
   htmlInput.value = SAMPLE_HTML;
   baseUrlInput.value = new URL(".", window.location.href).toString();
   diagnostics.textContent = JSON.stringify(
     { warnings: [], assets: [], console_messages: [] },
     null,
     2
+  );
+
+  const fontAssets = await fetchFontAssets();
+  setStatus("Loading wasm module in worker...");
+  await callWorker(
+    {
+      type: "init",
+      fonts: fontAssets.map((asset) => ({ url: asset.url, bytes: asset.bytes.buffer })),
+    },
+    fontAssets.map((asset) => asset.bytes.buffer)
   );
   setStatus("Ready");
 }
@@ -186,28 +223,29 @@ async function renderCurrentTemplate() {
   setStatus("Fetching linked assets...");
 
   try {
-    await registerAssetGraph(html, baseUrl);
-    setStatus(`Rendering with ${renderer.asset_count()} registered assets...`);
-    const pngBytes = renderer.render_png_with_base_url(
-      html,
-      width,
-      viewportHeight,
-      scale,
-      baseUrl
+    const assets = await fetchAssetGraph(html, baseUrl);
+    setStatus(`Rendering with ${assets.length} injected assets...`);
+    const response = await callWorker(
+      {
+        type: "render",
+        html,
+        width,
+        viewportHeight,
+        scale,
+        baseUrl,
+        assets: assets.map((asset) => ({ url: asset.url, bytes: asset.bytes.buffer })),
+      },
+      assets.map((asset) => asset.bytes.buffer)
     );
 
     if (currentObjectUrl) {
       URL.revokeObjectURL(currentObjectUrl);
     }
     currentObjectUrl = URL.createObjectURL(
-      new Blob([pngBytes], { type: "image/png" })
+      new Blob([new Uint8Array(response.png)], { type: "image/png" })
     );
     preview.src = currentObjectUrl;
-    diagnostics.textContent = JSON.stringify(
-      JSON.parse(renderer.diagnostics_json()),
-      null,
-      2
-    );
+    diagnostics.textContent = JSON.stringify(response.diagnostics, null, 2);
     setStatus("Render complete");
   } catch (error) {
     diagnostics.textContent = String(error);
