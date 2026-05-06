@@ -1349,10 +1349,13 @@ pub(crate) fn style_for_node_with_fonts(
     if let Some(height) = attrs.get("height").and_then(parse_length) {
         style.height = Some(height);
     }
-    if let Some(background) = attrs.get("bgcolor").and_then(parse_color) {
+    if let Some(background) = attrs.get("bgcolor").and_then(parse_html_color_attribute) {
         style.background = Some(background);
     }
-    if let Some(border_color) = attrs.get("bordercolor").and_then(parse_color) {
+    if let Some(border_color) = attrs
+        .get("bordercolor")
+        .and_then(parse_html_color_attribute)
+    {
         style.border_color = border_color;
     }
     if let Some(background_image) = attrs.get("background") {
@@ -1365,13 +1368,15 @@ pub(crate) fn style_for_node_with_fonts(
     if let Some(raw_align) = attrs.get("align") {
         if tag == "table" {
             match parse_text_align(raw_align) {
+                Some(TextAlign::Left) => {
+                    style.float_side = FloatSide::Left;
+                }
                 Some(TextAlign::Center) => {
                     style.margin_left_auto = true;
                     style.margin_right_auto = true;
                 }
                 Some(TextAlign::Right) => {
-                    style.margin_left_auto = true;
-                    style.margin_right_auto = false;
+                    style.float_side = FloatSide::Right;
                 }
                 _ => {}
             }
@@ -1844,6 +1849,11 @@ pub(crate) fn parse_color(value: &str) -> Option<Rgba> {
         }
     }
     parse_color_token(&value)
+}
+
+pub(crate) fn parse_html_color_attribute(value: &str) -> Option<Rgba> {
+    let value = value.trim().trim_matches(['"', '\'']);
+    parse_color(value).or_else(|| parse_hex_color(value))
 }
 
 pub(crate) fn parse_box_shadow(value: &str, font_size: f32, default_color: Rgba) -> Option<Vec<BoxShadow>> {

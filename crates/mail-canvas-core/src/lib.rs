@@ -2805,6 +2805,17 @@ mod tests {
     }
 
     #[test]
+    fn parses_bare_hex_html_color_attributes() {
+        let document = kuchiki::parse_html()
+            .one(r#"<table bgcolor="5c9085" bordercolor="ffffff"><tr><td>A</td></tr></table>"#);
+        let table = find_first_tag(&document, "table").expect("table");
+        let style = style_for_node(&table, &Style::initial());
+
+        assert_eq!(style.background, Some(Rgba::rgb(0x5c, 0x90, 0x85)));
+        assert_eq!(style.border_color, Rgba::WHITE);
+    }
+
+    #[test]
     fn inline_style_uses_css_parser_for_function_values() {
         let document = kuchiki::parse_html()
             .one(r##"<div style='background-image: url("hero;v=1.jpg"); color: #ff0000'>A</div>"##);
@@ -3714,6 +3725,29 @@ mod tests {
         let table =
             find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
         assert!((table.rect.x - 50.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn legacy_aligned_tables_float_side_by_side() {
+        let layout = layout_for_test(
+            r##"
+            <div style="width:590px;background:#eee">
+              <table align="left" width="240"><tr><td><img width="220" height="40" alt=""></td></tr></table>
+              <table align="left" width="340"><tr><td><div style="height:30px;background:#111"></div></td></tr></table>
+            </div>
+            "##,
+            640,
+        );
+        let tables: Vec<&LayoutBox> =
+            collect_layouts(&layout, &|child| matches!(child.kind, LayoutKind::Table));
+        let floated_tables: Vec<&LayoutBox> = tables
+            .into_iter()
+            .filter(|table| table.style.float_side == FloatSide::Left)
+            .collect();
+        assert_eq!(floated_tables.len(), 2);
+        assert!((floated_tables[0].rect.x - 0.0).abs() < 0.1);
+        assert!((floated_tables[1].rect.x - 240.0).abs() < 0.1);
+        assert!((floated_tables[1].rect.y - floated_tables[0].rect.y).abs() < 0.1);
     }
 
     #[test]
