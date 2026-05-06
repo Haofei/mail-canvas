@@ -3527,6 +3527,16 @@ mod tests {
     }
 
     #[test]
+    fn word_break_break_word_allows_emergency_wrapping() {
+        let layout = layout_for_test(
+            r#"<table width="80"><tr><td style="word-break:break-word">Supercalifragilisticexpialidocious</td></tr></table>"#,
+            80,
+        );
+        let text = find_text_layout(&layout).expect("text");
+        assert_eq!(text.style.wrap, TextWrap::WordOrGlyph);
+    }
+
+    #[test]
     fn table_bordercolor_attribute_sets_border_color() {
         let layout = layout_for_test(
             r##"<table border="2" bordercolor="#123456"><tr><td>Cell</td></tr></table>"##,

@@ -31,6 +31,7 @@ function parseArgs(argv) {
     timeoutMs: DEFAULT_TIMEOUT_MS,
     limit: TEMPLATE_CORPUS.length,
     only: [],
+    htmls: [],
     providers: [],
     categories: [],
     corpusGroups: [],
@@ -66,6 +67,18 @@ function parseArgs(argv) {
         break;
       case '--only':
         args.only.push(next());
+        break;
+      case '--html':
+        args.htmls.push(path.resolve(next()));
+        break;
+      case '--name':
+        if (args.htmls.length === 0) {
+          throw new Error('--name must follow --html');
+        }
+        args.htmls[args.htmls.length - 1] = {
+          path: args.htmls[args.htmls.length - 1],
+          name: next(),
+        };
         break;
       case '--provider':
         args.providers.push(next());
@@ -130,11 +143,17 @@ async function main() {
   const renderer = await ensureRenderer();
   const templates = selectTemplates(args, expectations);
   if (templates.length === 0) {
-    throw new Error(`no templates matched --only: ${args.only.join(', ')}`);
+    throw new Error(
+      args.htmls.length > 0
+        ? 'no local --html templates were provided'
+        : `no templates matched --only: ${args.only.join(', ')}`,
+    );
   }
   const downloaded = [];
   for (const template of templates) {
-    const source = await loadTemplateSource(template, args.timeoutMs);
+    const source = template.localHtmlPath
+      ? await loadLocalHtmlTemplate(template)
+      : await loadTemplateSource(template, args.timeoutMs);
     const htmlPath = path.join(dirs.html, `${template.name}.html`);
     await writeFile(htmlPath, source.html);
     downloaded.push({
@@ -186,6 +205,29 @@ async function loadExpectations(expectationsPath) {
 }
 
 function selectTemplates(args, expectations) {
+  if (args.htmls.length > 0) {
+    return args.htmls.map((entry) => {
+      const htmlPath = typeof entry === 'string' ? entry : entry.path;
+      const name =
+        typeof entry === 'string'
+          ? path.basename(entry, path.extname(entry)).replaceAll(/[^a-z0-9_-]+/gi, '-')
+          : entry.name;
+      return {
+        name,
+        url: pathToFileURL(htmlPath).href,
+        localHtmlPath: htmlPath,
+        provider: 'local',
+        corpusGroup: 'local',
+        category: 'manual',
+        supportTier: 'modern-supported',
+        supportReason: '',
+        status: 'active',
+        expectedWarnings: 0,
+        reason: '',
+      };
+    });
+  }
+
   let pool = TEMPLATE_CORPUS;
   if (args.providers.length > 0) {
     const providers = new Set(args.providers);
@@ -223,6 +265,17 @@ function selectTemplates(args, expectations) {
     throw new Error(`unknown template names: ${missing.join(', ')}`);
   }
   return templates;
+}
+
+async function loadLocalHtmlTemplate(template) {
+  const htmlPath = path.resolve(template.localHtmlPath);
+  return {
+    template,
+    html: await readFile(htmlPath, 'utf8'),
+    htmlPath,
+    url: pathToFileURL(htmlPath).href,
+    baseUrl: pathToFileURL(`${path.dirname(htmlPath)}${path.sep}`).href,
+  };
 }
 
 async function ensureRenderer() {

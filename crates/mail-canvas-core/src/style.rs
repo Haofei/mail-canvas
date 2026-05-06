@@ -680,6 +680,9 @@ impl Style {
             "word-break" if value.trim().eq_ignore_ascii_case("break-all") => {
                 self.wrap = TextWrap::Glyph;
             }
+            "word-break" if value.trim().eq_ignore_ascii_case("break-word") => {
+                self.wrap = TextWrap::WordOrGlyph;
+            }
             "overflow-wrap" | "word-wrap" => {
                 if matches!(
                     value.trim().to_ascii_lowercase().as_str(),
