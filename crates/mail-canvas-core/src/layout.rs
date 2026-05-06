@@ -365,7 +365,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     continue;
                 }
                 align_table_child_to_parent_text(&mut flow.node, style, x, width);
-                align_image_child_to_legacy_align(&mut flow.node, style, x, width);
+                align_block_child_to_legacy_align_attribute(&mut flow.node, style, x, width);
                 let margin_overlap = if can_collapse_sibling_margin(child_display) {
                     previous_margin_bottom
                         .map(|previous: f32| previous.min(flow.node.style.margin.top))

@@ -836,13 +836,13 @@ fn align_table_child_to_parent_text(
     }
 }
 
-fn align_image_child_to_legacy_align(
+fn align_block_child_to_legacy_align_attribute(
     child: &mut LayoutBox,
     parent_style: &Style,
     container_x: f32,
     container_width: f32,
 ) {
-    if !parent_style.align_from_attribute || !matches!(child.kind, LayoutKind::Image(_)) {
+    if !parent_style.align_from_attribute || !legacy_align_attribute_applies_to_child(child) {
         return;
     }
 
@@ -855,6 +855,16 @@ fn align_image_child_to_legacy_align(
     let dx = target_x - child.rect.x;
     if dx.abs() > f32::EPSILON {
         translate_layout(child, dx, 0.0);
+    }
+}
+
+fn legacy_align_attribute_applies_to_child(child: &LayoutBox) -> bool {
+    match child.kind {
+        LayoutKind::Image(_) => true,
+        LayoutKind::Block => {
+            !child.style.margin_left_auto && !child.style.margin_right_auto
+        }
+        _ => false,
     }
 }
 
@@ -4031,6 +4041,30 @@ mod tests {
     fn legacy_align_attribute_centers_block_images() {
         let layout = layout_for_test(
             r#"<div align="center"><img width="50" height="20" alt=""></div>"#,
+            200,
+        );
+        let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
+            .expect("image");
+        assert!((image.rect.x - 75.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn legacy_align_attribute_centers_shrink_block_children() {
+        let layout = layout_for_test(
+            r##"<table width="200" cellpadding="0" cellspacing="0"><tr><td align="center"><div style="max-width:50px;height:10px;background:#000"></div></td></tr></table>"##,
+            200,
+        );
+        let block = find_layout(&layout, |child| {
+            matches!(child.kind, LayoutKind::Block) && child.style.background == Some(Rgba::BLACK)
+        })
+        .expect("shrink block");
+        assert!((block.rect.x - 75.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn legacy_align_attribute_centers_block_image_wrappers() {
+        let layout = layout_for_test(
+            r#"<table width="200" cellpadding="0" cellspacing="0"><tr><td align="center"><div style="max-width:50px"><img width="100%" height="20" alt="" style="display:block;width:100%"></div></td></tr></table>"#,
             200,
         );
         let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
