@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { PNG } from 'pngjs';
 
 import { TEMPLATE_CORPUS, loadTemplateSource } from './templates.mjs';
 
@@ -17,6 +18,7 @@ const FIXTURE_FONT_FILES = [
 
 function parseArgs(argv) {
   const args = {
+    caseName: 'corpus',
     template: 'colorlib-template-1',
     width: 600,
     timeoutMs: 15000,
@@ -33,6 +35,9 @@ function parseArgs(argv) {
       return argv[index];
     };
     switch (arg) {
+      case '--case':
+        args.caseName = next();
+        break;
       case '--template':
         args.template = next();
         break;
@@ -57,16 +62,18 @@ function parseArgs(argv) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const template = TEMPLATE_CORPUS.find((entry) => entry.name === args.template);
-  if (!template) {
-    throw new Error(`unknown template: ${args.template}`);
+  if (!['corpus', 'repeated-image'].includes(args.caseName)) {
+    throw new Error(`unknown --case: ${args.caseName}`);
   }
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'mail-canvas-benchmark-'));
   try {
-    const source = await loadTemplateSource(template, args.timeoutMs);
-    const htmlPath = path.join(tmpDir, `${template.name}.html`);
-    const browserPng = path.join(tmpDir, `${template.name}.browser.png`);
-    const rustPng = path.join(tmpDir, `${template.name}.rust.png`);
+    const source =
+      args.caseName === 'repeated-image'
+        ? await createRepeatedImageSource(tmpDir)
+        : await loadCorpusBenchmarkSource(args.template, args.timeoutMs);
+    const htmlPath = path.join(tmpDir, `${source.name}.html`);
+    const browserPng = path.join(tmpDir, `${source.name}.browser.png`);
+    const rustPng = path.join(tmpDir, `${source.name}.rust.png`);
     await writeFile(htmlPath, source.html);
     const baseUrl = source.baseUrl;
 
@@ -115,7 +122,8 @@ async function main() {
 
     const report = {
       generatedAt: new Date().toISOString(),
-      template: template.name,
+      case: args.caseName,
+      template: source.name,
       url: source.url,
       width: args.width,
       mailCanvas: rust,
@@ -142,6 +150,49 @@ async function main() {
       await rm(tmpDir, { recursive: true, force: true });
     }
   }
+}
+
+async function loadCorpusBenchmarkSource(templateName, timeoutMs) {
+  const template = TEMPLATE_CORPUS.find((entry) => entry.name === templateName);
+  if (!template) {
+    throw new Error(`unknown template: ${templateName}`);
+  }
+  const source = await loadTemplateSource(template, timeoutMs);
+  return {
+    ...source,
+    name: template.name,
+  };
+}
+
+async function createRepeatedImageSource(tmpDir) {
+  const imageName = 'hero.png';
+  const imagePath = path.join(tmpDir, imageName);
+  const imageWidth = 1400;
+  const imageHeight = 900;
+  const repeatCount = 24;
+  const png = new PNG({ width: imageWidth, height: imageHeight });
+  for (let y = 0; y < imageHeight; y += 1) {
+    for (let x = 0; x < imageWidth; x += 1) {
+      const offset = (y * imageWidth + x) * 4;
+      png.data[offset] = Math.floor((x * 255) / imageWidth);
+      png.data[offset + 1] = Math.floor((y * 255) / imageHeight);
+      png.data[offset + 2] = (x + y) % 256;
+      png.data[offset + 3] = 255;
+    }
+  }
+  await writeFile(imagePath, PNG.sync.write(png));
+
+  const rows = Array.from(
+    { length: repeatCount },
+    (_, index) =>
+      `<tr><td><img src="${imageName}" width="800" style="display:block;width:800px;height:auto" alt="hero ${index}"></td></tr>`,
+  ).join('\n');
+  return {
+    name: 'repeated-image',
+    url: null,
+    baseUrl: pathToFileURL(`${tmpDir}${path.sep}`).href,
+    html: `<!doctype html><html><body style="margin:0;background:#fff"><table width="800" cellpadding="0" cellspacing="0" style="margin:0 auto">${rows}</table></body></html>`,
+  };
 }
 
 async function runOrThrow(command, args, cwd) {

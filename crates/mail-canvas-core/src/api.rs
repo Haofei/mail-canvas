@@ -87,6 +87,33 @@ impl RenderRequest {
         self.resource_policy = resource_policy;
         self
     }
+
+    pub fn with_min_height(mut self, min_height: u32) -> Self {
+        self.min_height = min_height;
+        self
+    }
+
+    pub fn with_max_height(mut self, max_height: Option<u32>) -> Self {
+        self.max_height = max_height;
+        self
+    }
+
+    pub fn with_debug(mut self, debug: RenderDebugOptions) -> Self {
+        self.debug = debug;
+        self
+    }
+
+    pub fn with_limits(
+        mut self,
+        max_dom_nodes: usize,
+        max_layout_depth: usize,
+        max_table_cells: usize,
+    ) -> Self {
+        self.max_dom_nodes = max_dom_nodes;
+        self.max_layout_depth = max_layout_depth;
+        self.max_table_cells = max_table_cells;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -167,6 +194,29 @@ impl RenderedPdf {
             assets: self.assets.clone(),
             console_messages: self.console_messages.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_request_builder_methods_update_optional_fields() {
+        let request = RenderRequest::defaults_for_html("<p>Hello</p>".to_string(), 600, 800, 1.0)
+            .with_min_height(320)
+            .with_max_height(Some(1200))
+            .with_limits(1000, 32, 500)
+            .with_debug(RenderDebugOptions::layout_dump());
+
+        assert_eq!(request.min_height, 320);
+        assert_eq!(request.max_height, Some(1200));
+        assert_eq!(request.max_dom_nodes, 1000);
+        assert_eq!(request.max_layout_depth, 32);
+        assert_eq!(request.max_table_cells, 500);
+        assert!(request.debug.layout);
+        assert!(request.debug.text_rects);
+        assert!(request.debug.image_diagnostics);
     }
 }
 

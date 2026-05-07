@@ -110,7 +110,8 @@ use mail_canvas_native::MailCanvasRenderer;
 
 fn main() -> anyhow::Result<()> {
     let html = "<table><tr><td>Hello</td></tr></table>".to_string();
-    let request = RenderRequest::defaults_for_html(html, 600, 800, 1.0);
+    let request = RenderRequest::defaults_for_html(html, 600, 800, 1.0)
+        .with_max_height(Some(8000));
     let mut renderer = MailCanvasRenderer::new(600, 800, 1.0)?;
     let image = renderer.render_png(request)?;
     std::fs::write("out.png", image.png)?;
@@ -399,6 +400,16 @@ This writes RSS and elapsed-time measurements for:
 - `mail-canvas` CLI
 - Chromium screenshot capture through Playwright
 
+Use the built-in repeated-image case to stress decoded image reuse and image
+buffer sharing:
+
+```sh
+npm run benchmark:memory -- --case repeated-image --width 800 --out /tmp/mail-canvas-repeated-image.json
+```
+
+This synthetic case repeats the same large PNG many times in one email, so it is
+useful for catching regressions in per-render image caching and clone behavior.
+
 ### Development Checks
 
 ```sh
@@ -500,7 +511,8 @@ use mail_canvas_native::MailCanvasRenderer;
 
 fn main() -> anyhow::Result<()> {
     let html = "<table><tr><td>Hello</td></tr></table>".to_string();
-    let request = RenderRequest::defaults_for_html(html, 600, 800, 1.0);
+    let request = RenderRequest::defaults_for_html(html, 600, 800, 1.0)
+        .with_max_height(Some(8000));
     let mut renderer = MailCanvasRenderer::new(600, 800, 1.0)?;
     let image = renderer.render_png(request)?;
     std::fs::write("out.png", image.png)?;
@@ -695,6 +707,20 @@ scripts/fetch_blink_reference.sh
   文本栈的文字栅格化不同，不要求 total pixel diff 完全一致。
 - 固定 Playwright 回归集目前可以通过。total pixel diff 作为诊断信号保留，gate
   主要关注内容是否存在、布局是否稳定、媒体区域和非文字非媒体结构是否正确。
+
+### 内存 Benchmark
+
+对比一个 corpus 模板和 Chromium：
+
+```sh
+npm run benchmark:memory -- --template colorlib-template-1 --out /tmp/mail-canvas-benchmark.json
+```
+
+重复大图场景用于验证单次 render 内的图片解码缓存和像素 buffer 共享：
+
+```sh
+npm run benchmark:memory -- --case repeated-image --width 800 --out /tmp/mail-canvas-repeated-image.json
+```
 
 ### 开发检查
 
