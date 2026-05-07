@@ -294,6 +294,25 @@ This filters the local, vendored corpus to Beefree, Stripo, and MJML templates.
 It is intended for renderer-fidelity work on valid generated email HTML, not
 legacy hand-written compatibility fixtures.
 
+Download a small authorized Really Good Emails sample and compare it:
+
+```sh
+RGE_EMAIL=you@example.com RGE_PASSWORD='...' npm run corpus:rge -- \
+  --category promotional \
+  --limit 12 \
+  --replace-provider \
+  --login
+npm run compare:rge
+```
+
+`corpus:rge` uses Playwright to collect public detail pages from
+`reallygoodemails.com`, extracts the raw email HTML from the page payload, and
+mirrors linked assets into `corpus/reallygoodemails/` so the regression run does
+not depend on external assets later. Credentials are optional for currently
+public samples and are read only from environment variables; `.rge-auth/` is
+ignored by Git. The scheduled `reallygoodemails-regression` workflow runs daily
+when enabled and uploads the vendored sample plus diff artifacts.
+
 Compare one local real-world HTML file, such as an exported editor template:
 
 ```sh
@@ -836,6 +855,23 @@ npm run compare:editors
 
 这个命令只筛选本地 vendored 语料里的 Beefree、Stripo 和 MJML 模板，主要用于
 合法生成 HTML 的渲染质量迭代，不针对老旧手写兼容 hack。
+
+下载一小批授权的 Really Good Emails 样本并对比：
+
+```sh
+RGE_EMAIL=you@example.com RGE_PASSWORD='...' npm run corpus:rge -- \
+  --category promotional \
+  --limit 12 \
+  --replace-provider \
+  --login
+npm run compare:rge
+```
+
+`corpus:rge` 会用 Playwright 收集 `reallygoodemails.com` 的公开 detail 页面，
+从页面 payload 中提取原始 email HTML，并把 linked assets 镜像到
+`corpus/reallygoodemails/`，这样后续回归不依赖外部资源。账号密码只从环境变量
+读取；`.rge-auth/` 不进入 Git。`reallygoodemails-regression` workflow 可以每天
+跑一次，并上传下载到的样本和 diff artifacts。
 
 对比一个本地真实 HTML 文件，比如从编辑器导出的模板：
 

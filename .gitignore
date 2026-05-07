@@ -3,6 +3,7 @@
 /blink-reference/
 /browser/pkg/
 /demo/pkg/
+/.rge-auth/
 /.idea/
 /.vscode/
 *.png

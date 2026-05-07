@@ -544,8 +544,18 @@ const BEEFREE_FIXTURES = vendoredCatalog
     sourcePath: entry.sourcePath,
   }));
 
+const REALLY_GOOD_EMAILS_FIXTURES = vendoredCatalog
+  .filter((entry) => entry.name.startsWith('reallygoodemails-'))
+  .map((entry) => ({
+    name: entry.name,
+    url: entry.url,
+    sourcePath: entry.sourcePath,
+    preserveLocal: true,
+  }));
+
 const PRESERVED_FIXTURES = [
   ...BEEFREE_FIXTURES,
+  ...REALLY_GOOD_EMAILS_FIXTURES,
   ...GENERATED_FIXTURES.map((entry) => ({
     ...entry,
     ...(VENDORED_INDEX.get(entry.name) ?? {}),
@@ -617,6 +627,7 @@ export async function loadTemplateSource(templateOrName, timeoutMs = 30000) {
 function templateProvider(name) {
   if (name.startsWith('waypoint-')) return 'waypoint';
   if (name.startsWith('beefree-')) return 'beefree';
+  if (name.startsWith('reallygoodemails-')) return 'reallygoodemails';
   if (name.startsWith('stripo-')) return 'stripo';
   if (name.startsWith('mjml-')) return 'mjml';
   if (name.startsWith('postmark-')) return 'postmark';
@@ -648,6 +659,7 @@ function templateCorpusGroup(name) {
       'sendgrid',
       'emailoctopus',
       'mjml',
+      'reallygoodemails',
     ].includes(provider)
   ) {
     return 'golden';

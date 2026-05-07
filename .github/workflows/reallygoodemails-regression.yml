@@ -1,0 +1,78 @@
+name: reallygoodemails-regression
+
+on:
+  schedule:
+    - cron: "23 10 * * *"
+  workflow_dispatch:
+    inputs:
+      category:
+        description: Really Good Emails category slug.
+        required: false
+        default: promotional
+      limit:
+        description: Number of templates to vendor and compare.
+        required: false
+        default: "12"
+
+jobs:
+  reallygoodemails:
+    runs-on: ubuntu-latest
+    env:
+      RGE_CATEGORY: ${{ github.event.inputs.category || 'promotional' }}
+      RGE_LIMIT: ${{ github.event.inputs.limit || '12' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install npm dependencies
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Download Really Good Emails fixtures
+        env:
+          RGE_EMAIL: ${{ secrets.RGE_EMAIL }}
+          RGE_PASSWORD: ${{ secrets.RGE_PASSWORD }}
+        run: |
+          login_args=()
+          if [ -n "${RGE_EMAIL:-}" ] && [ -n "${RGE_PASSWORD:-}" ]; then
+            login_args=(--login)
+          fi
+          npm run corpus:rge -- \
+            --category "$RGE_CATEGORY" \
+            --limit "$RGE_LIMIT" \
+            --replace-provider \
+            "${login_args[@]}"
+      - name: Compare Really Good Emails fixtures
+        run: npm run compare:rge
+      - name: Append summary
+        if: always()
+        run: |
+          echo "## Really Good Emails regression" >> "$GITHUB_STEP_SUMMARY"
+          echo "- category: $RGE_CATEGORY" >> "$GITHUB_STEP_SUMMARY"
+          echo "- limit: $RGE_LIMIT" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f /tmp/mail-canvas-playwright-rge/report.md ]; then
+            cat /tmp/mail-canvas-playwright-rge/report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No comparison report produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload Really Good Emails artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reallygoodemails-regression
+          path: |
+            corpus/reallygoodemails
+            corpus/catalog.json
+            /tmp/mail-canvas-playwright-rge/comparison.json
+            /tmp/mail-canvas-playwright-rge/comparison.report.json
+            /tmp/mail-canvas-playwright-rge/report.md
+            /tmp/mail-canvas-playwright-rge/browser
+            /tmp/mail-canvas-playwright-rge/rust
+            /tmp/mail-canvas-playwright-rge/diff
+            /tmp/mail-canvas-playwright-rge/side-by-side
+            /tmp/mail-canvas-playwright-rge/logs
+          if-no-files-found: warn
