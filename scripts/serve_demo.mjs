@@ -8,12 +8,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const demoRoot = path.join(repoRoot, "demo");
 const browserRoot = path.join(repoRoot, "browser");
+const scriptsRoot = path.join(repoRoot, "scripts");
 const host = "127.0.0.1";
 const startPort = Number(process.env.PORT || 4173);
 
 const mimeTypes = new Map([
   [".html", "text/html; charset=utf-8"],
   [".js", "text/javascript; charset=utf-8"],
+  [".mjs", "text/javascript; charset=utf-8"],
   [".css", "text/css; charset=utf-8"],
   [".wasm", "application/wasm"],
   [".json", "application/json; charset=utf-8"],
@@ -30,6 +32,13 @@ function safePath(urlPath) {
   if (decoded.startsWith("/browser/")) {
     const resolved = path.resolve(browserRoot, `.${decoded.slice("/browser".length)}`);
     if (!resolved.startsWith(browserRoot)) {
+      return null;
+    }
+    return resolved;
+  }
+  if (decoded.startsWith("/scripts/")) {
+    const resolved = path.resolve(scriptsRoot, `.${decoded.slice("/scripts".length)}`);
+    if (!resolved.startsWith(scriptsRoot)) {
       return null;
     }
     return resolved;
