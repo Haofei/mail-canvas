@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Core HTML/CSS email layout and paint engine for mail-canvas."
+description = "Core Rust email rendering and diagnostics engine for the MailCanvas verification runtime."
 
 [dependencies]
 anyhow.workspace = true

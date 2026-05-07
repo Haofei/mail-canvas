@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "WASM bindings for mail-canvas."
+description = "Browser/WASM bindings for MailCanvas fast email verification."
 
 [lib]
 crate-type = ["cdylib", "rlib"]

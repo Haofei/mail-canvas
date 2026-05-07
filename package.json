@@ -1,7 +1,7 @@
 {
   "name": "mail-canvas",
   "version": "0.1.0",
-  "description": "Chrome-free HTML/CSS email template renderer for PNG and raster PDF output.",
+  "description": "AI-era email verification runtime with fast Rust/WASM rendering and QA diagnostics.",
   "private": true,
   "scripts": {
     "benchmark:memory": "node scripts/benchmark_memory.mjs",

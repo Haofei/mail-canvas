@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "CLI for mail-canvas."
+description = "CLI for MailCanvas email verification, rendering, and diagnostics."
 
 [dependencies]
 anyhow.workspace = true

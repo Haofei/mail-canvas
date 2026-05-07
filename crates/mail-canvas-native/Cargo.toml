@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Native runtime bindings for mail-canvas."
+description = "Native resource and output runtime for the MailCanvas verification engine."
 
 [dependencies]
 anyhow.workspace = true

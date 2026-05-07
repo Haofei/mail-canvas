@@ -1,17 +1,21 @@
 # MailCanvas
 
-Chrome-free HTML/CSS email template renderer written in Rust. MailCanvas turns
-email HTML into PNG and raster PDF output without launching Chromium, WebKit, or
-Servo.
+AI-era email verification runtime for generated email HTML. MailCanvas provides
+the low-cost fast path for screenshot rendering, static diagnostics, and CI
+visual QA before a pipeline falls back to Chrome, Litmus, or human review.
 
-MailCanvas is not a browser. It is a focused email rendering engine for
-server-side preview, snapshot testing, and template export where memory usage
-matters more than full web-platform coverage.
+MailCanvas is not a browser and does not try to replace Chrome for final
+fidelity review. It is a deterministic Rust/WASM email renderer and QA engine
+designed to handle most low-risk generated emails without launching Chromium.
+The goal is to reserve expensive browser/client testing for the small fraction
+of cases that actually need it.
 
 ## English
 
 ### What It Does
 
+- Acts as the fast verification layer after an agent, editor, or template
+  system produces email HTML.
 - Parses email HTML with `kuchiki` and folds supported CSS into inline styles.
 - Uses `lightningcss` for declaration parsing, media rule handling, CSS values,
   and `@font-face` extraction.
@@ -25,14 +29,46 @@ matters more than full web-platform coverage.
   result as a single-page PDF.
 - Resolves local, `data:`, and opt-in remote resources with byte, timeout, and
   decoded-pixel limits.
+- Emits structured diagnostics that can feed risk scoring, regeneration,
+  fallback rendering, or CI gates.
 
-### Why Not Chrome
+### Why This Exists
 
-Chromium gives the best fidelity, but it also has a large memory footprint for
-high-volume template rendering. MailCanvas keeps the process small by
-implementing only the HTML/CSS behavior that email templates usually depend on.
-For fidelity work, Chromium/Blink is still used as the oracle through the
-Playwright comparison tools in this repository.
+AI makes email generation cheap, but it increases verification load. At scale,
+the hard problem is no longer "can we generate an email?" It is whether every
+generated result can affordably pass:
+
+- HTML sanity checks
+- email compatibility linting
+- screenshot rendering
+- visual/rule QA
+- policy and compliance checks
+- fallback or regeneration when risk is high
+
+Running Chrome for every generated email does not scale well in memory,
+throughput, or cost. MailCanvas is built for a tiered validation architecture:
+
+```text
+Agent/editor generates email
+  -> cheap static validation
+  -> MailCanvas fast render
+  -> vision / rule QA
+  -> risk score
+  -> only high-risk cases go to Chrome / Litmus / human review
+```
+
+Chromium still provides the reference oracle for fidelity work through the
+Playwright comparison tools in this repository. In production validation,
+MailCanvas is intended to make Chrome the last 1% to 5% fallback, not the
+default path for every email.
+
+Target product KPIs:
+
+- handle 80%+ of generated email renders without Chrome
+- use about 10x less memory per render than a browser process
+- deliver 5x to 20x higher render throughput for thumbnail/QA workloads
+- produce deterministic same-input/same-output screenshots
+- surface a risk score that catches cases needing browser/client fallback
 
 ### Build
 
@@ -596,14 +632,17 @@ npm run test:visual
 
 ### 这是做什么的
 
-MailCanvas 是一个不用 Chrome 的 Rust 邮件模板渲染器。它把 email HTML/CSS
-渲染成 PNG，也可以输出栅格 PDF。目标场景是服务端预览、截图测试、模板导出，
-尤其适合不能长期启动 Chromium 的环境。
+MailCanvas 是面向 AI 时代的 email verification runtime。它接收 agent、编辑器
+或模板系统生成的 email HTML，提供低成本的快速截图、静态诊断和 CI 视觉 QA，
+把 Chrome、Litmus 或人工 review 留给真正高风险的少数结果。
 
-它不是一个小浏览器，而是只实现邮件模板常用的 HTML/CSS 子集。
+它不是一个小浏览器，也不试图完全替代 Chrome 的最终保真 review。它是一个
+确定性的 Rust/WASM 邮件渲染与 QA 引擎，目标是在不启动 Chromium 的情况下先处理
+大部分低风险邮件。
 
 ### 主要能力
 
+- 作为 agent、编辑器或模板系统生成 email HTML 后的快速验证层。
 - 用 `kuchiki` 解析 HTML，并把支持的 CSS 合并到 inline style。
 - 用 `lightningcss` 解析 CSS declaration、媒体规则、CSS value 和
   `@font-face`。
@@ -615,12 +654,42 @@ MailCanvas 是一个不用 Chrome 的 Rust 邮件模板渲染器。它把 email 
   font 加载路径。
 - 用 `tiny-skia` 绘制 PNG；PDF 输出复用同一份栅格结果。
 - 支持本地资源、`data:` URL、可选远程资源，并带有超时、大小和像素数限制。
+- 输出结构化 diagnostics，可用于 risk score、重新生成、fallback 渲染或 CI gate。
 
-### 为什么不用 Chrome
+### 为什么需要它
 
-Chrome 的效果最好，但内存占用高，批量渲染邮件模板时成本很明显。MailCanvas
-选择只实现邮件模板需要的规则，把内存和部署复杂度降下来。对齐浏览器行为时，
-仓库里的 Playwright 工具仍然会用 Chromium/Blink 作为参考标准。
+AI 让邮件生成成本下降，但验证成本会上升。规模化之后，核心问题不是“能不能生成”，
+而是每个生成结果是否都能以可接受成本完成：
+
+- HTML sanity check
+- email compatibility lint
+- render screenshot
+- visual / rule QA
+- policy / compliance check
+- 高风险时 fallback 或 regenerate
+
+如果每一步都跑 Chrome，内存、吞吐和成本都会成为瓶颈。MailCanvas 面向分层验证：
+
+```text
+Agent/editor 生成 email
+  -> cheap static validation
+  -> MailCanvas fast render
+  -> vision / rule QA
+  -> risk score
+  -> 只有高风险结果进入 Chrome / Litmus / human review
+```
+
+对齐浏览器行为时，仓库里的 Playwright 工具仍然会用 Chromium/Blink 作为参考标准。
+但在产品验证链路里，MailCanvas 的定位是让 Chrome 成为最后 1% 到 5% 的 fallback，
+而不是每封邮件的默认路径。
+
+目标 KPI：
+
+- 80%+ 生成邮件不需要 Chrome 就能完成 render/QA fast path
+- 单次 render 内存比浏览器进程低一个数量级
+- thumbnail / QA workload 吞吐提升 5x 到 20x
+- same-input same-output deterministic
+- risk score 能识别需要浏览器或真实客户端 fallback 的样本
 
 ### 构建
 
