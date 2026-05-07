@@ -32,7 +32,7 @@ inputs:
     required: false
     default: "800"
   profile:
-    description: Viewport profile: generic, desktop-800, mobile-375, or thumbnail.
+    description: Profile: generic, desktop-800, mobile-375, thumbnail, or outlook-ish.
     required: false
     default: thumbnail
   update:

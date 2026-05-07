@@ -15,8 +15,20 @@ const BASIC_HTML = path.join(ROOT_DIR, 'examples', 'basic.html');
 async function main() {
   await rm(WORK_DIR, { recursive: true, force: true });
 
-  run(['check', BASIC_HTML, '--out-dir', path.join(WORK_DIR, 'check'), '--warnings-json', path.join(WORK_DIR, 'check', 'warnings.json')]);
+  run([
+    'check',
+    BASIC_HTML,
+    '--out-dir',
+    path.join(WORK_DIR, 'check'),
+    '--warnings-json',
+    path.join(WORK_DIR, 'check', 'warnings.json'),
+    '--report-json',
+    path.join(WORK_DIR, 'check', 'report.json'),
+    '--profile',
+    'outlook-ish',
+  ]);
   await assertFile(path.join(WORK_DIR, 'check', 'warnings.json'));
+  await assertFile(path.join(WORK_DIR, 'check', 'report.json'));
 
   run(['preview', BASIC_HTML, '--out-dir', path.join(WORK_DIR, 'preview'), '--profile', 'desktop-800']);
   await assertFile(path.join(WORK_DIR, 'preview', 'preview.png'));

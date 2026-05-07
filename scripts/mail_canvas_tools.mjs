@@ -54,13 +54,13 @@ Usage:
   node scripts/mail_canvas_tools.mjs preview <email.html> [--watch] [--port 4177] [--out-dir .mail-canvas-preview]
   node scripts/mail_canvas_tools.mjs diff <before.html> <after.html> --out report-dir
   node scripts/mail_canvas_tools.mjs snapshot <templates/**/*.html> --baseline snapshots [--update]
-  node scripts/mail_canvas_tools.mjs check <email.html> [--warnings-json warnings.json]
+  node scripts/mail_canvas_tools.mjs check <email.html> [--warnings-json warnings.json] [--report-json check.json]
 
 Common options:
   --width <px>              CSS viewport width, default ${DEFAULT_WIDTH}
   --viewport-height <px>    initial CSS viewport height, default ${DEFAULT_VIEWPORT_HEIGHT}
   --scale <n>               output device scale, default ${DEFAULT_SCALE}
-  --profile <name>          generic, desktop-800, mobile-375, or thumbnail
+  --profile <name>          generic, desktop-800, mobile-375, thumbnail, or outlook-ish
   --font-dir <dir>          deterministic font directory, default fixtures/fonts
   --renderer <path>         mail-canvas binary path, default target/debug/mail-canvas
   --allow-remote            allow remote resources
@@ -147,6 +147,7 @@ function applyProfile(options, profile, explicit) {
     'desktop-800': { width: 800, viewportHeight: 1200, scale: 1 },
     'mobile-375': { width: 375, viewportHeight: 900, scale: 1 },
     thumbnail: { width: 800, viewportHeight: 1200, scale: 1 },
+    'outlook-ish': { width: 600, viewportHeight: 800, scale: 1 },
   };
   const preset = profiles[profile];
   if (!preset) {
@@ -447,6 +448,7 @@ async function check(rest) {
   if (!htmlPath) throw new Error('check requires <email.html>');
   const checkOptions = {
     warningsJson: path.resolve('warnings.json'),
+    reportJson: null,
     outDir: path.resolve('.mail-canvas-check'),
   };
   applyCommandOptions(commandOptions, {
@@ -456,28 +458,140 @@ async function check(rest) {
     '--out-dir': (value) => {
       checkOptions.outDir = path.resolve(requireValue('--out-dir', value));
     },
+    '--report-json': (value) => {
+      checkOptions.reportJson = path.resolve(requireValue('--report-json', value));
+    },
   });
+  checkOptions.reportJson ??= path.join(checkOptions.outDir, 'check.report.json');
   await ensureRenderer(options.renderer);
   await mkdir(checkOptions.outDir, { recursive: true });
   const pngPath = path.join(checkOptions.outDir, `${snapshotId(htmlPath)}.png`);
   renderHtml(htmlPath, pngPath, checkOptions.warningsJson, options);
   const diagnostics = JSON.parse(await readFile(checkOptions.warningsJson, 'utf8'));
+  const html = await readFile(htmlPath, 'utf8');
+  const quality = analyzeHtmlQuality(html, options.profile);
   const warnings = diagnostics.warnings ?? [];
   const assets = diagnostics.assets ?? [];
   const failedAssets = assets.filter((asset) => asset.status === 'failed');
   const blockedAssets = assets.filter((asset) => asset.status === 'blocked');
-  console.log(JSON.stringify({
+  const report = {
     html: htmlPath,
+    profile: options.profile,
     png: pngPath,
     warningsJson: checkOptions.warningsJson,
+    reportJson: checkOptions.reportJson,
     warnings: warnings.length,
     assets: assets.length,
     failedAssets: failedAssets.length,
     blockedAssets: blockedAssets.length,
-  }, null, 2));
+    quality,
+  };
+  await writeFile(checkOptions.reportJson, `${JSON.stringify(report, null, 2)}\n`);
+  console.log(JSON.stringify(report, null, 2));
   if (warnings.length > 0 || failedAssets.length > 0) {
     process.exitCode = 1;
   }
+}
+
+function analyzeHtmlQuality(html, profile) {
+  const issues = [];
+  const htmlBytes = Buffer.byteLength(html, 'utf8');
+  if (htmlBytes > 100 * 1024) {
+    issues.push({
+      severity: 'warning',
+      code: 'gmail-clipping-risk',
+      message: 'HTML body is above 100 KiB and may be clipped by Gmail-like clients.',
+      bytes: htmlBytes,
+    });
+  }
+
+  for (const match of html.matchAll(/<img\b[^>]*>/gi)) {
+    const tag = match[0];
+    if (!/\balt\s*=/i.test(tag)) {
+      issues.push({
+        severity: 'warning',
+        code: 'missing-img-alt',
+        message: 'Image is missing alt text.',
+        snippet: truncate(tag),
+      });
+    }
+  }
+
+  for (const match of html.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/gi)) {
+    const text = stripTags(match[1]).replace(/\s+/g, ' ').trim();
+    const hasImage = /<img\b/i.test(match[1]);
+    if (!text && !hasImage) {
+      issues.push({
+        severity: 'warning',
+        code: 'empty-link-text',
+        message: 'Link has no readable text or image content.',
+        snippet: truncate(match[0]),
+      });
+    }
+  }
+
+  const linkedStylesheets = [...html.matchAll(/<link\b[^>]*\brel\s*=\s*["']?stylesheet\b[^>]*>/gi)];
+  for (const match of linkedStylesheets) {
+    issues.push({
+      severity: 'info',
+      code: 'linked-stylesheet',
+      message: 'Linked stylesheets can be stripped by some email clients; inline critical CSS for delivery.',
+      snippet: truncate(match[0]),
+    });
+  }
+
+  for (const issue of profileCompatibilityIssues(html, profile)) {
+    issues.push(issue);
+  }
+
+  return {
+    htmlBytes,
+    issueCount: issues.length,
+    issues,
+  };
+}
+
+function profileCompatibilityIssues(html, profile) {
+  const issues = [];
+  if (profile !== 'outlook-ish') {
+    return issues;
+  }
+  const checks = [
+    {
+      pattern: /display\s*:\s*flex/i,
+      code: 'outlook-flex-risk',
+      message: 'display:flex has poor Outlook Word compatibility; prefer table fallback for critical layout.',
+    },
+    {
+      pattern: /background-image\s*:/i,
+      code: 'outlook-background-image-risk',
+      message: 'CSS background images need VML or table/image fallback for Outlook Word.',
+    },
+    {
+      pattern: /border-radius\s*:/i,
+      code: 'outlook-border-radius-risk',
+      message: 'border-radius is unreliable in Outlook Word; avoid relying on it for critical CTA shape.',
+    },
+  ];
+  for (const check of checks) {
+    if (check.pattern.test(html)) {
+      issues.push({
+        severity: 'warning',
+        code: check.code,
+        message: check.message,
+      });
+    }
+  }
+  return issues;
+}
+
+function stripTags(html) {
+  return html.replace(/<[^>]*>/g, '');
+}
+
+function truncate(value, max = 160) {
+  const compact = value.replace(/\s+/g, ' ').trim();
+  return compact.length > max ? `${compact.slice(0, max - 1)}...` : compact;
 }
 
 function applyCommandOptions(entries, handlers) {
