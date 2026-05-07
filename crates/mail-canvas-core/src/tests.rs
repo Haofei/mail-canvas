@@ -2298,6 +2298,34 @@ fn renders_png_with_text_pixels() {
 }
 
 #[test]
+fn anonymous_text_boxes_do_not_repaint_parent_borders() {
+    let html = build_document(
+        r#"<table width="120" cellpadding="0" cellspacing="0"><tr><td style="padding:12px;border-top:2px dashed #ff0000;border-bottom:2px dashed #ff0000;font-size:16px;line-height:24px;color:#000">Total</td></tr></table>"#,
+        None,
+        None,
+        120,
+    );
+    let request = RenderRequest::defaults_for_html(html, 120, 80, 1.0);
+    let mut renderer = MailCanvasRenderer::new(120, 80, 1.0).unwrap();
+    let image = renderer.render_png(request).unwrap();
+    let decoded = image::load_from_memory(&image.png).unwrap().to_rgba8();
+
+    let red_rows = (0..decoded.height())
+        .filter(|&y| {
+            (0..decoded.width())
+                .filter(|&x| {
+                    let pixel = decoded.get_pixel(x, y).0;
+                    pixel[0] > 200 && pixel[1] < 40 && pixel[2] < 40
+                })
+                .count()
+                > 8
+        })
+        .count();
+
+    assert_eq!(red_rows, 4);
+}
+
+#[test]
 fn debug_snapshot_is_opt_in() {
     let html = build_document(
         r#"<table><tr><td><p>Hello debug</p></td></tr></table>"#,

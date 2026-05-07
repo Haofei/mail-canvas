@@ -28,46 +28,54 @@ impl LayoutPainter<'_> {
     }
 
     pub(crate) fn paint_with_opacity(&mut self, layout: &LayoutBox, parent_opacity: f32) {
-        let opacity = (parent_opacity * layout.style.opacity).clamp(0.0, 1.0);
+        let paints_own_box = !matches!(layout.kind, LayoutKind::Text(_) | LayoutKind::RichText(_));
+        let opacity = if paints_own_box {
+            parent_opacity * layout.style.opacity
+        } else {
+            parent_opacity
+        }
+        .clamp(0.0, 1.0);
         if opacity <= 0.0 {
             return;
         }
-        for shadow in layout.style.box_shadows.iter().rev() {
-            if !shadow.inset {
-                paint_box_shadow(
+        if paints_own_box {
+            for shadow in layout.style.box_shadows.iter().rev() {
+                if !shadow.inset {
+                    paint_box_shadow(
+                        self.pixmap,
+                        self.scale,
+                        layout.rect,
+                        layout.style.border_radius,
+                        with_opacity(shadow.color, opacity),
+                        shadow,
+                    );
+                }
+            }
+            if let Some(background) = layout.style.background {
+                fill_style_rect(
                     self.pixmap,
                     self.scale,
                     layout.rect,
+                    with_opacity(background, opacity),
                     layout.style.border_radius,
-                    with_opacity(shadow.color, opacity),
-                    shadow,
                 );
             }
-        }
-        if let Some(background) = layout.style.background {
-            fill_style_rect(
-                self.pixmap,
-                self.scale,
-                layout.rect,
-                with_opacity(background, opacity),
-                layout.style.border_radius,
-            );
-        }
-        if let Some(background_image) = &layout.style.background_image {
-            self.paint_background_image(layout.rect, &layout.style, background_image, opacity);
-        }
-        if layout.style.border.max_width() > 0.0
-            && layout.style.border_style != BorderLineStyle::None
-        {
-            stroke_style_border(
-                self.pixmap,
-                self.scale,
-                layout.rect,
-                layout.style.border,
-                with_opacity(layout.style.border_color, opacity),
-                layout.style.border_style,
-                layout.style.border_radius,
-            );
+            if let Some(background_image) = &layout.style.background_image {
+                self.paint_background_image(layout.rect, &layout.style, background_image, opacity);
+            }
+            if layout.style.border.max_width() > 0.0
+                && layout.style.border_style != BorderLineStyle::None
+            {
+                stroke_style_border(
+                    self.pixmap,
+                    self.scale,
+                    layout.rect,
+                    layout.style.border,
+                    with_opacity(layout.style.border_color, opacity),
+                    layout.style.border_style,
+                    layout.style.border_radius,
+                );
+            }
         }
 
         match &layout.kind {
