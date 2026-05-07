@@ -75,8 +75,11 @@ fn inlines_css_before_rendering() {
         None,
         600,
     );
-    let inlined = inline_css(&html, 600).unwrap();
-    assert!(inlined.contains("style=\"color: #f00;\""));
+    let inlined = inline_css(&html, 600, 800).unwrap();
+    assert!(
+        inlined.contains("color:red") || inlined.contains("color: red"),
+        "{inlined}"
+    );
     assert!(!inlined.contains("email-render-css"));
 }
 
@@ -88,8 +91,16 @@ fn inlines_text_shadow_for_rendering() {
         None,
         600,
     );
-    let inlined = inline_css(&html, 600).unwrap();
-    assert!(inlined.contains("text-shadow: 0 1px 0 white"));
+    let inlined = inline_css(&html, 600, 800).unwrap();
+    assert!(
+        inlined.contains("text-shadow:0 1px 0 #fff")
+            || inlined.contains("text-shadow: 0 1px 0 #fff")
+            || inlined.contains("text-shadow:0 1px #fff")
+            || inlined.contains("text-shadow: 0 1px #fff")
+            || inlined.contains("text-shadow:0 1px 0 white")
+            || inlined.contains("text-shadow: 0 1px 0 white"),
+        "{inlined}"
+    );
 }
 
 #[test]
@@ -100,7 +111,7 @@ fn inliner_ignores_hidden_mso_conditional_styles() {
         None,
         600,
     );
-    let inlined = inline_css(&html, 600).unwrap();
+    let inlined = inline_css(&html, 600, 800).unwrap();
     assert!(inlined.contains("color: red"));
     assert!(!inlined.contains("color: blue"));
 }
@@ -119,7 +130,7 @@ fn applies_active_max_width_media_before_inlining() {
         None,
         600,
     );
-    let inlined = inline_css(&html, 600).unwrap();
+    let inlined = inline_css(&html, 600, 800).unwrap();
     assert!(inlined.contains("padding: 8px"));
 }
 
@@ -131,7 +142,7 @@ fn ignores_inactive_max_width_media_rules() {
         None,
         600,
     );
-    let inlined = inline_css(&html, 600).unwrap();
+    let inlined = inline_css(&html, 600, 800).unwrap();
     assert!(inlined.contains("padding: 24px"));
     assert!(!inlined.contains("padding: 8px"));
 }
@@ -144,7 +155,7 @@ fn media_rule_overrides_table_width_attribute() {
         None,
         600,
     );
-    let inlined = inline_css(&html, 600).unwrap();
+    let inlined = inline_css(&html, 600, 800).unwrap();
     assert!(inlined.contains("width: 320px"));
 }
 
@@ -919,7 +930,7 @@ fn body_color_inherits_to_paragraph_text() {
         None,
         200,
     );
-    let html = inline_css(&html, 200).unwrap();
+    let html = inline_css(&html, 200, 800).unwrap();
     let document = kuchiki::parse_html().one(html);
     let mut font_system = FontSystem::new_with_locale_and_db_and_fallback(
         "en-US".to_string(),

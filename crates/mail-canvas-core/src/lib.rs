@@ -124,7 +124,7 @@ impl RendererCore {
         );
 
         let available_font_families = font_database_families(self.font_system.db());
-        let html = inline_css(&render_html, request.width)?;
+        let html = inline_css(&render_html, request.width, request.viewport_height)?;
         let document = kuchiki::parse_html().one(html);
         let mut engine = LayoutEngine::new(
             &mut self.font_system,
@@ -439,7 +439,7 @@ fn resource_policy_for_test() -> TestResourceProvider {
 
 #[cfg(test)]
 fn layout_for_test(html: &str, width: u32) -> LayoutBox {
-    let html = inline_css(&build_document(html, None, None, width), width).unwrap();
+    let html = inline_css(&build_document(html, None, None, width), width, 800).unwrap();
     let document = kuchiki::parse_html().one(html);
     let mut font_system = FontSystem::new();
     let mut engine = LayoutEngine::new(

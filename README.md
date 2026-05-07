@@ -342,6 +342,7 @@ the smallest email-relevant rule in Rust.
 | Inline text | `font-*`, `line-height`, `letter-spacing`, `text-align`, `text-transform`, `white-space:nowrap` | Uses `cosmic-text`, not Skia |
 | Tables | nested tables, `rowspan`, `colspan`, `cellpadding`, `cellspacing`, `table-layout:fixed`, `col` width hints | Primary modern email target |
 | Images | `img`, `background-image`, `object-fit`, `object-position`, width/height attributes | Remote and `data:` assets supported |
+| Media queries | `screen`/`all`, `only`, `not`, `min/max-width`, width ranges, `orientation` | Active rules are expanded in source order before inlining |
 | Flex subset | `display:flex`, direction, wrap, align/justify, gap | Only common email-safe subset |
 | Float subset | `float:left/right`, `clear`, basic wrap avoidance | Supported for modern templates only |
 | Positioning | static, relative, absolute/fixed child placement | No full browser stacking model |
@@ -683,6 +684,9 @@ scripts/fetch_blink_reference.sh
 - CSS 支持是邮件模板导向的子集；暂时不支持的 declaration 会被忽略，
   结构化 renderer warnings 已覆盖资源、web font 和 layout limit 问题。
   diagnostics JSON 还会输出逐个 asset 的加载结果。
+- `<style>` 中的 `@media` 会在 CSS inline 前按当前 viewport 求值并按原始顺序展开；
+  已覆盖 `screen`/`all`、`only`、`not`、`min/max-width`、宽度 range 和
+  `orientation`。
 - JavaScript、form、video、canvas、完整 positioning、完整 flex/grid、完整浏览器
   painting 都不在当前范围内。
 - 远程资源默认关闭，需要显式开启。DOM、layout depth、table cell、编码字节数和

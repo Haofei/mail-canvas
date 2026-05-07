@@ -1,17 +1,22 @@
 use anyhow::{Context as _, Result};
 use css_inline::CSSInliner;
 use lightningcss::declaration::DeclarationBlock;
+use lightningcss::media_query::{
+    MediaCondition, MediaFeature, MediaFeatureComparison, MediaFeatureId, MediaFeatureName,
+    MediaFeatureValue, MediaList, MediaQuery, MediaType, Operator, Qualifier,
+};
 use lightningcss::rules::font_face::FontFaceProperty;
 use lightningcss::rules::{CssRule, CssRuleList};
 use lightningcss::stylesheet::{ParserOptions, PrinterOptions, StyleSheet};
 use lightningcss::traits::ToCss;
 
-use crate::document::inject_head_markup;
-
-pub(crate) fn inline_css(html: &str, viewport_width: u32) -> Result<String> {
+pub(crate) fn inline_css(html: &str, viewport_width: u32, viewport_height: u32) -> Result<String> {
     let html = strip_hidden_conditional_comments(html);
-    let html = inject_active_media_styles(&html, viewport_width);
-    let html = strip_media_rules_from_style_blocks(&html);
+    let viewport = CssViewport {
+        width: viewport_width as f32,
+        height: viewport_height as f32,
+    };
+    let html = expand_active_media_rules_in_style_blocks(&html, viewport);
     CSSInliner::options()
         .load_remote_stylesheets(false)
         .keep_style_tags(false)
@@ -71,17 +76,13 @@ fn downlevel_revealed_content_start(lower: &str, start: usize) -> Option<usize> 
     None
 }
 
-fn inject_active_media_styles(html: &str, viewport_width: u32) -> String {
-    let css = active_media_css(html, viewport_width);
-    if css.trim().is_empty() {
-        return html.to_string();
-    }
-
-    let style = format!("\n<style id=\"email-render-active-media\">\n{css}\n</style>\n");
-    inject_head_markup(html, &style)
+#[derive(Clone, Copy)]
+struct CssViewport {
+    width: f32,
+    height: f32,
 }
 
-fn strip_media_rules_from_style_blocks(html: &str) -> String {
+fn expand_active_media_rules_in_style_blocks(html: &str, viewport: CssViewport) -> String {
     let lower = html.to_ascii_lowercase();
     let mut out = String::with_capacity(html.len());
     let mut offset = 0;
@@ -98,7 +99,8 @@ fn strip_media_rules_from_style_blocks(html: &str) -> String {
         let content_end = content_start + end_rel;
 
         out.push_str(&html[offset..content_start]);
-        out.push_str(&strip_media_rules(&html[content_start..content_end]));
+        let css = &html[content_start..content_end];
+        out.push_str(&expand_active_media_rules(css, viewport));
         offset = content_end;
     }
 
@@ -106,36 +108,52 @@ fn strip_media_rules_from_style_blocks(html: &str) -> String {
     out
 }
 
-fn strip_media_rules(css: &str) -> String {
-    let lower = css.to_ascii_lowercase();
-    let mut out = String::with_capacity(css.len());
-    let mut offset = 0;
-
-    while let Some(media_rel) = lower[offset..].find("@media") {
-        let media_start = offset + media_rel;
-        let condition_start = media_start + "@media".len();
-        let Some(open_rel) = css[condition_start..].find('{') else {
-            break;
-        };
-        let open = condition_start + open_rel;
-        let Some(close) = find_matching_brace(css, open) else {
-            break;
-        };
-
-        out.push_str(&css[offset..media_start]);
-        offset = close + 1;
+fn expand_active_media_rules(css: &str, viewport: CssViewport) -> String {
+    if let Some(expanded) = expand_active_media_rules_with_lightningcss(css, viewport) {
+        return expanded;
     }
 
-    out.push_str(&css[offset..]);
+    let mut out = strip_media_rules_fallback(css);
+    append_active_media_css_fallback(css, viewport.width as u32, &mut out);
     out
 }
 
-fn active_media_css(html: &str, viewport_width: u32) -> String {
+fn expand_active_media_rules_with_lightningcss(css: &str, viewport: CssViewport) -> Option<String> {
+    let options = ParserOptions {
+        error_recovery: true,
+        ..Default::default()
+    };
+    let stylesheet = StyleSheet::parse(css, options).ok()?;
     let mut out = String::new();
-    for style in style_blocks(html) {
-        append_active_media_css(style, viewport_width, &mut out);
+    append_active_rules(&stylesheet.rules, viewport, &mut out)?;
+    Some(out)
+}
+
+fn append_active_rules<R: ToCss>(
+    rules: &CssRuleList<'_, R>,
+    viewport: CssViewport,
+    out: &mut String,
+) -> Option<()> {
+    for rule in &rules.0 {
+        match rule {
+            CssRule::Media(media) => {
+                if media_list_matches(&media.query, viewport) {
+                    append_active_rules(&media.rules, viewport, out)?;
+                }
+            }
+            _ => append_serialized_rule(rule, out)?,
+        }
     }
-    out
+    Some(())
+}
+
+fn append_serialized_rule<R: ToCss>(rule: &CssRule<'_, R>, out: &mut String) -> Option<()> {
+    let css = rule.to_css_string(PrinterOptions::default()).ok()?;
+    if !css.trim().is_empty() {
+        out.push_str(&css);
+        out.push('\n');
+    }
+    Some(())
 }
 
 pub(crate) fn style_blocks(html: &str) -> Vec<&str> {
@@ -464,7 +482,31 @@ pub(crate) fn unquote_css_value(value: &str) -> String {
         .to_string()
 }
 
-fn append_active_media_css(css: &str, viewport_width: u32, out: &mut String) {
+fn strip_media_rules_fallback(css: &str) -> String {
+    let lower = css.to_ascii_lowercase();
+    let mut out = String::with_capacity(css.len());
+    let mut offset = 0;
+
+    while let Some(media_rel) = lower[offset..].find("@media") {
+        let media_start = offset + media_rel;
+        let condition_start = media_start + "@media".len();
+        let Some(open_rel) = css[condition_start..].find('{') else {
+            break;
+        };
+        let open = condition_start + open_rel;
+        let Some(close) = find_matching_brace(css, open) else {
+            break;
+        };
+
+        out.push_str(&css[offset..media_start]);
+        offset = close + 1;
+    }
+
+    out.push_str(&css[offset..]);
+    out
+}
+
+fn append_active_media_css_fallback(css: &str, viewport_width: u32, out: &mut String) {
     let lower = css.to_ascii_lowercase();
     let mut offset = 0;
 
@@ -479,7 +521,7 @@ fn append_active_media_css(css: &str, viewport_width: u32, out: &mut String) {
             break;
         };
 
-        if media_condition_matches(&css[condition_start..open], viewport_width) {
+        if media_condition_matches_fallback(&css[condition_start..open], viewport_width) {
             let body = css[open + 1..close].trim();
             if !body.is_empty() {
                 out.push_str(body);
@@ -549,13 +591,13 @@ pub(crate) fn find_matching_brace(source: &str, open: usize) -> Option<usize> {
     None
 }
 
-fn media_condition_matches(condition: &str, viewport_width: u32) -> bool {
+fn media_condition_matches_fallback(condition: &str, viewport_width: u32) -> bool {
     condition
         .split(',')
-        .any(|query| single_media_query_matches(query, viewport_width))
+        .any(|query| single_media_query_matches_fallback(query, viewport_width))
 }
 
-fn single_media_query_matches(query: &str, viewport_width: u32) -> bool {
+fn single_media_query_matches_fallback(query: &str, viewport_width: u32) -> bool {
     let query = query.to_ascii_lowercase();
     let query = query.trim();
     if query.is_empty()
@@ -578,6 +620,170 @@ fn single_media_query_matches(query: &str, viewport_width: u32) -> bool {
         }
     }
     true
+}
+
+fn media_list_matches(list: &MediaList<'_>, viewport: CssViewport) -> bool {
+    list.media_queries.is_empty()
+        || list
+            .media_queries
+            .iter()
+            .any(|query| media_query_matches(query, viewport))
+}
+
+fn media_query_matches(query: &MediaQuery<'_>, viewport: CssViewport) -> bool {
+    let mut matches = media_type_matches(&query.media_type)
+        && query
+            .condition
+            .as_ref()
+            .is_none_or(|condition| media_condition_matches(condition, viewport));
+
+    if query.qualifier == Some(Qualifier::Not) {
+        matches = !matches;
+    }
+    matches
+}
+
+fn media_type_matches(media_type: &MediaType<'_>) -> bool {
+    matches!(media_type, MediaType::All | MediaType::Screen)
+}
+
+fn media_condition_matches(condition: &MediaCondition<'_>, viewport: CssViewport) -> bool {
+    match condition {
+        MediaCondition::Feature(feature) => media_feature_matches(feature, viewport),
+        MediaCondition::Not(condition) => !media_condition_matches(condition, viewport),
+        MediaCondition::Operation {
+            operator,
+            conditions,
+        } => match operator {
+            Operator::And => conditions
+                .iter()
+                .all(|condition| media_condition_matches(condition, viewport)),
+            Operator::Or => conditions
+                .iter()
+                .any(|condition| media_condition_matches(condition, viewport)),
+        },
+        MediaCondition::Unknown(_) => false,
+    }
+}
+
+fn media_feature_matches(feature: &MediaFeature<'_>, viewport: CssViewport) -> bool {
+    match feature {
+        MediaFeature::Boolean { name } => media_feature_boolean_value(name, viewport),
+        MediaFeature::Plain { name, value } => media_feature_plain_matches(name, value, viewport),
+        MediaFeature::Range {
+            name,
+            operator,
+            value,
+        } => {
+            let Some(left) = media_feature_numeric_value(name, viewport) else {
+                return false;
+            };
+            let Some(right) = media_feature_value_to_number(value) else {
+                return false;
+            };
+            compare_media_numbers(left, *operator, right)
+        }
+        MediaFeature::Interval {
+            name,
+            start,
+            start_operator,
+            end,
+            end_operator,
+        } => {
+            let Some(value) = media_feature_numeric_value(name, viewport) else {
+                return false;
+            };
+            let Some(start) = media_feature_value_to_number(start) else {
+                return false;
+            };
+            let Some(end) = media_feature_value_to_number(end) else {
+                return false;
+            };
+            compare_media_numbers(start, *start_operator, value)
+                && compare_media_numbers(value, *end_operator, end)
+        }
+    }
+}
+
+fn media_feature_plain_matches(
+    name: &MediaFeatureName<'_, MediaFeatureId>,
+    value: &MediaFeatureValue<'_>,
+    viewport: CssViewport,
+) -> bool {
+    if let Some(left) = media_feature_numeric_value(name, viewport) {
+        return media_feature_value_to_number(value)
+            .is_some_and(|right| (left - right).abs() < f32::EPSILON);
+    }
+
+    match (standard_media_feature_id(name), value) {
+        (Some(MediaFeatureId::Orientation), MediaFeatureValue::Ident(value)) => {
+            value.0.eq_ignore_ascii_case(viewport_orientation(viewport))
+        }
+        _ => false,
+    }
+}
+
+fn media_feature_boolean_value(
+    name: &MediaFeatureName<'_, MediaFeatureId>,
+    viewport: CssViewport,
+) -> bool {
+    media_feature_numeric_value(name, viewport).is_some_and(|value| value > 0.0)
+}
+
+fn media_feature_numeric_value(
+    name: &MediaFeatureName<'_, MediaFeatureId>,
+    viewport: CssViewport,
+) -> Option<f32> {
+    match standard_media_feature_id(name)? {
+        MediaFeatureId::Width | MediaFeatureId::DeviceWidth => Some(viewport.width),
+        MediaFeatureId::Height | MediaFeatureId::DeviceHeight => Some(viewport.height),
+        MediaFeatureId::AspectRatio | MediaFeatureId::DeviceAspectRatio => {
+            (viewport.height > 0.0).then_some(viewport.width / viewport.height)
+        }
+        MediaFeatureId::Color => Some(24.0),
+        MediaFeatureId::ColorIndex | MediaFeatureId::Monochrome | MediaFeatureId::Grid => Some(0.0),
+        _ => None,
+    }
+}
+
+fn standard_media_feature_id(
+    name: &MediaFeatureName<'_, MediaFeatureId>,
+) -> Option<MediaFeatureId> {
+    match name {
+        MediaFeatureName::Standard(id) => Some(*id),
+        MediaFeatureName::Custom(_) | MediaFeatureName::Unknown(_) => None,
+    }
+}
+
+fn media_feature_value_to_number(value: &MediaFeatureValue<'_>) -> Option<f32> {
+    match value {
+        MediaFeatureValue::Length(length) => length.to_px(),
+        MediaFeatureValue::Number(value) => Some(*value),
+        MediaFeatureValue::Integer(value) => Some(*value as f32),
+        MediaFeatureValue::Boolean(value) => Some(if *value { 1.0 } else { 0.0 }),
+        MediaFeatureValue::Ratio(ratio) => (ratio.1 != 0.0).then_some(ratio.0 / ratio.1),
+        MediaFeatureValue::Resolution(_)
+        | MediaFeatureValue::Ident(_)
+        | MediaFeatureValue::Env(_) => None,
+    }
+}
+
+fn compare_media_numbers(left: f32, operator: MediaFeatureComparison, right: f32) -> bool {
+    match operator {
+        MediaFeatureComparison::Equal => (left - right).abs() < f32::EPSILON,
+        MediaFeatureComparison::GreaterThan => left > right,
+        MediaFeatureComparison::GreaterThanEqual => left >= right,
+        MediaFeatureComparison::LessThan => left < right,
+        MediaFeatureComparison::LessThanEqual => left <= right,
+    }
+}
+
+fn viewport_orientation(viewport: CssViewport) -> &'static str {
+    if viewport.height >= viewport.width {
+        "portrait"
+    } else {
+        "landscape"
+    }
 }
 
 fn media_width_constraints(query: &str, name: &str) -> Vec<f32> {
@@ -688,7 +894,7 @@ mod tests {
             <body><table class="desktop_hide"><tr><td>Hidden on desktop</td></tr></table></body></html>
         "#;
 
-        let inlined = inline_css(html, 800).unwrap();
+        let inlined = inline_css(html, 800, 800).unwrap();
 
         assert!(inlined.contains("display: none"));
         assert!(!inlined.contains("display: table"));
@@ -704,10 +910,65 @@ mod tests {
             <body><table class="stack"><tr><td>Stacked</td></tr></table></body></html>
         "#;
 
-        let inlined = inline_css(html, 600).unwrap();
+        let inlined = inline_css(html, 600, 800).unwrap();
 
         assert!(inlined.contains("width: 320px"));
         assert!(!inlined.contains("@media"));
+    }
+
+    #[test]
+    fn matches_compound_media_queries_with_lightningcss() {
+        let html = r#"
+            <html><head><style>
+              .stack { padding: 4px; }
+              @media screen and (min-width:400px) and (max-width:700px) {
+                .stack { padding: 8px; }
+              }
+            </style></head>
+            <body><div class="stack">Stacked</div></body></html>
+        "#;
+
+        let active = inline_css(html, 600, 800).unwrap();
+        let inactive = inline_css(html, 800, 800).unwrap();
+
+        assert!(active.contains("padding: 8px"));
+        assert!(inactive.contains("padding: 4px"));
+        assert!(!inactive.contains("padding: 8px"));
+    }
+
+    #[test]
+    fn preserves_media_rule_cascade_position() {
+        let html = r#"
+            <html><head><style>
+              .stack { padding: 4px; }
+              @media (max-width:700px) { .stack { padding: 8px; } }
+              .stack { padding: 12px; }
+            </style></head>
+            <body><div class="stack">Stacked</div></body></html>
+        "#;
+
+        let inlined = inline_css(html, 600, 800).unwrap();
+
+        assert!(inlined.contains("padding: 12px"));
+        assert!(!inlined.contains("padding: 8px"));
+    }
+
+    #[test]
+    fn matches_orientation_media_queries() {
+        let html = r#"
+            <html><head><style>
+              .stack { padding: 4px; }
+              @media (orientation: portrait) { .stack { padding: 8px; } }
+            </style></head>
+            <body><div class="stack">Stacked</div></body></html>
+        "#;
+
+        let portrait = inline_css(html, 600, 800).unwrap();
+        let landscape = inline_css(html, 800, 600).unwrap();
+
+        assert!(portrait.contains("padding: 8px"));
+        assert!(landscape.contains("padding: 4px"));
+        assert!(!landscape.contains("padding: 8px"));
     }
 
     #[test]
