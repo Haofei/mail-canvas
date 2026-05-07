@@ -56,6 +56,17 @@ fn build_head_markup(css: Option<&str>, base_url: Option<&Url>, width: u32) -> S
 pub(crate) fn inject_head_markup(source_html: &str, head: &str) -> String {
     let lower = source_html.to_ascii_lowercase();
 
+    if let Some(open_head_index) = lower.find("<head") {
+        if let Some(close_offset) = source_html[open_head_index..].find('>') {
+            let insert_at = open_head_index + close_offset + 1;
+            let mut out = String::with_capacity(source_html.len() + head.len());
+            out.push_str(&source_html[..insert_at]);
+            out.push_str(head);
+            out.push_str(&source_html[insert_at..]);
+            return out;
+        }
+    }
+
     if let Some(index) = lower.find("</head>") {
         let mut out = String::with_capacity(source_html.len() + head.len());
         out.push_str(&source_html[..index]);

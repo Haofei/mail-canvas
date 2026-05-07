@@ -22,6 +22,7 @@ const DEFAULT_MAX_RESOURCE_BYTES: usize = 10 * 1024 * 1024;
 const DEFAULT_MAX_DECODED_PIXELS: u64 = 16_000_000;
 const DEFAULT_MAX_TOTAL_RESOURCE_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_MAX_RESOURCE_COUNT: usize = 128;
+const MAX_ASSET_REPORTS: usize = 512;
 
 #[wasm_bindgen]
 pub struct WasmRenderer {
@@ -276,13 +277,38 @@ impl RenderOutputBackend for WasmOutputBackend {
 #[derive(Debug, Clone, Default)]
 struct AssetRegistry {
     entries: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    total_bytes: Arc<Mutex<usize>>,
 }
 
 impl AssetRegistry {
     fn register(&self, url: &str, bytes: &[u8]) -> Result<()> {
+        ensure_resource_size_with_limit(bytes.len(), DEFAULT_MAX_RESOURCE_BYTES)?;
         let key = normalize_registry_key(url)?;
         let mut entries = self.entries.lock().expect("asset registry mutex poisoned");
+        let existing_len = entries.get(&key).map_or(0, Vec::len);
+        if existing_len == 0 && entries.len() >= DEFAULT_MAX_RESOURCE_COUNT {
+            bail!(
+                "asset count exceeds max-resource-count: {} > {}",
+                entries.len() + 1,
+                DEFAULT_MAX_RESOURCE_COUNT
+            );
+        }
+        let mut total = self
+            .total_bytes
+            .lock()
+            .expect("asset registry bytes mutex poisoned");
+        let next_total = total
+            .saturating_sub(existing_len)
+            .saturating_add(bytes.len());
+        if next_total > DEFAULT_MAX_TOTAL_RESOURCE_BYTES {
+            bail!(
+                "asset bytes exceed max-total-resource-bytes: {} > {}",
+                next_total,
+                DEFAULT_MAX_TOTAL_RESOURCE_BYTES
+            );
+        }
         entries.insert(key, bytes.to_vec());
+        *total = next_total;
         Ok(())
     }
 
@@ -291,6 +317,10 @@ impl AssetRegistry {
             .lock()
             .expect("asset registry mutex poisoned")
             .clear();
+        *self
+            .total_bytes
+            .lock()
+            .expect("asset registry bytes mutex poisoned") = 0;
     }
 
     fn len(&self) -> usize {
@@ -326,10 +356,22 @@ struct RegisteredAsset {
     bytes: Vec<u8>,
 }
 
+impl RegisteredAsset {
+    fn source(&self) -> AssetSource {
+        self.resolved_url.as_deref().map_or_else(
+            || asset_source_for_url(&self.request_url),
+            asset_source_for_url,
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 struct WasmResourceProvider {
     assets: AssetRegistry,
     base_url: Option<Url>,
+    policy: ResourcePolicy,
+    total_bytes: Arc<Mutex<usize>>,
+    resource_count: Arc<Mutex<usize>>,
     asset_reports: Arc<Mutex<Vec<AssetReport>>>,
 }
 
@@ -345,6 +387,9 @@ impl ResourceProviderFactory for WasmResourceProviderFactory {
         WasmResourceProvider {
             assets: self.assets.clone(),
             base_url: request.base_url.clone().or(document_base_url),
+            policy: request.resource_policy.clone(),
+            total_bytes: Arc::new(Mutex::new(0)),
+            resource_count: Arc::new(Mutex::new(0)),
             asset_reports: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -357,11 +402,18 @@ impl ResourceProvider for WasmResourceProvider {
         initiator: &'static str,
     ) -> Result<mail_canvas_core::ImageData> {
         if let Some(asset) = self.assets.get(src, self.base_url.as_ref()) {
-            let image = decode_registered_image(&asset.bytes)?;
+            ensure_resource_size_with_limit(asset.bytes.len(), self.policy.max_resource_bytes)?;
+            self.record_resource_usage(asset.bytes.len())?;
+            let image = decode_registered_image(
+                &asset.bytes,
+                self.policy.max_resource_bytes,
+                self.policy.max_decoded_pixels,
+            )?;
+            let source = asset.source();
             self.record_asset_report(
                 AssetReport::new(AssetKind::Image, AssetStatus::Loaded, asset.request_url)
                     .with_optional_resolved_url(asset.resolved_url)
-                    .with_source(asset_source_for_url(src))
+                    .with_source(source)
                     .with_initiator(initiator)
                     .with_bytes(asset.bytes.len()),
             );
@@ -369,7 +421,12 @@ impl ResourceProvider for WasmResourceProvider {
         }
 
         if src.trim_start().starts_with("data:") {
-            let (bytes, image) = load_data_image(src)?;
+            let (bytes, image) = load_data_image(
+                src,
+                self.policy.max_resource_bytes,
+                self.policy.max_decoded_pixels,
+            )?;
+            self.record_resource_usage(bytes.len())?;
             self.record_asset_report(
                 AssetReport::new(AssetKind::Image, AssetStatus::Loaded, src.to_string())
                     .with_source(AssetSource::DataUrl)
@@ -379,16 +436,24 @@ impl ResourceProvider for WasmResourceProvider {
             return Ok(image);
         }
 
-        self.record_asset_report(blocked_asset_report(AssetKind::Image, src, initiator));
+        self.record_asset_report(blocked_asset_report(
+            AssetKind::Image,
+            src,
+            self.base_url.as_ref(),
+            initiator,
+        ));
         bail!("resource is not registered in wasm asset cache")
     }
 
     fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Vec<u8>> {
         if let Some(asset) = self.assets.get(src, self.base_url.as_ref()) {
+            ensure_resource_size_with_limit(asset.bytes.len(), self.policy.max_resource_bytes)?;
+            self.record_resource_usage(asset.bytes.len())?;
+            let source = asset.source();
             self.record_asset_report(
                 AssetReport::new(kind, AssetStatus::Loaded, asset.request_url)
                     .with_optional_resolved_url(asset.resolved_url)
-                    .with_source(asset_source_for_url(src))
+                    .with_source(source)
                     .with_initiator(initiator)
                     .with_bytes(asset.bytes.len()),
             );
@@ -401,6 +466,8 @@ impl ResourceProvider for WasmResourceProvider {
             let (bytes, _) = data_url
                 .decode_to_vec()
                 .map_err(|error| anyhow!("invalid data URL body: {error:?}"))?;
+            ensure_resource_size_with_limit(bytes.len(), self.policy.max_resource_bytes)?;
+            self.record_resource_usage(bytes.len())?;
             self.record_asset_report(
                 AssetReport::new(kind, AssetStatus::Loaded, src.to_string())
                     .with_source(AssetSource::DataUrl)
@@ -410,7 +477,12 @@ impl ResourceProvider for WasmResourceProvider {
             return Ok(bytes);
         }
 
-        self.record_asset_report(blocked_asset_report(kind, src, initiator));
+        self.record_asset_report(blocked_asset_report(
+            kind,
+            src,
+            self.base_url.as_ref(),
+            initiator,
+        ));
         bail!("resource is not registered in wasm asset cache")
     }
 
@@ -435,54 +507,102 @@ impl ResourceProvider for WasmResourceProvider {
             existing.merge_from(report);
             return;
         }
-        reports.push(report);
+        if reports.len() < MAX_ASSET_REPORTS {
+            reports.push(report);
+        }
     }
 }
 
-fn blocked_asset_report(kind: AssetKind, src: &str, initiator: &'static str) -> AssetReport {
+impl WasmResourceProvider {
+    fn record_resource_usage(&self, bytes: usize) -> Result<()> {
+        let mut count = self
+            .resource_count
+            .lock()
+            .expect("resource count mutex poisoned");
+        *count = count.saturating_add(1);
+        if *count > self.policy.max_resource_count {
+            bail!(
+                "resource count exceeds max-resource-count: {} > {}",
+                *count,
+                self.policy.max_resource_count
+            );
+        }
+
+        let mut total = self
+            .total_bytes
+            .lock()
+            .expect("resource bytes mutex poisoned");
+        *total = total.saturating_add(bytes);
+        if *total > self.policy.max_total_resource_bytes {
+            bail!(
+                "resource bytes exceed max-total-resource-bytes: {} > {}",
+                *total,
+                self.policy.max_total_resource_bytes
+            );
+        }
+        Ok(())
+    }
+}
+
+fn blocked_asset_report(
+    kind: AssetKind,
+    src: &str,
+    base_url: Option<&Url>,
+    initiator: &'static str,
+) -> AssetReport {
     AssetReport::new(kind, AssetStatus::Blocked, src.to_string())
-        .with_source(asset_source_for_url(src))
+        .with_source(asset_source_for_request(src, base_url))
         .with_initiator(initiator)
         .with_detail("resource is not registered in wasm asset cache")
 }
 
-fn load_data_image(src: &str) -> Result<(Vec<u8>, mail_canvas_core::ImageData)> {
+fn load_data_image(
+    src: &str,
+    max_resource_bytes: usize,
+    max_decoded_pixels: u64,
+) -> Result<(Vec<u8>, mail_canvas_core::ImageData)> {
     let data_url = DataUrl::process(src).map_err(|error| anyhow!("invalid data URL: {error}"))?;
     let (bytes, _) = data_url
         .decode_to_vec()
         .map_err(|error| anyhow!("invalid data URL body: {error:?}"))?;
-    let image = decode_registered_image(&bytes)?;
+    ensure_resource_size_with_limit(bytes.len(), max_resource_bytes)?;
+    let image = decode_registered_image(&bytes, max_resource_bytes, max_decoded_pixels)?;
     Ok((bytes, image))
 }
 
-fn decode_registered_image(bytes: &[u8]) -> Result<mail_canvas_core::ImageData> {
-    if bytes.len() > DEFAULT_MAX_RESOURCE_BYTES {
-        bail!("image resource exceeds max-image-bytes");
-    }
-    match decode_registered_image_strict(bytes) {
+fn decode_registered_image(
+    bytes: &[u8],
+    max_resource_bytes: usize,
+    max_decoded_pixels: u64,
+) -> Result<mail_canvas_core::ImageData> {
+    ensure_resource_size_with_limit(bytes.len(), max_resource_bytes)?;
+    match decode_registered_image_strict(bytes, max_decoded_pixels) {
         Ok(image) => Ok(image),
         Err(error) => {
             let Some(repaired) = repair_png_chunk_crcs(bytes) else {
                 return Err(error);
             };
-            decode_registered_image_strict(&repaired)
+            decode_registered_image_strict(&repaired, max_decoded_pixels)
                 .with_context(|| format!("failed to decode image after PNG CRC repair: {error}"))
         }
     }
 }
 
-fn decode_registered_image_strict(bytes: &[u8]) -> Result<mail_canvas_core::ImageData> {
+fn decode_registered_image_strict(
+    bytes: &[u8],
+    max_decoded_pixels: u64,
+) -> Result<mail_canvas_core::ImageData> {
     let mut reader = ImageReader::new(std::io::Cursor::new(bytes));
     let mut limits = Limits::default();
     limits.max_image_width = Some(
-        u32::try_from(DEFAULT_MAX_DECODED_PIXELS.min(u64::from(u32::MAX)))
+        u32::try_from(max_decoded_pixels.min(u64::from(u32::MAX)))
             .expect("bounded decoded pixel limit"),
     );
     limits.max_image_height = Some(
-        u32::try_from(DEFAULT_MAX_DECODED_PIXELS.min(u64::from(u32::MAX)))
+        u32::try_from(max_decoded_pixels.min(u64::from(u32::MAX)))
             .expect("bounded decoded pixel limit"),
     );
-    limits.max_alloc = Some(DEFAULT_MAX_DECODED_PIXELS.saturating_mul(4));
+    limits.max_alloc = Some(max_decoded_pixels.saturating_mul(4));
     reader.limits(limits);
     let mut decoder = reader
         .with_guessed_format()?
@@ -496,7 +616,7 @@ fn decode_registered_image_strict(bytes: &[u8]) -> Result<mail_canvas_core::Imag
     let rgba = image.to_rgba8();
     let width = rgba.width();
     let height = rgba.height();
-    if u64::from(width) * u64::from(height) > DEFAULT_MAX_DECODED_PIXELS {
+    if u64::from(width) * u64::from(height) > max_decoded_pixels {
         bail!("decoded image exceeds max-decoded-pixels");
     }
     Ok(mail_canvas_core::ImageData {
@@ -530,6 +650,20 @@ fn asset_source_for_url(src: &str) -> AssetSource {
     } else {
         AssetSource::File
     }
+}
+
+fn asset_source_for_request(src: &str, base_url: Option<&Url>) -> AssetSource {
+    resolve_asset_url(src, base_url).map_or_else(
+        || asset_source_for_url(src),
+        |url| asset_source_for_url(url.as_str()),
+    )
+}
+
+fn ensure_resource_size_with_limit(bytes: usize, max_bytes: usize) -> Result<()> {
+    if bytes > max_bytes {
+        bail!("resource bytes exceed max-resource-bytes: {bytes} > {max_bytes}");
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -575,6 +709,45 @@ mod tests {
     }
 
     #[test]
+    fn registry_enforces_asset_count_limit() {
+        let registry = AssetRegistry::default();
+        for index in 0..DEFAULT_MAX_RESOURCE_COUNT {
+            registry
+                .register(&format!("https://cdn.example.com/{index}.css"), &[1])
+                .unwrap();
+        }
+
+        let error = registry
+            .register("https://cdn.example.com/overflow.css", &[1])
+            .unwrap_err();
+
+        assert!(error.to_string().contains("max-resource-count"));
+    }
+
+    #[test]
+    fn asset_source_uses_resolved_url() {
+        let registry = AssetRegistry::default();
+        registry
+            .register("https://cdn.example.com/assets/logo.png", &[1, 2, 3])
+            .unwrap();
+        let asset = registry
+            .get(
+                "./logo.png",
+                Some(&Url::parse("https://cdn.example.com/assets/email.html").unwrap()),
+            )
+            .expect("resolved asset");
+
+        assert_eq!(asset.source(), AssetSource::Remote);
+        assert_eq!(
+            asset_source_for_request(
+                "./missing.png",
+                Some(&Url::parse("https://cdn.example.com/assets/email.html").unwrap()),
+            ),
+            AssetSource::Remote
+        );
+    }
+
+    #[test]
     fn diagnostics_json_contains_render_sections() {
         let json = diagnostics_json(&DiagnosticsSnapshot::default());
         assert!(json.contains("\"warnings\""));
@@ -613,6 +786,7 @@ mod tests {
             rendered.assets[0].resolved_url.as_deref(),
             Some("https://cdn.example.com/assets/logo.gif")
         );
+        assert_eq!(rendered.assets[0].source, Some(AssetSource::Remote));
 
         let diagnostics: serde_json::Value =
             serde_json::from_str(&renderer.diagnostics_json()).expect("diagnostics json");

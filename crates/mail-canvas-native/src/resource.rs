@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::Cursor;
-use std::net::IpAddr;
+use std::net::{IpAddr, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -431,24 +431,32 @@ fn load_remote_url(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
     if !policy.policy.allow_remote {
         bail!("remote resources are disabled");
     }
-    if policy.policy.https_only && url.scheme() != "https" {
-        bail!("non-HTTPS remote resource rejected");
-    }
-    if policy.policy.deny_private_networks {
-        reject_private_host(url)?;
-    }
-
+    let mut current = url.clone();
     let mut last_error = None;
-    for _ in 0..3 {
-        match load_remote_url_once(url, policy) {
-            Ok(bytes) => return Ok(bytes),
-            Err(error) => last_error = Some(error),
+    for redirect_count in 0..=3 {
+        validate_remote_url(&current, policy)?;
+        match load_remote_url_once(&current, policy) {
+            Ok(RemoteFetch::Bytes(bytes)) => return Ok(bytes),
+            Ok(RemoteFetch::Redirect(next)) => {
+                if redirect_count == 3 {
+                    bail!("too many redirects while fetching {url}");
+                }
+                current = next;
+            }
+            Err(error) => {
+                last_error = Some(error);
+            }
         }
     }
     Err(last_error.unwrap_or_else(|| anyhow!("failed to fetch {url}")))
 }
 
-fn load_remote_url_once(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
+enum RemoteFetch {
+    Bytes(Vec<u8>),
+    Redirect(Url),
+}
+
+fn load_remote_url_once(url: &Url, policy: &ResourcePolicy) -> Result<RemoteFetch> {
     let mut response = policy
         .agent
         .get(url.as_str())
@@ -456,6 +464,17 @@ fn load_remote_url_once(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
         .header("Accept-Language", "en-US,en;q=0.9")
         .call()
         .with_context(|| format!("failed to fetch {url}"))?;
+    if response.status().is_redirection() {
+        let location = response
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok())
+            .ok_or_else(|| anyhow!("redirect response missing Location header"))?;
+        let next = url
+            .join(location)
+            .with_context(|| format!("invalid redirect Location from {url}: {location}"))?;
+        return Ok(RemoteFetch::Redirect(next));
+    }
     let bytes = response
         .body_mut()
         .with_config()
@@ -464,13 +483,13 @@ fn load_remote_url_once(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
         .with_context(|| format!("failed to read response body from {url}"))?;
     ensure_resource_size(bytes.len(), policy.policy.max_resource_bytes)?;
     policy.record_resource_usage(bytes.len())?;
-    Ok(bytes)
+    Ok(RemoteFetch::Bytes(bytes))
 }
 
 fn resource_agent(policy: &mail_canvas_core::ResourcePolicy) -> ureq::Agent {
     ureq::Agent::config_builder()
         .https_only(policy.https_only)
-        .max_redirects(3)
+        .max_redirects(0)
         .timeout_global(Some(effective_timeout(policy)))
         .build()
         .new_agent()
@@ -484,6 +503,20 @@ fn effective_timeout(policy: &mail_canvas_core::ResourcePolicy) -> Duration {
     }
 }
 
+fn validate_remote_url(url: &Url, policy: &ResourcePolicy) -> Result<()> {
+    if policy.policy.https_only && url.scheme() != "https" {
+        bail!("non-HTTPS remote resource rejected");
+    }
+    match url.scheme() {
+        "https" | "http" => {}
+        scheme => bail!("unsupported remote resource URL scheme: {scheme}"),
+    }
+    if policy.policy.deny_private_networks {
+        reject_private_host(url)?;
+    }
+    Ok(())
+}
+
 fn reject_private_host(url: &Url) -> Result<()> {
     let Some(host) = url.host_str() else {
         bail!("remote resource missing host");
@@ -492,22 +525,40 @@ fn reject_private_host(url: &Url) -> Result<()> {
         bail!("localhost resource rejected");
     }
     if let Ok(ip) = host.parse::<IpAddr>() {
-        let rejected = match ip {
-            IpAddr::V4(ip) => {
-                ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified()
-            }
-            IpAddr::V6(ip) => {
-                ip.is_loopback()
-                    || ip.is_unspecified()
-                    || ip.is_unique_local()
-                    || ip.is_unicast_link_local()
-            }
-        };
-        if rejected {
+        if is_private_or_local_ip(ip) {
+            bail!("private or local remote resource rejected");
+        }
+        return Ok(());
+    }
+
+    let port = url.port_or_known_default().unwrap_or(443);
+    let addresses = (host, port)
+        .to_socket_addrs()
+        .with_context(|| format!("failed to resolve remote resource host: {host}"))?;
+    for address in addresses {
+        if is_private_or_local_ip(address.ip()) {
             bail!("private or local remote resource rejected");
         }
     }
     Ok(())
+}
+
+fn is_private_or_local_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => {
+            ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_unspecified()
+                || ip.octets()[0] == 169 && ip.octets()[1] == 254
+        }
+        IpAddr::V6(ip) => {
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || ip.is_unique_local()
+                || ip.is_unicast_link_local()
+        }
+    }
 }
 
 fn ensure_resource_size(len: usize, max_len: usize) -> Result<()> {
@@ -684,6 +735,25 @@ mod tests {
             error.to_string().contains("max-resource-count"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn private_host_rejection_covers_literal_and_resolved_hosts() {
+        let localhost = Url::parse("https://localhost/image.png").unwrap();
+        assert!(reject_private_host(&localhost).is_err());
+
+        let loopback = Url::parse("https://127.0.0.1/image.png").unwrap();
+        assert!(reject_private_host(&loopback).is_err());
+    }
+
+    #[test]
+    fn redirect_targets_are_revalidated() {
+        let policy = test_policy();
+        let target = Url::parse("http://example.com/image.png").unwrap();
+
+        let error = validate_remote_url(&target, &policy).expect_err("http should be rejected");
+
+        assert!(error.to_string().contains("non-HTTPS"));
     }
 
     fn jpeg_with_exif_orientation(jpeg: Vec<u8>, orientation: u16) -> Vec<u8> {

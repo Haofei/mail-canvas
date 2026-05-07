@@ -65,6 +65,19 @@ fn injects_existing_head() {
     assert!(html.contains("<title>x</title>"));
     assert!(html.contains("email-render-defaults"));
     assert!(html.contains("width: 640px"));
+    assert!(html.find("email-render-defaults") < html.find("<title>x</title>"));
+}
+
+#[test]
+fn renderer_defaults_precede_author_head_styles() {
+    let html = build_document(
+        "<html><head><style>img { display:inline }</style></head><body><img></body></html>",
+        None,
+        None,
+        640,
+    );
+
+    assert!(html.find("email-render-defaults") < html.find("img { display:inline }"));
 }
 
 #[test]
