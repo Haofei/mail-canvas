@@ -1,10 +1,49 @@
+use anyhow::Result;
+use cosmic_text::{Align as TextAlignMode, Buffer, FontSystem, Metrics, Shaping, Wrap};
+use kuchiki::NodeRef;
+use taffy::geometry::{Rect as TaffyRect, Size as TaffySize};
+use taffy::prelude::{
+    AlignItems as TaffyAlignItems, AvailableSpace, Dimension as TaffyDimension,
+    Display as TaffyDisplay, FlexDirection as TaffyFlexDirection, FlexWrap as TaffyFlexWrap,
+    JustifyContent as TaffyJustifyContent, NodeId as TaffyNodeId, Style as TaffyStyle, TaffyTree,
+};
+use taffy::style_helpers::{auto as taffy_auto, length as taffy_length, percent as taffy_percent};
+
+use crate::api::{self, RenderRequest, RenderWarning, RenderWarningCode};
+use crate::dom::{attr, element_tag, find_first_tag, is_metadata_tag};
+use crate::fonts::WebFontFace;
+use crate::resource::ResourceProvider;
+use crate::style::{
+    AlignItems, BorderCollapse, BoxSizing, Clear, Display, FlexDirection, FlexWrap, FloatSide,
+    JustifyContent, Length, ListStyleType, PlacedFloat, Position, Rect, Style, TextAlign, TextSpan,
+    TextWrap, VerticalAlign, parse_length, style_for_node_with_fonts,
+};
+use crate::table::{
+    TableGrid, build_table_grid, column_offset, distribute_fixed_table_column_widths,
+    length_is_intrinsic_fixed, spanned_width,
+};
+use crate::text::{
+    blink_font_descent_from_db, resolved_line_height_from_db, resolved_line_height_from_run_db,
+    wrap_width_adjustment,
+};
+use crate::{
+    HARD_BREAK, ImageData, align_block_child_to_legacy_align_attribute,
+    align_table_child_to_parent_text, append_inline_spans, append_text_span,
+    block_allows_trailing_margin_collapse, can_collapse_sibling_margin,
+    cell_contains_only_intrinsic_fixed_replaced_content, flush_inline_row, inline_can_flatten,
+    inline_flow_line_advance, inline_flow_uses_bottom_edge_baseline, inline_style_has_own_box,
+    is_collapsible_whitespace, is_inline_flow, normalize_text_spans, rich_text_style_spans,
+    spans_text, table_cell_is_spacer, text_content, text_spans_are_only_collapsible_whitespace,
+    text_spans_match_style, translate_layout, translate_layout_children,
+};
+
 pub(crate) struct RenderLimits {
     max_layout_depth: usize,
     max_table_cells: usize,
 }
 
 impl RenderLimits {
-    fn from_request(request: &RenderRequest) -> Self {
+    pub(crate) fn from_request(request: &RenderRequest) -> Self {
         Self {
             max_layout_depth: request.max_layout_depth,
             max_table_cells: request.max_table_cells,
@@ -28,11 +67,11 @@ pub(crate) struct LayoutEngine<'a, R: ResourceProvider> {
     limits: RenderLimits,
     available_font_families: Vec<String>,
     web_font_faces: Vec<WebFontFace>,
-    warnings: Vec<RenderWarning>,
+    pub(crate) warnings: Vec<RenderWarning>,
 }
 
 impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
-    fn new(
+    pub(crate) fn new(
         font_system: &'a mut FontSystem,
         resources: R,
         available_font_families: Vec<String>,
@@ -72,7 +111,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         }
     }
 
-    fn layout_document(&mut self, document: &NodeRef, width: u32) -> Result<LayoutBox> {
+    pub(crate) fn layout_document(&mut self, document: &NodeRef, width: u32) -> Result<LayoutBox> {
         let root_node = find_first_tag(document, "body").unwrap_or_else(|| document.clone());
         let initial = Style::initial();
         let parent_style = if element_tag(&root_node).as_deref() == Some("body") {
@@ -522,7 +561,10 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             normalized
                 .iter()
                 .map(|span| resolved_line_height_from_run_db(self.font_system.db(), &span.style))
-                .fold(resolved_line_height_from_db(self.font_system.db(), style), f32::max)
+                .fold(
+                    resolved_line_height_from_db(self.font_system.db(), style),
+                    f32::max,
+                )
         };
         let kind = if matches_parent_style {
             LayoutKind::Text(plain_text)
@@ -1764,14 +1806,10 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 {
                     Some(cell_style.outer_width_for_declared(width))
                 } else {
-                    self.fixed_replaced_content_min_width(
-                        &cell.node,
-                        &cell_style,
-                        available,
-                    )?
-                    .map(|width| {
-                        width + cell_style.padding.horizontal() + cell_style.border.horizontal()
-                    })
+                    self.fixed_replaced_content_min_width(&cell.node, &cell_style, available)?
+                        .map(|width| {
+                            width + cell_style.padding.horizontal() + cell_style.border.horizontal()
+                        })
                 };
                 let Some(intrinsic) = intrinsic else {
                     continue;
@@ -1888,7 +1926,9 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
 }
 
 fn can_expand_declared_table_width(style: &Style) -> bool {
-    !style.table_layout_fixed && style.box_sizing == BoxSizing::ContentBox && style.width.is_some_and(is_px_length)
+    !style.table_layout_fixed
+        && style.box_sizing == BoxSizing::ContentBox
+        && style.width.is_some_and(is_px_length)
 }
 
 fn is_px_length(length: Length) -> bool {
@@ -1918,7 +1958,12 @@ pub(crate) fn taffy_flex_container_style(
     }
 }
 
-pub(crate) fn float_adjusted_line(x: f32, width: f32, y: f32, floats: &[PlacedFloat]) -> (f32, f32) {
+pub(crate) fn float_adjusted_line(
+    x: f32,
+    width: f32,
+    y: f32,
+    floats: &[PlacedFloat],
+) -> (f32, f32) {
     let (left_offset, right_offset) = float_offsets_at_y(x, width, y, floats);
     let line_x = x + left_offset;
     let line_width = (width - left_offset - right_offset).max(1.0);
@@ -1938,7 +1983,13 @@ pub(crate) fn float_offsets_at_y(x: f32, width: f32, y: f32, floats: &[PlacedFlo
     (left_offset.min(width), right_offset.min(width))
 }
 
-pub(crate) fn float_placement_y(floats: &[PlacedFloat], x: f32, width: f32, y: f32, needed_width: f32) -> f32 {
+pub(crate) fn float_placement_y(
+    floats: &[PlacedFloat],
+    x: f32,
+    width: f32,
+    y: f32,
+    needed_width: f32,
+) -> f32 {
     let mut candidate_y = y;
     loop {
         let (left_offset, right_offset) = float_offsets_at_y(x, width, candidate_y, floats);
@@ -1977,7 +2028,11 @@ pub(crate) fn float_intersects_y(float: &PlacedFloat, y: f32) -> bool {
     y >= float.rect.y && y < float.rect.y + float.rect.height
 }
 
-pub(crate) fn taffy_leaf_style(style: &Style, measured_width: f32, measured_height: f32) -> TaffyStyle {
+pub(crate) fn taffy_leaf_style(
+    style: &Style,
+    measured_width: f32,
+    measured_height: f32,
+) -> TaffyStyle {
     TaffyStyle {
         size: TaffySize {
             width: taffy_length(measured_width),
@@ -2062,11 +2117,11 @@ pub(crate) fn taffy_align_items(align: AlignItems) -> TaffyAlignItems {
 
 #[derive(Debug, Clone)]
 pub(crate) struct LayoutBox {
-    kind: LayoutKind,
-    rect: Rect,
-    style: Style,
-    debug: LayoutDebugMeta,
-    children: Vec<LayoutBox>,
+    pub(crate) kind: LayoutKind,
+    pub(crate) rect: Rect,
+    pub(crate) style: Style,
+    pub(crate) debug: LayoutDebugMeta,
+    pub(crate) children: Vec<LayoutBox>,
 }
 
 #[derive(Debug, Clone)]
@@ -2081,14 +2136,14 @@ pub(crate) enum LayoutKind {
 }
 
 #[derive(Debug)]
-pub(crate) struct FlowBox {
+struct FlowBox {
     node: LayoutBox,
     advance: f32,
     collapsible_margin_bottom: f32,
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct LayoutChildren {
+struct LayoutChildren {
     children: Vec<LayoutBox>,
     advance: f32,
     trailing_collapsible_margin: f32,
@@ -2096,11 +2151,11 @@ pub(crate) struct LayoutChildren {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct LayoutDebugMeta {
-    tag: String,
-    id: Option<String>,
-    class_name: Option<String>,
-    text: String,
-    src: Option<String>,
+    pub(crate) tag: String,
+    pub(crate) id: Option<String>,
+    pub(crate) class_name: Option<String>,
+    pub(crate) text: String,
+    pub(crate) src: Option<String>,
 }
 
 impl LayoutDebugMeta {
@@ -2145,6 +2200,11 @@ impl LayoutDebugMeta {
     }
 }
 
-fn normalize_preview_text(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect()
+pub(crate) fn normalize_preview_text(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(120)
+        .collect()
 }

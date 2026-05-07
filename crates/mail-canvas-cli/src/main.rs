@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, ValueEnum};
-use mail_canvas_core::{EmailRenderer, RenderDiagnosticsReport, RenderRequest, ResourcePolicy};
+use mail_canvas_core::{
+    EmailRenderer, RenderDebugOptions, RenderDiagnosticsReport, RenderRequest, ResourcePolicy,
+};
 use mail_canvas_native::{MailCanvasRenderer, build_document_from_files};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -72,9 +74,9 @@ struct Args {
     #[arg(long)]
     timeout_ms: Option<u64>,
 
-    /// Reserved compatibility option; the pure Rust renderer does not wait for scripts.
-    #[arg(long, default_value_t = 100)]
-    settle_ms: u64,
+    /// Deprecated compatibility option; ignored by the pure Rust renderer.
+    #[arg(long, hide = true)]
+    settle_ms: Option<u64>,
 
     /// Base URL for resolving relative assets. Defaults to the HTML file directory.
     #[arg(long)]
@@ -131,6 +133,7 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    let _ignored_settle_ms = args.settle_ms;
     let font_paths = collect_font_paths(&args.font_files, &args.font_dirs)?;
 
     let document = build_document_from_files(
@@ -145,7 +148,6 @@ fn main() -> Result<()> {
         viewport_height: args.viewport_height,
         min_height: args.min_height,
         scale: args.scale,
-        settle: Duration::from_millis(args.settle_ms),
         base_url: document.base_url,
         max_height: args.max_height,
         resource_policy: ResourcePolicy {
@@ -164,6 +166,11 @@ fn main() -> Result<()> {
         max_dom_nodes: args.max_dom_nodes,
         max_layout_depth: args.max_layout_depth,
         max_table_cells: args.max_table_cells,
+        debug: if args.layout_json.is_some() {
+            RenderDebugOptions::layout_dump()
+        } else {
+            RenderDebugOptions::none()
+        },
     };
 
     let mut renderer = MailCanvasRenderer::with_fonts(
@@ -185,7 +192,11 @@ fn main() -> Result<()> {
         write_warnings_json(path, &image.diagnostics())?;
     }
     if let Some(path) = &args.layout_json {
-        write_layout_json(path, &image.layout, &image.text_rects)?;
+        let debug = image
+            .debug
+            .as_ref()
+            .context("renderer did not return a debug snapshot for --layout-json")?;
+        write_layout_json(path, debug)?;
     }
 
     eprintln!(
@@ -238,22 +249,27 @@ fn write_warnings_json(path: &std::path::Path, report: &RenderDiagnosticsReport)
 
 fn write_layout_json(
     path: &std::path::Path,
-    layout: &mail_canvas_core::LayoutNodeSnapshot,
-    text_rects: &[mail_canvas_core::TextRectSnapshot],
+    debug: &mail_canvas_core::RenderDebugSnapshot,
 ) -> Result<()> {
     #[derive(serde::Serialize)]
     struct LayoutDump<'a> {
         tree: &'a mail_canvas_core::LayoutNodeSnapshot,
         text_rects: &'a [mail_canvas_core::TextRectSnapshot],
+        image_diagnostics: &'a [mail_canvas_core::ImageLayoutDiagnostic],
     }
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
+    let tree = debug
+        .layout
+        .as_ref()
+        .context("debug snapshot did not include layout tree")?;
     let json = serde_json::to_vec_pretty(&LayoutDump {
-        tree: layout,
-        text_rects,
+        tree,
+        text_rects: &debug.text_rects,
+        image_diagnostics: &debug.image_diagnostics,
     })
     .context("failed to serialize layout JSON")?;
     fs::write(path, json).with_context(|| format!("failed to write {}", path.display()))?;

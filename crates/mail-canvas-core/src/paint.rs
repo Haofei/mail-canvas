@@ -1,16 +1,30 @@
+use cosmic_text::{Buffer, Color as TextColor, FontSystem, Metrics, Shaping, SwashCache};
+use tiny_skia::Pixmap;
+
+use crate::ImageData;
+use crate::layout::{LayoutBox, LayoutKind};
+use crate::style::{BackgroundImagePaint, BorderLineStyle, Rect, Style, TextSpan, with_opacity};
+use crate::text::{
+    resolved_line_height_from_db, rich_text_baseline_leading_offset, wrap_width_adjustment,
+};
+use crate::{
+    ImageFitPaint, blend_text_rect, draw_background_image, draw_image_with_fit, fill_style_rect,
+    needs_synthetic_bold_paint, paint_box_shadow, rich_text_style_spans, stroke_style_border,
+};
+
 pub(crate) struct LayoutPainter<'a> {
-    pixmap: &'a mut Pixmap,
-    font_system: &'a mut FontSystem,
-    swash_cache: &'a mut SwashCache,
-    scale: f32,
+    pub(crate) pixmap: &'a mut Pixmap,
+    pub(crate) font_system: &'a mut FontSystem,
+    pub(crate) swash_cache: &'a mut SwashCache,
+    pub(crate) scale: f32,
 }
 
 impl LayoutPainter<'_> {
-    fn paint(&mut self, layout: &LayoutBox) {
+    pub(crate) fn paint(&mut self, layout: &LayoutBox) {
         self.paint_with_opacity(layout, 1.0);
     }
 
-    fn paint_with_opacity(&mut self, layout: &LayoutBox, parent_opacity: f32) {
+    pub(crate) fn paint_with_opacity(&mut self, layout: &LayoutBox, parent_opacity: f32) {
         let opacity = (parent_opacity * layout.style.opacity).clamp(0.0, 1.0);
         if opacity <= 0.0 {
             return;
@@ -70,7 +84,7 @@ impl LayoutPainter<'_> {
         }
     }
 
-    fn paint_text(&mut self, rect: Rect, style: &Style, text: &str, opacity: f32) {
+    pub(crate) fn paint_text(&mut self, rect: Rect, style: &Style, text: &str, opacity: f32) {
         self.paint_text_buffer(rect, style, opacity, 0.0, |buffer, font_system| {
             buffer.set_text(
                 font_system,
@@ -82,7 +96,13 @@ impl LayoutPainter<'_> {
         });
     }
 
-    fn paint_rich_text(&mut self, rect: Rect, style: &Style, spans: &[TextSpan], opacity: f32) {
+    pub(crate) fn paint_rich_text(
+        &mut self,
+        rect: Rect,
+        style: &Style,
+        spans: &[TextSpan],
+        opacity: f32,
+    ) {
         let scale = self.scale;
         let baseline_offset = rich_text_baseline_leading_offset(spans, style);
         self.paint_text_buffer(
@@ -103,7 +123,7 @@ impl LayoutPainter<'_> {
         );
     }
 
-    fn paint_text_buffer(
+    pub(crate) fn paint_text_buffer(
         &mut self,
         rect: Rect,
         style: &Style,
@@ -118,10 +138,9 @@ impl LayoutPainter<'_> {
         );
         let mut buffer = Buffer::new_empty(metrics);
         buffer.set_wrap(self.font_system, style.wrap.to_cosmic());
-        let effective_width = (rect.width
-            * wrap_width_adjustment(style.font_family.as_deref())
-            * self.scale)
-            .max(1.0);
+        let effective_width =
+            (rect.width * wrap_width_adjustment(style.font_family.as_deref()) * self.scale)
+                .max(1.0);
         buffer.set_size(
             self.font_system,
             Some(effective_width),
@@ -168,7 +187,7 @@ impl LayoutPainter<'_> {
         );
     }
 
-    fn paint_text_runs(
+    pub(crate) fn paint_text_runs(
         &mut self,
         buffer: &Buffer,
         origin_x: f32,
@@ -214,7 +233,13 @@ impl LayoutPainter<'_> {
         }
     }
 
-    fn paint_image(&mut self, rect: Rect, style: &Style, image: &ImageData, opacity: f32) {
+    pub(crate) fn paint_image(
+        &mut self,
+        rect: Rect,
+        style: &Style,
+        image: &ImageData,
+        opacity: f32,
+    ) {
         draw_image_with_fit(
             self.pixmap,
             self.scale,
@@ -229,7 +254,7 @@ impl LayoutPainter<'_> {
         );
     }
 
-    fn paint_background_image(
+    pub(crate) fn paint_background_image(
         &mut self,
         rect: Rect,
         style: &Style,
@@ -254,10 +279,10 @@ impl LayoutPainter<'_> {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PaintTextRunOptions {
-    color: TextColor,
-    opacity: f32,
-    synthetic_bold: bool,
-    use_glyph_color: bool,
+    pub(crate) color: TextColor,
+    pub(crate) opacity: f32,
+    pub(crate) synthetic_bold: bool,
+    pub(crate) use_glyph_color: bool,
 }
 
 pub(crate) fn apply_text_opacity(color: TextColor, opacity: f32) -> TextColor {

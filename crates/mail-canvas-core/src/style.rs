@@ -1,40 +1,54 @@
+use cosmic_text::{
+    Align as TextAlignMode, Attrs, Color as TextColor, Metrics, Style as FontStyle,
+    Weight as FontWeight, Wrap,
+};
+use kuchiki::NodeRef;
+
+use crate::ImageData;
+use crate::css::{css_declarations, first_css_url, unquote_css_value};
+use crate::fonts::WebFontFace;
+use crate::text::{
+    normal_line_height_fallback, parse_line_height_declaration, resolved_line_height_from_db,
+    resolved_line_height_from_run_db, text_style_attrs,
+};
+
 #[derive(Debug, Clone)]
 pub(crate) struct TextSpan {
-    text: String,
-    style: TextRunStyle,
+    pub(crate) text: String,
+    pub(crate) style: TextRunStyle,
 }
 
 impl TextSpan {
-    fn from_style(text: String, style: &Style) -> Self {
+    pub(crate) fn from_style(text: String, style: &Style) -> Self {
         Self {
             text,
             style: TextRunStyle::from_style(style),
         }
     }
 
-    fn with_run_style(text: String, style: TextRunStyle) -> Self {
+    pub(crate) fn with_run_style(text: String, style: TextRunStyle) -> Self {
         Self { text, style }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TextRunStyle {
-    color: Rgba,
-    font_family: Option<String>,
-    font_weight: FontWeight,
-    font_face_weight: Option<FontWeight>,
-    font_style: FontStyle,
-    font_size: f32,
-    line_height: f32,
-    line_height_factor: Option<f32>,
-    line_height_normal: bool,
-    font_hinting_disabled: bool,
-    letter_spacing: f32,
-    text_transform: TextTransform,
+    pub(crate) color: Rgba,
+    pub(crate) font_family: Option<String>,
+    pub(crate) font_weight: FontWeight,
+    pub(crate) font_face_weight: Option<FontWeight>,
+    pub(crate) font_style: FontStyle,
+    pub(crate) font_size: f32,
+    pub(crate) line_height: f32,
+    pub(crate) line_height_factor: Option<f32>,
+    pub(crate) line_height_normal: bool,
+    pub(crate) font_hinting_disabled: bool,
+    pub(crate) letter_spacing: f32,
+    pub(crate) text_transform: TextTransform,
 }
 
 impl TextRunStyle {
-    fn from_style(style: &Style) -> Self {
+    pub(crate) fn from_style(style: &Style) -> Self {
         Self {
             color: style.color,
             font_family: style.font_family.clone(),
@@ -51,7 +65,7 @@ impl TextRunStyle {
         }
     }
 
-    fn text_attrs(&self) -> Attrs<'_> {
+    pub(crate) fn text_attrs(&self) -> Attrs<'_> {
         text_style_attrs(
             self.font_family.as_deref(),
             self.font_weight,
@@ -63,7 +77,7 @@ impl TextRunStyle {
         )
     }
 
-    fn text_attrs_for_span(
+    pub(crate) fn text_attrs_for_span(
         &self,
         db: &fontdb::Database,
         scale: f32,
@@ -84,7 +98,7 @@ impl TextRunStyle {
         attrs.metrics(Metrics::new(font_size, line_height))
     }
 
-    fn needs_own_metrics(&self, db: &fontdb::Database, parent_style: &Style) -> bool {
+    pub(crate) fn needs_own_metrics(&self, db: &fontdb::Database, parent_style: &Style) -> bool {
         if (self.font_size - parent_style.font_size).abs() > 0.01 {
             return true;
         }
@@ -96,81 +110,81 @@ impl TextRunStyle {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Style {
-    display: Display,
-    width: Option<Length>,
-    width_auto: bool,
-    min_width: Option<Length>,
-    max_width: Option<Length>,
-    height: Option<Length>,
-    height_auto: bool,
-    min_height: Option<Length>,
-    max_height: Option<Length>,
-    margin: Edges,
-    margin_left_auto: bool,
-    margin_right_auto: bool,
-    margin_top_em: Option<f32>,
-    margin_bottom_em: Option<f32>,
-    padding: Edges,
-    padding_percent: RelativeEdges,
-    padding_explicit: EdgeFlags,
-    background: Option<Rgba>,
-    background_image: Option<ImageData>,
-    background_image_src: Option<String>,
-    background_repeat: BackgroundRepeat,
-    background_size: BackgroundSize,
-    background_position: BackgroundPosition,
-    object_fit: ObjectFit,
-    object_position: ObjectPosition,
-    opacity: f32,
-    color: Rgba,
-    box_shadows: Vec<BoxShadow>,
-    text_shadows: Vec<BoxShadow>,
-    font_family: Option<String>,
-    font_weight: FontWeight,
-    font_face_weight: Option<FontWeight>,
-    font_style: FontStyle,
-    font_size: f32,
-    line_height: f32,
-    line_height_factor: Option<f32>,
-    line_height_normal: bool,
-    font_hinting_disabled: bool,
-    letter_spacing: f32,
-    text_align: TextAlign,
-    align_from_attribute: bool,
-    text_transform: TextTransform,
-    vertical_align: VerticalAlign,
-    wrap: TextWrap,
-    list_style_type: ListStyleType,
-    box_sizing: BoxSizing,
-    position: Position,
-    inset_top: Option<Length>,
-    inset_right: Option<Length>,
-    inset_bottom: Option<Length>,
-    inset_left: Option<Length>,
-    flex_direction: FlexDirection,
-    flex_wrap: FlexWrap,
-    justify_content: JustifyContent,
-    align_items: AlignItems,
-    align_self: Option<AlignItems>,
-    row_gap: f32,
-    column_gap: f32,
-    flex_grow: f32,
-    flex_shrink: f32,
-    flex_basis: Option<Length>,
-    float_side: FloatSide,
-    clear: Clear,
-    border: Edges,
-    border_radius: f32,
-    border_color: Rgba,
-    border_style: BorderLineStyle,
-    border_collapse: BorderCollapse,
-    table_layout_fixed: bool,
-    cell_padding: Edges,
-    cell_spacing: f32,
+    pub(crate) display: Display,
+    pub(crate) width: Option<Length>,
+    pub(crate) width_auto: bool,
+    pub(crate) min_width: Option<Length>,
+    pub(crate) max_width: Option<Length>,
+    pub(crate) height: Option<Length>,
+    pub(crate) height_auto: bool,
+    pub(crate) min_height: Option<Length>,
+    pub(crate) max_height: Option<Length>,
+    pub(crate) margin: Edges,
+    pub(crate) margin_left_auto: bool,
+    pub(crate) margin_right_auto: bool,
+    pub(crate) margin_top_em: Option<f32>,
+    pub(crate) margin_bottom_em: Option<f32>,
+    pub(crate) padding: Edges,
+    pub(crate) padding_percent: RelativeEdges,
+    pub(crate) padding_explicit: EdgeFlags,
+    pub(crate) background: Option<Rgba>,
+    pub(crate) background_image: Option<ImageData>,
+    pub(crate) background_image_src: Option<String>,
+    pub(crate) background_repeat: BackgroundRepeat,
+    pub(crate) background_size: BackgroundSize,
+    pub(crate) background_position: BackgroundPosition,
+    pub(crate) object_fit: ObjectFit,
+    pub(crate) object_position: ObjectPosition,
+    pub(crate) opacity: f32,
+    pub(crate) color: Rgba,
+    pub(crate) box_shadows: Vec<BoxShadow>,
+    pub(crate) text_shadows: Vec<BoxShadow>,
+    pub(crate) font_family: Option<String>,
+    pub(crate) font_weight: FontWeight,
+    pub(crate) font_face_weight: Option<FontWeight>,
+    pub(crate) font_style: FontStyle,
+    pub(crate) font_size: f32,
+    pub(crate) line_height: f32,
+    pub(crate) line_height_factor: Option<f32>,
+    pub(crate) line_height_normal: bool,
+    pub(crate) font_hinting_disabled: bool,
+    pub(crate) letter_spacing: f32,
+    pub(crate) text_align: TextAlign,
+    pub(crate) align_from_attribute: bool,
+    pub(crate) text_transform: TextTransform,
+    pub(crate) vertical_align: VerticalAlign,
+    pub(crate) wrap: TextWrap,
+    pub(crate) list_style_type: ListStyleType,
+    pub(crate) box_sizing: BoxSizing,
+    pub(crate) position: Position,
+    pub(crate) inset_top: Option<Length>,
+    pub(crate) inset_right: Option<Length>,
+    pub(crate) inset_bottom: Option<Length>,
+    pub(crate) inset_left: Option<Length>,
+    pub(crate) flex_direction: FlexDirection,
+    pub(crate) flex_wrap: FlexWrap,
+    pub(crate) justify_content: JustifyContent,
+    pub(crate) align_items: AlignItems,
+    pub(crate) align_self: Option<AlignItems>,
+    pub(crate) row_gap: f32,
+    pub(crate) column_gap: f32,
+    pub(crate) flex_grow: f32,
+    pub(crate) flex_shrink: f32,
+    pub(crate) flex_basis: Option<Length>,
+    pub(crate) float_side: FloatSide,
+    pub(crate) clear: Clear,
+    pub(crate) border: Edges,
+    pub(crate) border_radius: f32,
+    pub(crate) border_color: Rgba,
+    pub(crate) border_style: BorderLineStyle,
+    pub(crate) border_collapse: BorderCollapse,
+    pub(crate) table_layout_fixed: bool,
+    pub(crate) cell_padding: Edges,
+    pub(crate) cell_spacing: f32,
 }
 
 impl Style {
-    fn initial() -> Self {
+    pub(crate) fn initial() -> Self {
         Self {
             display: Display::Block,
             width: None,
@@ -246,7 +260,7 @@ impl Style {
         }
     }
 
-    fn from_parent_for_tag(parent: &Self, tag: &str) -> Self {
+    pub(crate) fn from_parent_for_tag(parent: &Self, tag: &str) -> Self {
         let mut style = Self {
             display: default_display(tag),
             width: None,
@@ -392,7 +406,7 @@ impl Style {
         style
     }
 
-    fn set_font_size(&mut self, font_size: f32) {
+    pub(crate) fn set_font_size(&mut self, font_size: f32) {
         self.font_size = font_size.max(1.0);
         if let Some(factor) = self.line_height_factor {
             self.line_height = self.font_size * factor;
@@ -407,20 +421,20 @@ impl Style {
         }
     }
 
-    fn set_default_em_margins(&mut self, top: f32, bottom: f32) {
+    pub(crate) fn set_default_em_margins(&mut self, top: f32, bottom: f32) {
         self.margin_top_em = Some(top);
         self.margin_bottom_em = Some(bottom);
         self.margin.top = self.font_size * top;
         self.margin.bottom = self.font_size * bottom;
     }
 
-    fn finalize_border(&mut self) {
+    pub(crate) fn finalize_border(&mut self) {
         if self.border_style == BorderLineStyle::None {
             self.border = Edges::ZERO;
         }
     }
 
-    fn resolved_padding(&self, basis: f32) -> Edges {
+    pub(crate) fn resolved_padding(&self, basis: f32) -> Edges {
         Edges {
             top: self
                 .padding_percent
@@ -445,7 +459,7 @@ impl Style {
         }
     }
 
-    fn set_padding_edge(&mut self, edge: &str, value: &str) {
+    pub(crate) fn set_padding_edge(&mut self, edge: &str, value: &str) {
         let parsed = parse_box_length(value, self.font_size, true);
         let (absolute, percent) = match parsed {
             Some(Length::Percent(value)) => (0.0, Some(value)),
@@ -477,7 +491,7 @@ impl Style {
         }
     }
 
-    fn apply_declaration(&mut self, name: &str, value: &str) {
+    pub(crate) fn apply_declaration(&mut self, name: &str, value: &str) {
         let value = strip_important(value);
         match name {
             "display" => {
@@ -807,13 +821,13 @@ impl Style {
         }
     }
 
-    fn resolve_width(&self, containing_width: f32) -> Option<f32> {
+    pub(crate) fn resolve_width(&self, containing_width: f32) -> Option<f32> {
         let mut width = self.width.and_then(|width| width.resolve(containing_width));
         width = width.map(|width| self.constrain_width(width, containing_width));
         width
     }
 
-    fn constrain_width(&self, width: f32, containing_width: f32) -> f32 {
+    pub(crate) fn constrain_width(&self, width: f32, containing_width: f32) -> f32 {
         let mut width = width;
         if let Some(min_width) = self
             .min_width
@@ -830,7 +844,7 @@ impl Style {
         width
     }
 
-    fn constrain_outer_width(&self, outer_width: f32, containing_width: f32) -> f32 {
+    pub(crate) fn constrain_outer_width(&self, outer_width: f32, containing_width: f32) -> f32 {
         let mut outer_width = outer_width;
         if let Some(min_width) = self
             .min_width
@@ -847,7 +861,7 @@ impl Style {
         outer_width
     }
 
-    fn resolve_height(&self, basis: f32) -> Option<f32> {
+    pub(crate) fn resolve_height(&self, basis: f32) -> Option<f32> {
         let mut height = self.height.and_then(|height| height.resolve(basis));
         if let Some(min_height) = self.min_height.and_then(|height| height.resolve(basis)) {
             height = Some(height.unwrap_or(min_height).max(min_height));
@@ -858,18 +872,18 @@ impl Style {
         height
     }
 
-    fn outer_width_for_declared(&self, width: f32) -> f32 {
+    pub(crate) fn outer_width_for_declared(&self, width: f32) -> f32 {
         match self.box_sizing {
             BoxSizing::BorderBox => width,
             BoxSizing::ContentBox => width + self.padding.horizontal() + self.border.horizontal(),
         }
     }
 
-    fn inner_width_for_outer(&self, width: f32) -> f32 {
+    pub(crate) fn inner_width_for_outer(&self, width: f32) -> f32 {
         (width - self.padding.horizontal() - self.border.horizontal()).max(1.0)
     }
 
-    fn apply_table_cell_padding(&mut self, padding: Edges) {
+    pub(crate) fn apply_table_cell_padding(&mut self, padding: Edges) {
         if !self.padding_explicit.top && padding.top > 0.0 {
             self.padding.top = padding.top;
         }
@@ -884,7 +898,7 @@ impl Style {
         }
     }
 
-    fn horizontal_offset(&self, containing_width: f32, outer_width: f32) -> f32 {
+    pub(crate) fn horizontal_offset(&self, containing_width: f32, outer_width: f32) -> f32 {
         let fixed_left = if self.margin_left_auto {
             0.0
         } else {
@@ -905,7 +919,7 @@ impl Style {
         }
     }
 
-    fn text_attrs(&self) -> Attrs<'_> {
+    pub(crate) fn text_attrs(&self) -> Attrs<'_> {
         text_style_attrs(
             self.font_family.as_deref(),
             self.font_weight,
@@ -1013,8 +1027,8 @@ pub(crate) enum ListStyleType {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PlacedFloat {
-    side: FloatSide,
-    rect: Rect,
+    pub(crate) side: FloatSide,
+    pub(crate) rect: Rect,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1025,7 +1039,7 @@ pub(crate) enum Length {
 }
 
 impl Length {
-    fn resolve(self, basis: f32) -> Option<f32> {
+    pub(crate) fn resolve(self, basis: f32) -> Option<f32> {
         match self {
             Self::Px(value) => Some(value),
             Self::Percent(value) if basis.is_finite() && basis > 0.0 => Some(basis * value),
@@ -1038,21 +1052,21 @@ impl Length {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Edges {
-    top: f32,
-    right: f32,
-    bottom: f32,
-    left: f32,
+    pub(crate) top: f32,
+    pub(crate) right: f32,
+    pub(crate) bottom: f32,
+    pub(crate) left: f32,
 }
 
 impl Edges {
-    const ZERO: Self = Self {
+    pub(crate) const ZERO: Self = Self {
         top: 0.0,
         right: 0.0,
         bottom: 0.0,
         left: 0.0,
     };
 
-    fn all(value: f32) -> Self {
+    pub(crate) fn all(value: f32) -> Self {
         Self {
             top: value,
             right: value,
@@ -1061,33 +1075,33 @@ impl Edges {
         }
     }
 
-    fn horizontal(self) -> f32 {
+    pub(crate) fn horizontal(self) -> f32 {
         self.left + self.right
     }
 
-    fn vertical(self) -> f32 {
+    pub(crate) fn vertical(self) -> f32 {
         self.top + self.bottom
     }
 
-    fn max_width(self) -> f32 {
+    pub(crate) fn max_width(self) -> f32 {
         self.top.max(self.right).max(self.bottom).max(self.left)
     }
 
-    fn is_zero(self) -> bool {
+    pub(crate) fn is_zero(self) -> bool {
         self.top == 0.0 && self.right == 0.0 && self.bottom == 0.0 && self.left == 0.0
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub(crate) struct RelativeEdges {
-    top: Option<f32>,
-    right: Option<f32>,
-    bottom: Option<f32>,
-    left: Option<f32>,
+    pub(crate) top: Option<f32>,
+    pub(crate) right: Option<f32>,
+    pub(crate) bottom: Option<f32>,
+    pub(crate) left: Option<f32>,
 }
 
 impl RelativeEdges {
-    const NONE: Self = Self {
+    pub(crate) const NONE: Self = Self {
         top: None,
         right: None,
         bottom: None,
@@ -1097,29 +1111,29 @@ impl RelativeEdges {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ResolvedEdgeLengths {
-    top: Length,
-    right: Length,
-    bottom: Length,
-    left: Length,
+    pub(crate) top: Length,
+    pub(crate) right: Length,
+    pub(crate) bottom: Length,
+    pub(crate) left: Length,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct EdgeFlags {
-    top: bool,
-    right: bool,
-    bottom: bool,
-    left: bool,
+    pub(crate) top: bool,
+    pub(crate) right: bool,
+    pub(crate) bottom: bool,
+    pub(crate) left: bool,
 }
 
 impl EdgeFlags {
-    const NONE: Self = Self {
+    pub(crate) const NONE: Self = Self {
         top: false,
         right: false,
         bottom: false,
         left: false,
     };
 
-    const ALL: Self = Self {
+    pub(crate) const ALL: Self = Self {
         top: true,
         right: true,
         bottom: true,
@@ -1129,33 +1143,33 @@ impl EdgeFlags {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Rgba {
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
+    pub(crate) r: u8,
+    pub(crate) g: u8,
+    pub(crate) b: u8,
+    pub(crate) a: u8,
 }
 
 impl Rgba {
-    const BLACK: Self = Self::rgb(0, 0, 0);
-    const WHITE: Self = Self::rgb(255, 255, 255);
+    pub(crate) const BLACK: Self = Self::rgb(0, 0, 0);
+    pub(crate) const WHITE: Self = Self::rgb(255, 255, 255);
 
-    const fn rgb(r: u8, g: u8, b: u8) -> Self {
+    pub(crate) const fn rgb(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b, a: 255 }
     }
 
-    const fn with_alpha(r: u8, g: u8, b: u8, a: u8) -> Self {
+    pub(crate) const fn with_alpha(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct BoxShadow {
-    offset_x: f32,
-    offset_y: f32,
-    blur_radius: f32,
-    spread: f32,
-    color: Rgba,
-    inset: bool,
+    pub(crate) offset_x: f32,
+    pub(crate) offset_y: f32,
+    pub(crate) blur_radius: f32,
+    pub(crate) spread: f32,
+    pub(crate) color: Rgba,
+    pub(crate) inset: bool,
 }
 
 pub(crate) fn with_opacity(color: Rgba, opacity: f32) -> Rgba {
@@ -1176,7 +1190,7 @@ pub(crate) enum TextAlign {
 }
 
 impl TextAlign {
-    fn to_cosmic(self) -> TextAlignMode {
+    pub(crate) fn to_cosmic(self) -> TextAlignMode {
         match self {
             Self::Left => TextAlignMode::Left,
             Self::Center => TextAlignMode::Center,
@@ -1209,7 +1223,7 @@ pub(crate) enum TextWrap {
 }
 
 impl TextWrap {
-    fn to_cosmic(self) -> Wrap {
+    pub(crate) fn to_cosmic(self) -> Wrap {
         match self {
             Self::None => Wrap::None,
             Self::WordOrGlyph => Wrap::WordOrGlyph,
@@ -1263,8 +1277,8 @@ pub(crate) enum ObjectFit {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ObjectPosition {
-    x: PositionAxis,
-    y: PositionAxis,
+    pub(crate) x: PositionAxis,
+    pub(crate) y: PositionAxis,
 }
 
 impl Default for ObjectPosition {
@@ -1278,17 +1292,17 @@ impl Default for ObjectPosition {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct BackgroundPosition {
-    x: PositionAxis,
-    y: PositionAxis,
+    pub(crate) x: PositionAxis,
+    pub(crate) y: PositionAxis,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct BackgroundImagePaint {
-    repeat: BackgroundRepeat,
-    size: BackgroundSize,
-    position: BackgroundPosition,
-    radius: f32,
-    opacity: f32,
+    pub(crate) repeat: BackgroundRepeat,
+    pub(crate) size: BackgroundSize,
+    pub(crate) position: BackgroundPosition,
+    pub(crate) radius: f32,
+    pub(crate) opacity: f32,
 }
 
 impl Default for BackgroundPosition {
@@ -1308,7 +1322,7 @@ pub(crate) enum PositionAxis {
 }
 
 impl PositionAxis {
-    fn factor(self) -> f32 {
+    pub(crate) fn factor(self) -> f32 {
         match self {
             Self::Start => 0.0,
             Self::Center => 0.5,
@@ -1319,14 +1333,14 @@ impl PositionAxis {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Rect {
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
 }
 
 impl Rect {
-    const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+    pub(crate) const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {
             x,
             y,
@@ -1797,7 +1811,11 @@ pub(crate) fn parse_edge_lengths_with_font(
     })
 }
 
-pub(crate) fn parse_box_length(value: &str, font_size: f32, allow_unitless: bool) -> Option<Length> {
+pub(crate) fn parse_box_length(
+    value: &str,
+    font_size: f32,
+    allow_unitless: bool,
+) -> Option<Length> {
     let value = value.trim().trim_matches('"').trim_matches('\'');
     if value.eq_ignore_ascii_case("auto") || value.is_empty() {
         return None;
@@ -1868,7 +1886,11 @@ pub(crate) fn parse_html_color_attribute(value: &str) -> Option<Rgba> {
     parse_color(value).or_else(|| parse_hex_color(value))
 }
 
-pub(crate) fn parse_box_shadow(value: &str, font_size: f32, default_color: Rgba) -> Option<Vec<BoxShadow>> {
+pub(crate) fn parse_box_shadow(
+    value: &str,
+    font_size: f32,
+    default_color: Rgba,
+) -> Option<Vec<BoxShadow>> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("none") {
         return Some(Vec::new());
@@ -1908,7 +1930,11 @@ pub(crate) fn parse_box_shadow(value: &str, font_size: f32, default_color: Rgba)
     Some(shadows)
 }
 
-pub(crate) fn parse_text_shadow(value: &str, font_size: f32, default_color: Rgba) -> Option<Vec<BoxShadow>> {
+pub(crate) fn parse_text_shadow(
+    value: &str,
+    font_size: f32,
+    default_color: Rgba,
+) -> Option<Vec<BoxShadow>> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("none") {
         return Some(Vec::new());
@@ -2329,8 +2355,8 @@ pub(crate) fn parse_font_family_with_available(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FontFamilySelection {
-    family: String,
-    forced_weight: Option<FontWeight>,
+    pub(crate) family: String,
+    pub(crate) forced_weight: Option<FontWeight>,
 }
 
 pub(crate) fn parse_font_family_selection(

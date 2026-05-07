@@ -1,3 +1,10 @@
+//! Fallback normalization for common email-safe font families.
+//!
+//! Keep this catalog limited to broadly used system/email-safe font names and
+//! generic-family mapping. Do not add template-specific font hacks here; if one
+//! template looks off, fix the font selection or metrics algorithm instead of
+//! adding a one-off family rule.
+
 #[cfg(test)]
 pub(crate) const SANS_FALLBACK_CANDIDATES: &[&str] = &[
     "Arial",
