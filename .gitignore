@@ -1,6 +1,7 @@
 /target/
 /node_modules/
 /blink-reference/
+/browser/pkg/
 /demo/pkg/
 /.idea/
 /.vscode/

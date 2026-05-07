@@ -29,7 +29,7 @@ async function runInBrowser(baseUrl) {
         const hero = await createHeroDataUrl(1400, 650);
         const renderer = await createMailCanvasRenderer({
           baseUrl: window.location.href,
-          workerUrl: new URL("/worker.js", window.location.href),
+          workerUrl: new URL("/browser/mail-canvas-worker.js", window.location.href),
           fonts: ["./assets/NotoSans-Regular.ttf", "./assets/NotoSans-Bold.ttf"],
           limits: {
             maxAssetBytes: 10 * 1024 * 1024,

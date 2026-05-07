@@ -77,7 +77,7 @@ async function boot() {
 
   renderer = await createMailCanvasRenderer({
     baseUrl: baseUrlInput.value,
-    workerUrl: new URL("./worker.js", import.meta.url),
+    workerUrl: new URL("../browser/mail-canvas-worker.js", import.meta.url),
     fonts: DEMO_FONTS,
     limits: {
       maxAssetBytes: 10 * 1024 * 1024,

@@ -163,12 +163,13 @@ Current wasm boundary:
 The browser demo now runs in a worker and uses explicit asset injection:
 
 1. Main thread fetches stylesheet/image/font bytes.
-2. Main thread posts those bytes to `demo/worker.js`.
+2. Main thread posts those bytes to `browser/mail-canvas-worker.js`.
 3. The worker registers assets in `mail-canvas-wasm`.
 4. The worker returns PNG bytes and diagnostics JSON.
 
-The generated `demo/pkg/` wasm bundle is intentionally ignored by Git. Rebuild
-it with `npm run build:demo` or start the full local demo with `npm run demo`.
+The generated `browser/pkg/` wasm bundle is intentionally ignored by Git.
+Rebuild it with `npm run build:browser` or start the full local demo with
+`npm run demo`.
 
 ### Project Shape
 
@@ -389,13 +390,14 @@ stabilizes.
 
 ### Browser Thumbnail API
 
-The browser-oriented wrapper lives in `browser/mail-canvas-browser.js`:
+The browser-oriented wrapper lives in `browser/mail-canvas-browser.js`, with
+types in `browser/mail-canvas-browser.d.ts`:
 
 ```js
 import { createMailCanvasRenderer } from "./browser/mail-canvas-browser.js";
 
 const renderer = await createMailCanvasRenderer({
-  workerUrl: new URL("./demo/worker.js", import.meta.url),
+  workerUrl: new URL("./browser/mail-canvas-worker.js", import.meta.url),
   fonts: ["./assets/NotoSans-Regular.ttf", "./assets/NotoSans-Bold.ttf"],
   limits: {
     maxAssetBytes: 10 * 1024 * 1024,
@@ -474,7 +476,7 @@ Use the browser wrapper benchmark to exercise the worker/WASM product API:
 npm run benchmark:wasm-thumbnail -- --out /tmp/mail-canvas-wasm-thumbnail.json --markdown-out /tmp/mail-canvas-wasm-thumbnail.md
 ```
 
-This builds `demo/pkg`, starts the local demo server, calls
+This builds `browser/pkg`, starts the local demo server, calls
 `createMailCanvasRenderer()` and `renderThumbnail()` from Playwright, then writes
 JSON and optional Markdown timing output.
 
@@ -630,12 +632,12 @@ const diagnostics = JSON.parse(renderer.diagnostics_json());
 浏览器 demo 现在已经改成 worker 模式：
 
 1. 主线程负责 fetch stylesheet / image / font；
-2. 主线程把字节通过 `postMessage` 发给 `demo/worker.js`；
+2. 主线程把字节通过 `postMessage` 发给 `browser/mail-canvas-worker.js`；
 3. worker 在 `mail-canvas-wasm` 里注册资源并渲染；
 4. worker 返回 PNG 字节和 diagnostics JSON。
 
-生成出来的 `demo/pkg/` wasm bundle 不进入 Git。需要时用
-`npm run build:demo` 重新生成，或者直接用 `npm run demo` 启动本地 demo。
+生成出来的 `browser/pkg/` wasm bundle 不进入 Git。需要时用
+`npm run build:browser` 重新生成，或者直接用 `npm run demo` 启动本地 demo。
 
 ### 项目结构
 
@@ -806,16 +808,17 @@ Playwright/Chromium 截图。
 npm run benchmark:wasm-thumbnail -- --out /tmp/mail-canvas-wasm-thumbnail.json --markdown-out /tmp/mail-canvas-wasm-thumbnail.md
 ```
 
-它会构建 `demo/pkg`，启动本地 demo server，然后在 Playwright 页面里调用
+它会构建 `browser/pkg`，启动本地 demo server，然后在 Playwright 页面里调用
 `createMailCanvasRenderer()` 和 `renderThumbnail()`。
 
 ### 浏览器 Thumbnail API
 
-浏览器产品层 wrapper 位于 `browser/mail-canvas-browser.js`。
+浏览器产品层 wrapper 位于 `browser/mail-canvas-browser.js`，TypeScript 类型位于
+`browser/mail-canvas-browser.d.ts`。
 
 ```js
 const renderer = await createMailCanvasRenderer({
-  workerUrl: new URL("./demo/worker.js", import.meta.url),
+  workerUrl: new URL("./browser/mail-canvas-worker.js", import.meta.url),
   fonts: ["./assets/NotoSans-Regular.ttf", "./assets/NotoSans-Bold.ttf"],
   limits: {
     maxAssetBytes: 10 * 1024 * 1024,
