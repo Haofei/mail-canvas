@@ -60,7 +60,7 @@ Common options:
   --width <px>              CSS viewport width, default ${DEFAULT_WIDTH}
   --viewport-height <px>    initial CSS viewport height, default ${DEFAULT_VIEWPORT_HEIGHT}
   --scale <n>               output device scale, default ${DEFAULT_SCALE}
-  --profile <name>          generic, desktop-800, mobile-375, thumbnail, or outlook-ish
+  --profile <name>          generic, desktop-800, mobile-375, thumbnail, gmail-ish, apple-mail-ish, outlook-ish, or images-blocked
   --font-dir <dir>          deterministic font directory, default fixtures/fonts
   --renderer <path>         mail-canvas binary path, default target/debug/mail-canvas
   --allow-remote            allow remote resources
@@ -147,7 +147,10 @@ function applyProfile(options, profile, explicit) {
     'desktop-800': { width: 800, viewportHeight: 1200, scale: 1 },
     'mobile-375': { width: 375, viewportHeight: 900, scale: 1 },
     thumbnail: { width: 800, viewportHeight: 1200, scale: 1 },
+    'gmail-ish': { width: 600, viewportHeight: 800, scale: 1 },
+    'apple-mail-ish': { width: 800, viewportHeight: 1200, scale: 1 },
     'outlook-ish': { width: 600, viewportHeight: 800, scale: 1 },
+    'images-blocked': { width: 800, viewportHeight: 1200, scale: 1 },
   };
   const preset = profiles[profile];
   if (!preset) {
@@ -553,26 +556,7 @@ function analyzeHtmlQuality(html, profile) {
 
 function profileCompatibilityIssues(html, profile) {
   const issues = [];
-  if (profile !== 'outlook-ish') {
-    return issues;
-  }
-  const checks = [
-    {
-      pattern: /display\s*:\s*flex/i,
-      code: 'outlook-flex-risk',
-      message: 'display:flex has poor Outlook Word compatibility; prefer table fallback for critical layout.',
-    },
-    {
-      pattern: /background-image\s*:/i,
-      code: 'outlook-background-image-risk',
-      message: 'CSS background images need VML or table/image fallback for Outlook Word.',
-    },
-    {
-      pattern: /border-radius\s*:/i,
-      code: 'outlook-border-radius-risk',
-      message: 'border-radius is unreliable in Outlook Word; avoid relying on it for critical CTA shape.',
-    },
-  ];
+  const checks = profileChecks(profile);
   for (const check of checks) {
     if (check.pattern.test(html)) {
       issues.push({
@@ -583,6 +567,66 @@ function profileCompatibilityIssues(html, profile) {
     }
   }
   return issues;
+}
+
+function profileChecks(profile) {
+  if (profile === 'outlook-ish') {
+    return [
+      {
+        pattern: /display\s*:\s*flex/i,
+        code: 'outlook-flex-risk',
+        message: 'display:flex has poor Outlook Word compatibility; prefer table fallback for critical layout.',
+      },
+      {
+        pattern: /background-image\s*:/i,
+        code: 'outlook-background-image-risk',
+        message: 'CSS background images need VML or table/image fallback for Outlook Word.',
+      },
+      {
+        pattern: /border-radius\s*:/i,
+        code: 'outlook-border-radius-risk',
+        message: 'border-radius is unreliable in Outlook Word; avoid relying on it for critical CTA shape.',
+      },
+    ];
+  }
+  if (profile === 'gmail-ish') {
+    return [
+      {
+        pattern: /<style\b[^>]*>[\s\S]*@font-face/i,
+        code: 'gmail-webfont-risk',
+        message: '@font-face support varies across Gmail surfaces; keep a safe fallback font stack.',
+      },
+      {
+        pattern: /<form\b|<input\b|<textarea\b|<select\b/i,
+        code: 'gmail-form-risk',
+        message: 'Interactive form controls are unreliable in Gmail-like email clients.',
+      },
+    ];
+  }
+  if (profile === 'apple-mail-ish') {
+    return [
+      {
+        pattern: /prefers-color-scheme/i,
+        code: 'apple-mail-dark-mode-rule',
+        message: 'Dark-mode CSS was detected; verify both light and dark previews.',
+      },
+    ];
+  }
+  if (profile === 'images-blocked') {
+    return [
+      {
+        pattern: /<img\b/i,
+        code: 'images-blocked-preview-risk',
+        message: 'Images are present. Verify the layout still communicates with images blocked and alt text visible.',
+      },
+      {
+        pattern: /background-image\s*:/i,
+        code: 'background-images-blocked-risk',
+        message: 'Background images may disappear entirely when image loading is blocked.',
+      },
+    ];
+  }
+  return [];
 }
 
 function stripTags(html) {

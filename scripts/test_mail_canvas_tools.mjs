@@ -53,6 +53,17 @@ async function main() {
   run(['snapshot', path.join(ROOT_DIR, 'examples', '*.html'), '--baseline', path.join(WORK_DIR, 'snapshots'), '--profile', 'mobile-375']);
   await assertFile(path.join(WORK_DIR, 'snapshots', 'manifest.json'));
 
+  run([
+    'check',
+    BASIC_HTML,
+    '--out-dir',
+    path.join(WORK_DIR, 'check-gmail'),
+    '--warnings-json',
+    path.join(WORK_DIR, 'check-gmail', 'warnings.json'),
+    '--profile',
+    'gmail-ish',
+  ]);
+
   await testHttpService();
 
   console.log('mail-canvas tools smoke test passed');

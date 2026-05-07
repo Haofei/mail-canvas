@@ -32,7 +32,7 @@ inputs:
     required: false
     default: "800"
   profile:
-    description: Profile: generic, desktop-800, mobile-375, thumbnail, or outlook-ish.
+    description: Profile: generic, desktop-800, mobile-375, thumbnail, gmail-ish, apple-mail-ish, outlook-ish, or images-blocked.
     required: false
     default: thumbnail
   update:

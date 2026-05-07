@@ -107,11 +107,12 @@ npm run preview -- examples/basic.html --watch --port 4177
 ```
 
 Developer tool commands accept `--profile generic`, `--profile desktop-800`,
-`--profile mobile-375`, `--profile thumbnail`, and `--profile outlook-ish`.
-The first four are practical viewport presets. `outlook-ish` currently uses the
-generic viewport and adds conservative compatibility diagnostics in `check`.
-Explicit `--width`, `--viewport-height`, and `--scale` values override the
-selected profile.
+`--profile mobile-375`, `--profile thumbnail`, `--profile gmail-ish`,
+`--profile apple-mail-ish`, `--profile outlook-ish`, and
+`--profile images-blocked`. These are practical product profiles, not exact
+client emulators. The `*-ish` and `images-blocked` profiles select useful
+viewports and add conservative diagnostics in `check`. Explicit `--width`,
+`--viewport-height`, and `--scale` values override the selected profile.
 
 Generate a MailCanvas-only before/after visual diff:
 
@@ -669,10 +670,12 @@ npm run preview -- examples/basic.html --watch --port 4177
 ```
 
 这些工具命令支持 `--profile generic`、`--profile desktop-800`、
-`--profile mobile-375`、`--profile thumbnail` 和 `--profile outlook-ish`。
-前四个是实用 viewport preset；`outlook-ish` 目前使用 generic viewport，并在
-`check` 里增加保守的兼容性诊断。显式传入的 `--width`、`--viewport-height` 和
-`--scale` 会覆盖 profile。
+`--profile mobile-375`、`--profile thumbnail`、`--profile gmail-ish`、
+`--profile apple-mail-ish`、`--profile outlook-ish` 和
+`--profile images-blocked`。这些是实用产品 profile，不是精确客户端模拟器。
+`*-ish` 和 `images-blocked` profile 会选择合适的 viewport，并在 `check` 里增加
+保守的兼容性诊断。显式传入的 `--width`、`--viewport-height` 和 `--scale` 会覆盖
+profile。
 
 生成 MailCanvas-only 的 before/after 视觉 diff：
 
