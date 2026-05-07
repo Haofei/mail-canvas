@@ -17,6 +17,7 @@ pub use mail_canvas_core::{
     AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, PreparedDocument,
     RenderWarning, RenderWarningCode, build_document,
 };
+pub use pdf::raster_pdf_from_png;
 pub use resource::NativeResourceProviderFactory;
 
 pub struct MailCanvasRenderer {

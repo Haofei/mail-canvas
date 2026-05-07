@@ -7,7 +7,7 @@ use clap::{Parser, ValueEnum};
 use mail_canvas_core::{
     EmailRenderer, RenderDebugOptions, RenderDiagnosticsReport, RenderRequest, ResourcePolicy,
 };
-use mail_canvas_native::{MailCanvasRenderer, build_document_from_files};
+use mail_canvas_native::{MailCanvasRenderer, build_document_from_files, raster_pdf_from_png};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum PdfMode {
@@ -179,7 +179,7 @@ fn main() -> Result<()> {
         request.scale,
         font_paths,
     )?;
-    let image = renderer.render_png(request.clone())?;
+    let image = renderer.render_png(request)?;
 
     if let Some(parent) = args.output.parent() {
         fs::create_dir_all(parent)
@@ -215,23 +215,20 @@ fn main() -> Result<()> {
 
     if let Some(pdf_output) = args.pdf_output {
         let pdf = match args.pdf_mode {
-            PdfMode::Raster => renderer.render_pdf(request)?,
+            PdfMode::Raster => raster_pdf_from_png(&image)?,
         };
         if let Some(parent) = pdf_output.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("failed to create {}", parent.display()))?;
         }
-        fs::write(&pdf_output, &pdf.pdf)
+        fs::write(&pdf_output, &pdf)
             .with_context(|| format!("failed to write {}", pdf_output.display()))?;
         eprintln!(
             "rendered raster PDF {}x{} px ({})",
-            pdf.pixel_width,
-            pdf.pixel_height,
+            image.pixel_width,
+            image.pixel_height,
             pdf_output.display()
         );
-        for message in &pdf.console_messages {
-            eprintln!("console.{}: {}", message.level, message.message);
-        }
     }
 
     Ok(())

@@ -1,6 +1,7 @@
 use anyhow::Result;
 #[cfg(test)]
 use anyhow::bail;
+use std::sync::Arc;
 use url::Url;
 
 use crate::{AssetKind, AssetReport};
@@ -9,7 +10,7 @@ use crate::{AssetKind, AssetReport};
 pub struct ImageData {
     pub width: u32,
     pub height: u32,
-    pub rgba: Vec<u8>,
+    pub rgba: Arc<[u8]>,
 }
 
 pub fn repair_png_chunk_crcs(bytes: &[u8]) -> Option<Vec<u8>> {
@@ -180,7 +181,7 @@ impl ResourceProvider for TestResourceProvider {
         Ok(ImageData {
             width,
             height,
-            rgba: rgba.into_raw(),
+            rgba: rgba.into_raw().into(),
         })
     }
 

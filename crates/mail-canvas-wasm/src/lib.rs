@@ -481,7 +481,7 @@ fn decode_registered_image_strict(bytes: &[u8]) -> Result<mail_canvas_core::Imag
     Ok(mail_canvas_core::ImageData {
         width,
         height,
-        rgba: rgba.into_raw(),
+        rgba: rgba.into_raw().into(),
     })
 }
 

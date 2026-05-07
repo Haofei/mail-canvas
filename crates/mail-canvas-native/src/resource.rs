@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io::Cursor;
 use std::net::IpAddr;
@@ -28,16 +29,21 @@ pub struct ResourcePolicy {
     pub(crate) total_bytes: Arc<Mutex<usize>>,
     pub(crate) resource_count: Arc<Mutex<usize>>,
     pub(crate) asset_reports: Arc<Mutex<Vec<AssetReport>>>,
+    image_cache: Arc<Mutex<HashMap<String, ImageData>>>,
+    agent: ureq::Agent,
 }
 
 impl ResourcePolicy {
     pub(crate) fn from_request(request: &RenderRequest, document_base_url: Option<Url>) -> Self {
+        let agent = resource_agent(&request.resource_policy);
         Self {
             base_url: request.base_url.clone().or(document_base_url),
             policy: request.resource_policy.clone(),
             total_bytes: Arc::new(Mutex::new(0)),
             resource_count: Arc::new(Mutex::new(0)),
             asset_reports: Arc::new(Mutex::new(Vec::new())),
+            image_cache: Arc::new(Mutex::new(HashMap::new())),
+            agent,
         }
     }
 
@@ -142,9 +148,35 @@ pub(crate) fn load_image(
     policy: &ResourcePolicy,
     initiator: &'static str,
 ) -> Result<ImageData> {
+    let cache_key = cacheable_image_key(src, policy);
+    if let Some(key) = cache_key.as_deref() {
+        if let Some(image) = policy
+            .image_cache
+            .lock()
+            .expect("image cache mutex poisoned")
+            .get(key)
+            .cloned()
+        {
+            policy.push_asset_report(
+                asset_report(AssetKind::Image, AssetStatus::Loaded, src)
+                    .with_source(asset_source_for_cache_key(key))
+                    .with_initiator(initiator)
+                    .with_optional_resolved_url(Some(key.to_string())),
+            );
+            return Ok(image);
+        }
+    }
+
     let loaded = load_resource_bytes_inner(src, policy, AssetKind::Image, initiator, false)?;
     match decode_image_bytes(&loaded.bytes, policy) {
         Ok(image) => {
+            if let Some(key) = cache_key {
+                policy
+                    .image_cache
+                    .lock()
+                    .expect("image cache mutex poisoned")
+                    .insert(key, image.clone());
+            }
             policy.push_asset_report(
                 asset_report(AssetKind::Image, AssetStatus::Loaded, src)
                     .with_source(loaded.source)
@@ -165,6 +197,28 @@ pub(crate) fn load_image(
             );
             Err(error)
         }
+    }
+}
+
+fn cacheable_image_key(src: &str, policy: &ResourcePolicy) -> Option<String> {
+    if src.trim_start().starts_with("data:") {
+        return None;
+    }
+    let url = Url::parse(src).or_else(|_| {
+        policy
+            .base_url
+            .as_ref()
+            .ok_or(url::ParseError::RelativeUrlWithoutBase)
+            .and_then(|base| base.join(src))
+    });
+    let url = url.ok()?;
+    matches!(url.scheme(), "file" | "https" | "http").then(|| url.to_string())
+}
+
+fn asset_source_for_cache_key(key: &str) -> AssetSource {
+    match Url::parse(key).ok().map(|url| url.scheme().to_string()) {
+        Some(scheme) if scheme == "file" => AssetSource::File,
+        _ => AssetSource::Remote,
     }
 }
 
@@ -395,13 +449,8 @@ fn load_remote_url(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
 }
 
 fn load_remote_url_once(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
-    let agent = ureq::Agent::config_builder()
-        .https_only(policy.policy.https_only)
-        .max_redirects(3)
-        .timeout_global(Some(effective_timeout(policy)))
-        .build()
-        .new_agent();
-    let mut response = agent
+    let mut response = policy
+        .agent
         .get(url.as_str())
         .header("User-Agent", BLINK_RESOURCE_USER_AGENT)
         .header("Accept-Language", "en-US,en;q=0.9")
@@ -418,11 +467,20 @@ fn load_remote_url_once(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn effective_timeout(policy: &ResourcePolicy) -> Duration {
-    if policy.policy.timeout.is_zero() {
+fn resource_agent(policy: &mail_canvas_core::ResourcePolicy) -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .https_only(policy.https_only)
+        .max_redirects(3)
+        .timeout_global(Some(effective_timeout(policy)))
+        .build()
+        .new_agent()
+}
+
+fn effective_timeout(policy: &mail_canvas_core::ResourcePolicy) -> Duration {
+    if policy.timeout.is_zero() {
         Duration::from_secs(8)
     } else {
-        policy.policy.timeout
+        policy.timeout
     }
 }
 
@@ -504,7 +562,7 @@ fn decode_image_bytes_strict(bytes: &[u8], policy: &ResourcePolicy) -> Result<Im
     Ok(ImageData {
         width,
         height,
-        rgba: rgba.into_raw(),
+        rgba: rgba.into_raw().into(),
     })
 }
 
@@ -512,26 +570,30 @@ fn decode_image_bytes_strict(bytes: &[u8], policy: &ResourcePolicy) -> Result<Im
 mod tests {
     use std::time::Duration;
 
-    use image::{ColorType, codecs::jpeg::JpegEncoder};
+    use image::{ColorType, ImageEncoder, codecs::jpeg::JpegEncoder, codecs::png::PngEncoder};
 
     use super::*;
 
     fn test_policy() -> ResourcePolicy {
+        let policy = mail_canvas_core::ResourcePolicy {
+            allow_remote: false,
+            https_only: true,
+            deny_private_networks: true,
+            timeout: Duration::from_secs(1),
+            max_resource_bytes: 1024 * 1024,
+            max_total_resource_bytes: 2 * 1024 * 1024,
+            max_decoded_pixels: 1024,
+            max_resource_count: 8,
+        };
+        let agent = resource_agent(&policy);
         ResourcePolicy {
             base_url: None,
-            policy: mail_canvas_core::ResourcePolicy {
-                allow_remote: false,
-                https_only: true,
-                deny_private_networks: true,
-                timeout: Duration::from_secs(1),
-                max_resource_bytes: 1024 * 1024,
-                max_total_resource_bytes: 2 * 1024 * 1024,
-                max_decoded_pixels: 1024,
-                max_resource_count: 8,
-            },
+            policy,
             total_bytes: Arc::new(Mutex::new(0)),
             resource_count: Arc::new(Mutex::new(0)),
             asset_reports: Arc::new(Mutex::new(Vec::new())),
+            image_cache: Arc::new(Mutex::new(HashMap::new())),
+            agent,
         }
     }
 
@@ -561,7 +623,35 @@ mod tests {
         let image = decode_image_bytes(&png, &test_policy()).expect("decode repaired png");
 
         assert_eq!((image.width, image.height), (1, 1));
-        assert_eq!(image.rgba, [255, 255, 255, 255]);
+        assert_eq!(image.rgba.as_ref(), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn load_image_reuses_decoded_file_images_within_render() {
+        let dir =
+            std::env::temp_dir().join(format!("mail-canvas-image-cache-{}", std::process::id()));
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let image_path = dir.join("pixel.png");
+        let mut png = Vec::new();
+        PngEncoder::new(&mut png)
+            .write_image(&[255, 0, 0, 255], 1, 1, ColorType::Rgba8.into())
+            .expect("encode png");
+        fs::write(&image_path, png).expect("write png");
+
+        let mut policy = test_policy();
+        policy.base_url = Some(Url::from_directory_path(&dir).expect("file base url"));
+
+        let first = load_image("pixel.png", &policy, "img").expect("first load");
+        let second = load_image("pixel.png", &policy, "img").expect("second load");
+
+        assert!(Arc::ptr_eq(&first.rgba, &second.rgba));
+        assert_eq!(
+            *policy.resource_count.lock().expect("resource count mutex"),
+            1
+        );
+
+        let _ = fs::remove_file(image_path);
+        let _ = fs::remove_dir(dir);
     }
 
     #[test]

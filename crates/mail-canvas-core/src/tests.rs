@@ -1906,7 +1906,7 @@ fn bilinear_image_sampling_blends_neighbor_pixels() {
     let image = ImageData {
         width: 2,
         height: 1,
-        rgba: vec![0, 0, 0, 255, 255, 255, 255, 255],
+        rgba: vec![0, 0, 0, 255, 255, 255, 255, 255].into(),
     };
 
     let sampled = sample_image_bilinear(&image, 0.5, 0.0);
@@ -1921,7 +1921,8 @@ fn area_image_sampling_averages_downscaled_pixels() {
         height: 2,
         rgba: vec![
             0, 0, 0, 255, 100, 100, 100, 255, 200, 200, 200, 255, 255, 255, 255, 255,
-        ],
+        ]
+        .into(),
     };
 
     let sampled = sample_image_area(&image, 0.0, 0.0, 2.0, 2.0);
@@ -1934,7 +1935,7 @@ fn image_rects_are_pixel_snapped_like_blink() {
     let image = ImageData {
         width: 1,
         height: 1,
-        rgba: vec![255, 0, 0, 255],
+        rgba: vec![255, 0, 0, 255].into(),
     };
     let mut pixmap = Pixmap::new(4, 1).expect("pixmap");
 
@@ -1966,7 +1967,8 @@ fn object_fit_cover_crops_source_to_destination_ratio() {
         rgba: vec![
             255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255, 255, 0, 0, 255, 0,
             255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
-        ],
+        ]
+        .into(),
     };
     let mut pixmap = Pixmap::new(2, 2).expect("pixmap");
 
@@ -1993,7 +1995,7 @@ fn object_fit_contain_centers_content_rect() {
     let image = ImageData {
         width: 2,
         height: 1,
-        rgba: vec![255, 0, 0, 255, 0, 255, 0, 255],
+        rgba: vec![255, 0, 0, 255, 0, 255, 0, 255].into(),
     };
     let object_rect = object_fit_rect(
         Rect::new(0.0, 0.0, 4.0, 4.0),
@@ -2013,7 +2015,7 @@ fn image_sampling_interpolates_premultiplied_alpha_like_skia() {
     let image = ImageData {
         width: 2,
         height: 1,
-        rgba: vec![255, 0, 0, 255, 0, 255, 0, 0],
+        rgba: vec![255, 0, 0, 255, 0, 255, 0, 0].into(),
     };
 
     let sampled = sample_image_bilinear(&image, 0.5, 0.0);
@@ -2026,7 +2028,7 @@ fn image_opacity_is_applied_during_composite() {
     let image = ImageData {
         width: 1,
         height: 1,
-        rgba: vec![255, 0, 0, 255],
+        rgba: vec![255, 0, 0, 255].into(),
     };
     let mut pixmap = Pixmap::new(1, 1).expect("pixmap");
 
@@ -2051,7 +2053,7 @@ fn background_images_are_clipped_by_border_radius() {
     let image = ImageData {
         width: 1,
         height: 1,
-        rgba: vec![255, 0, 0, 255],
+        rgba: vec![255, 0, 0, 255].into(),
     };
     let mut pixmap = Pixmap::new(3, 3).expect("pixmap");
 
