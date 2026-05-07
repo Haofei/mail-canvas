@@ -438,11 +438,32 @@ wrapping is more important than matching Chromium's local font fallback.
 ### Examples
 
 - Node wrapper: `examples/node-render.mjs`
-- HTTP service shell: `examples/http-service.mjs`
+- HTTP service: `examples/http-service.mjs`
 
 Both examples currently shell out to the native CLI instead of embedding a Node
 native module. That keeps the example path simple while the Rust public API
 stabilizes.
+
+Run the HTTP service locally:
+
+```sh
+cargo build -p mail-canvas-cli
+npm run serve:http
+curl -sS http://127.0.0.1:8787/render \
+  -H 'content-type: application/json' \
+  --data '{"html":"<table><tr><td>Hello</td></tr></table>","width":600}' \
+  --output email.png
+```
+
+The service supports `POST /render` and `GET /healthz`. `POST /render` returns
+PNG by default, or JSON with `pngBase64` and diagnostics when the request body
+sets `"output":"json"` or the `Accept` header requests JSON. The Dockerfile
+builds the release CLI and runs this service:
+
+```sh
+docker build -t mail-canvas .
+docker run --rm -p 8787:8787 mail-canvas
+```
 
 ### Browser Thumbnail API
 
@@ -920,6 +941,29 @@ npm run benchmark:wasm-thumbnail -- --out /tmp/mail-canvas-wasm-thumbnail.json -
 
 它会构建 `browser/pkg`，启动本地 demo server，然后在 Playwright 页面里调用
 `createMailCanvasRenderer()` 和 `renderThumbnail()`。
+
+### HTTP Service 和 Docker
+
+本地启动 HTTP service：
+
+```sh
+cargo build -p mail-canvas-cli
+npm run serve:http
+curl -sS http://127.0.0.1:8787/render \
+  -H 'content-type: application/json' \
+  --data '{"html":"<table><tr><td>Hello</td></tr></table>","width":600}' \
+  --output email.png
+```
+
+service 支持 `POST /render` 和 `GET /healthz`。`POST /render` 默认返回 PNG；
+如果请求体里设置 `"output":"json"`，或者 `Accept` header 请求 JSON，则返回
+包含 `pngBase64` 和 diagnostics 的 JSON。Dockerfile 会构建 release CLI 并运行
+这个 service：
+
+```sh
+docker build -t mail-canvas .
+docker run --rm -p 8787:8787 mail-canvas
+```
 
 ### 浏览器 Thumbnail API
 
