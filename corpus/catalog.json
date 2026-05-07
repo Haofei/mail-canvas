@@ -488,9 +488,51 @@
     "sourcePath": "corpus/postmark/postmark-welcome.html"
   },
   {
+    "name": "reallygoodemails-accurate",
+    "url": "https://reallygoodemails.com/emails/accurate",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-accurate.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-boxing-day-lets-end-the-year-on-a-high-note",
+    "url": "https://reallygoodemails.com/emails/boxing-day-lets-end-the-year-on-a-high-note",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-boxing-day-lets-end-the-year-on-a-high-note.html",
+    "preserveLocal": true
+  },
+  {
     "name": "reallygoodemails-counter-print-latest-books-and-magazines",
     "url": "https://reallygoodemails.com/emails/counter-print-latest-books-and-magazines",
     "sourcePath": "corpus/reallygoodemails/reallygoodemails-counter-print-latest-books-and-magazines.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-do-more-with-the-gametime-app",
+    "url": "https://reallygoodemails.com/emails/do-more-with-the-gametime-app",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-do-more-with-the-gametime-app.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-fall-in-love-with-feeling-good",
+    "url": "https://reallygoodemails.com/emails/fall-in-love-with-feeling-good",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-fall-in-love-with-feeling-good.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-from-hormone-health-to-sexual-wellness",
+    "url": "https://reallygoodemails.com/emails/from-hormone-health-to-sexual-wellness",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-from-hormone-health-to-sexual-wellness.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-get-20-off-your-website-and-a-free-domain",
+    "url": "https://reallygoodemails.com/emails/get-20-off-your-website-and-a-free-domain",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-get-20-off-your-website-and-a-free-domain.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-get-your-domain-for-5",
+    "url": "https://reallygoodemails.com/emails/get-your-domain-for-5",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-get-your-domain-for-5.html",
     "preserveLocal": true
   },
   {
@@ -500,9 +542,33 @@
     "preserveLocal": true
   },
   {
+    "name": "reallygoodemails-intelligence-isnt-one-size-fits-all",
+    "url": "https://reallygoodemails.com/emails/intelligence-isnt-one-size-fits-all",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-intelligence-isnt-one-size-fits-all.html",
+    "preserveLocal": true
+  },
+  {
     "name": "reallygoodemails-latest-arrivals-from-nyc-based-nomia",
     "url": "https://reallygoodemails.com/emails/latest-arrivals-from-nyc-based-nomia",
     "sourcePath": "corpus/reallygoodemails/reallygoodemails-latest-arrivals-from-nyc-based-nomia.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-lets-make-it-easy",
+    "url": "https://reallygoodemails.com/emails/lets-make-it-easy",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-lets-make-it-easy.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-love-your-sleep-together",
+    "url": "https://reallygoodemails.com/emails/love-your-sleep-together",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-love-your-sleep-together.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-lucky-yogi-get-40-off-2-lyka-orders",
+    "url": "https://reallygoodemails.com/emails/lucky-yogi-get-40-off-2-lyka-orders",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-lucky-yogi-get-40-off-2-lyka-orders.html",
     "preserveLocal": true
   },
   {
@@ -512,9 +578,63 @@
     "preserveLocal": true
   },
   {
+    "name": "reallygoodemails-meet-tracking-that-fits-real-life",
+    "url": "https://reallygoodemails.com/emails/meet-tracking-that-fits-real-life",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-meet-tracking-that-fits-real-life.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-pucker-up-whoville-the-grinch",
+    "url": "https://reallygoodemails.com/emails/pucker-up-whoville-the-grinch",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-pucker-up-whoville-the-grinch.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-share-your-feedback-on-your-docusign-trial",
+    "url": "https://reallygoodemails.com/emails/share-your-feedback-on-your-docusign-trial",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-share-your-feedback-on-your-docusign-trial.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-sneak-away-for-the-day",
+    "url": "https://reallygoodemails.com/emails/sneak-away-for-the-day",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-sneak-away-for-the-day.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-spotted-your-new-beauty-essential",
+    "url": "https://reallygoodemails.com/emails/spotted-your-new-beauty-essential",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-spotted-your-new-beauty-essential.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-start-moving-toward-your-resolutions",
+    "url": "https://reallygoodemails.com/emails/start-moving-toward-your-resolutions",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-start-moving-toward-your-resolutions.html",
+    "preserveLocal": true
+  },
+  {
     "name": "reallygoodemails-the-latest-updates-from-loops",
     "url": "https://reallygoodemails.com/emails/the-latest-updates-from-loops",
     "sourcePath": "corpus/reallygoodemails/reallygoodemails-the-latest-updates-from-loops.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-the-makers-behind-the-magic",
+    "url": "https://reallygoodemails.com/emails/the-makers-behind-the-magic",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-the-makers-behind-the-magic.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-tournament-ready",
+    "url": "https://reallygoodemails.com/emails/tournament-ready",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-tournament-ready.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-who-are-leos-bffs",
+    "url": "https://reallygoodemails.com/emails/who-are-leos-bffs",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-who-are-leos-bffs.html",
     "preserveLocal": true
   },
   {

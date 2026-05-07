@@ -2372,6 +2372,37 @@ fn lays_out_adjacent_inline_blocks_on_one_row() {
 }
 
 #[test]
+fn block_after_full_width_inline_table_starts_after_inline_row() {
+    let layout = layout_for_test(
+        r#"
+        <table width="100%">
+          <tr>
+            <td style="display:block">
+              <table align="left" width="100%" style="display:inline-block">
+                <tr><td><img width="50" height="50" alt=""></td></tr>
+              </table>
+              <table width="100%">
+                <tr><td><img width="200" height="100" alt=""></td></tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+        "#,
+        300,
+    );
+    let images = collect_layouts(&layout, &|child| {
+        matches!(child.kind, LayoutKind::Image(_)) && child.rect.width > 1.0
+    });
+    assert_eq!(images.len(), 2);
+    assert!(
+        images[1].rect.y >= images[0].rect.y + images[0].rect.height - 0.1,
+        "block image should start after inline table image: first={:?}, second={:?}",
+        images[0].rect,
+        images[1].rect
+    );
+}
+
+#[test]
 fn mixed_inline_text_and_inline_blocks_share_one_row() {
     let layout = layout_for_test(
         r#"<div style="font-size:0;text-align:center">

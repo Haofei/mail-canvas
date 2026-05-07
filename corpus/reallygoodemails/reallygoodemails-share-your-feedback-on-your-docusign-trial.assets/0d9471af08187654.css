@@ -1,0 +1,29 @@
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: local("Helvetica Neue");
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: local("Helvetica Neue Bold");
+  font-weight: bold;
+}
+
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: local("Helvetica Neue Italic");
+  font-style: italic;
+}
+
+@font-face {
+  font-family: 'Helvetica Neue Light';
+  src: local("HelveticaNeue-Light"), local("Helvetica Neue Light");
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Helvetica Neue Thin';
+  src: local("HelveticaNeue-Thin"), local("Helvetica Neue Thin");
+  font-style: normal;
+}

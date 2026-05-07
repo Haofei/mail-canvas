@@ -283,6 +283,13 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             {
                 previous_margin_bottom = None;
             }
+            if child_float_side == FloatSide::None && !child_is_inline_flow {
+                let placed_y = block_flow_placement_y(&child_style, x, width, cursor_y, &floats);
+                if placed_y > cursor_y {
+                    cursor_y = placed_y;
+                    previous_margin_bottom = None;
+                }
+            }
             let list_marker = if tag == "li" {
                 match child_style.list_style_type {
                     ListStyleType::None => None,
@@ -2233,6 +2240,25 @@ pub(crate) fn float_placement_y(
         }
         candidate_y = next_y;
     }
+}
+
+fn block_flow_placement_y(
+    style: &Style,
+    x: f32,
+    width: f32,
+    y: f32,
+    floats: &[PlacedFloat],
+) -> f32 {
+    if floats.is_empty() {
+        return y;
+    }
+    let outer_width = style
+        .resolve_width(width)
+        .map(|declared| style.outer_width_for_declared(declared))
+        .unwrap_or_else(|| width - style.margin.horizontal())
+        .max(1.0)
+        .min(width.max(1.0));
+    float_placement_y(floats, x, width, y, outer_width)
 }
 
 pub(crate) fn clear_float_y(floats: &[PlacedFloat], clear: Clear) -> f32 {

@@ -28,6 +28,8 @@ function parseArgs(argv) {
     headful: false,
     login: Boolean(process.env.RGE_EMAIL && process.env.RGE_PASSWORD),
     timeoutMs: 30000,
+    random: false,
+    excludeExisting: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -68,6 +70,12 @@ function parseArgs(argv) {
       case '--timeout-ms':
         args.timeoutMs = positiveInt(next(), '--timeout-ms');
         break;
+      case '--random':
+        args.random = true;
+        break;
+      case '--exclude-existing':
+        args.excludeExisting = true;
+        break;
       default:
         throw new Error(`unknown argument: ${arg}`);
     }
@@ -90,15 +98,32 @@ async function main() {
       await loginIfNeeded(context, args);
     }
     const page = await context.newPage();
-    const slugs = await collectSlugs(page, args);
+    let slugs = await collectSlugs(page, args);
+    if (args.excludeExisting) {
+      const existing = await existingReallyGoodEmailsSlugs(args.catalogPath);
+      slugs = slugs.filter((slug) => !existing.has(slug));
+    }
+    if (args.random) {
+      shuffle(slugs);
+    }
     console.log(`found ${slugs.length} Really Good Emails slugs`);
 
     const catalogEntries = [];
-    for (const slug of slugs.slice(0, args.limit)) {
-      const entry = await vendorSlug(context, slug, args);
-      catalogEntries.push(entry);
-      console.log(`vendored ${entry.name}`);
+    for (const slug of slugs) {
+      if (catalogEntries.length >= args.limit) {
+        break;
+      }
+      try {
+        const entry = await vendorSlug(context, slug, args);
+        catalogEntries.push(entry);
+        console.log(`vendored ${entry.name}`);
+      } catch (error) {
+        console.warn(`skipped ${slug}: ${error.message}`);
+      }
       await wait(500);
+    }
+    if (catalogEntries.length < args.limit) {
+      throw new Error(`vendored ${catalogEntries.length} templates, expected ${args.limit}`);
     }
     await updateCatalog(args.catalogPath, catalogEntries, args.replaceProvider);
     console.log(args.catalogPath);
@@ -173,6 +198,26 @@ async function collectSlugs(page, args) {
     return [...found].filter((slug) => slug && !slug.includes('/'));
   });
   return [...new Set(slugs)];
+}
+
+async function existingReallyGoodEmailsSlugs(catalogPath) {
+  const entries = await readJson(catalogPath).catch(() => []);
+  const slugs = new Set();
+  for (const entry of entries) {
+    if (!entry.name?.startsWith(`${PROVIDER}-`)) {
+      continue;
+    }
+    slugs.add(entry.name.slice(`${PROVIDER}-`.length));
+  }
+  return slugs;
+}
+
+function shuffle(values) {
+  for (let index = values.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [values[index], values[swapIndex]] = [values[swapIndex], values[index]];
+  }
+  return values;
 }
 
 async function vendorSlug(context, slug, args) {
