@@ -38,15 +38,16 @@ pub(crate) fn strip_hidden_conditional_comments(html: &str) -> String {
         out.push_str(&html[offset..start]);
 
         if let Some(content_start) = downlevel_revealed_content_start(&lower, start) {
-            let Some(close_rel) = lower[content_start..].find("<!--<![endif]-->") else {
+            let Some((content_end, close_end)) =
+                downlevel_revealed_content_end(&lower, content_start)
+            else {
                 out.push_str(&html[start..]);
                 return out;
             };
-            let content_end = content_start + close_rel;
             out.push_str(&strip_hidden_conditional_comments(
                 &html[content_start..content_end],
             ));
-            offset = content_end + "<!--<![endif]-->".len();
+            offset = close_end;
             continue;
         }
 
@@ -62,16 +63,55 @@ pub(crate) fn strip_hidden_conditional_comments(html: &str) -> String {
     out
 }
 
+fn downlevel_revealed_content_end(lower: &str, content_start: usize) -> Option<(usize, usize)> {
+    let mut offset = content_start;
+    let mut depth = 0usize;
+    let endif_start = loop {
+        let next_if = lower[offset..].find("<!--[if").map(|index| offset + index);
+        let next_endif = lower[offset..]
+            .find("<![endif]-->")
+            .map(|index| offset + index)?;
+        if let Some(next_if) = next_if {
+            if next_if < next_endif {
+                depth += 1;
+                offset = next_if + "<!--[if".len();
+                continue;
+            }
+        }
+        if depth > 0 {
+            depth -= 1;
+            offset = next_endif + "<![endif]-->".len();
+            continue;
+        }
+        break next_endif;
+    };
+    let close_end = endif_start + "<![endif]-->".len();
+    let before_endif = &lower[content_start..endif_start];
+    let comment_start = before_endif.rfind("<!--")?;
+    let candidate_end = content_start + comment_start;
+    let trailing = &lower[candidate_end + "<!--".len()..endif_start];
+    if trailing.trim().is_empty() {
+        Some((candidate_end, close_end))
+    } else {
+        Some((endif_start, close_end))
+    }
+}
+
 fn downlevel_revealed_content_start(lower: &str, start: usize) -> Option<usize> {
     let condition_end = start + lower[start..].find("]>")? + "]>".len();
-    let marker = lower[condition_end..].strip_prefix("<!--")?;
+    let marker_prefix_whitespace_len = lower[condition_end..]
+        .bytes()
+        .take_while(u8::is_ascii_whitespace)
+        .count();
+    let marker_start = condition_end + marker_prefix_whitespace_len;
+    let marker = lower[marker_start..].strip_prefix("<!--")?;
     let whitespace_len = marker.bytes().take_while(u8::is_ascii_whitespace).count();
     let marker_after_whitespace = &marker[whitespace_len..];
     if marker_after_whitespace.starts_with("-->") {
-        return Some(condition_end + "<!--".len() + whitespace_len + "-->".len());
+        return Some(marker_start + "<!--".len() + whitespace_len + "-->".len());
     }
     if marker_after_whitespace.starts_with('>') {
-        return Some(condition_end + "<!--".len() + whitespace_len + ">".len());
+        return Some(marker_start + "<!--".len() + whitespace_len + ">".len());
     }
     None
 }
@@ -873,6 +913,22 @@ mod tests {
         assert!(!stripped.contains("[if"));
         assert!(!stripped.contains("[endif]"));
         assert!(stripped.contains(r#"<link href="fonts.css" rel="stylesheet">"#));
+    }
+
+    #[test]
+    fn keeps_downlevel_revealed_conditional_content_with_spaced_closing_marker() {
+        let html = r#"<!--[if !mso]>
+            <!-- -->
+            <link href="fonts.css" rel="stylesheet">
+            <!--
+                <![endif]-->"#;
+
+        let stripped = strip_hidden_conditional_comments(html);
+
+        assert!(!stripped.contains("[if"));
+        assert!(!stripped.contains("[endif]"));
+        assert!(stripped.contains(r#"<link href="fonts.css" rel="stylesheet">"#));
+        assert!(!stripped.contains("<!--"));
     }
 
     #[test]
