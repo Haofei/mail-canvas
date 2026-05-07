@@ -18,6 +18,8 @@ async function main() {
   assert.ok(report.timing.renderMs > 0, "expected positive renderMs");
   assert.equal(report.diagnostics.warnings, 0);
   assert.ok(report.diagnostics.assets >= 1, "expected at least one asset diagnostic");
+  assert.equal(report.wrapperChecks.destroyRejects, true);
+  assert.equal(report.wrapperChecks.limitRejects, true);
   console.log(JSON.stringify(report, null, 2));
 }
 
