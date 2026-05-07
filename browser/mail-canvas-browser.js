@@ -8,7 +8,10 @@ const assetPattern =
   /url\(\s*(['"]?)([^'")]+)\1\s*\)|@import\s+(?:url\(\s*)?(['"]?)([^'")\s]+)\3\s*\)?/gi;
 
 export async function createMailCanvasRenderer(options = {}) {
-  const workerUrl = options.workerUrl ?? new URL("./worker.js", import.meta.url);
+  if (!options.workerUrl) {
+    throw new Error("createMailCanvasRenderer requires workerUrl");
+  }
+  const workerUrl = options.workerUrl;
   const worker = new Worker(workerUrl, { type: "module" });
   const client = new WorkerClient(worker);
   const fontAssets = await fetchFontAssets(options.fonts ?? [], options.baseUrl);

@@ -1,4 +1,4 @@
-import { createMailCanvasRenderer } from "./mail-canvas-browser.js";
+import { createMailCanvasRenderer } from "../browser/mail-canvas-browser.js";
 
 const htmlInput = document.querySelector("#html-input");
 const widthInput = document.querySelector("#width");
@@ -77,6 +77,7 @@ async function boot() {
 
   renderer = await createMailCanvasRenderer({
     baseUrl: baseUrlInput.value,
+    workerUrl: new URL("./worker.js", import.meta.url),
     fonts: DEMO_FONTS,
     limits: {
       maxAssetBytes: 10 * 1024 * 1024,

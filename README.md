@@ -389,12 +389,13 @@ stabilizes.
 
 ### Browser WASM Wrapper
 
-The demo exposes a browser-oriented wrapper in `demo/mail-canvas-browser.js`:
+The browser-oriented wrapper lives in `browser/mail-canvas-browser.js`:
 
 ```js
-import { createMailCanvasRenderer } from "./mail-canvas-browser.js";
+import { createMailCanvasRenderer } from "./browser/mail-canvas-browser.js";
 
 const renderer = await createMailCanvasRenderer({
+  workerUrl: new URL("./demo/worker.js", import.meta.url),
   fonts: ["./assets/NotoSans-Regular.ttf", "./assets/NotoSans-Bold.ttf"],
   limits: {
     maxAssetBytes: 10 * 1024 * 1024,
@@ -793,10 +794,11 @@ npm run benchmark:wasm-thumbnail -- --out /tmp/mail-canvas-wasm-thumbnail.json -
 
 ### 浏览器 WASM Wrapper
 
-demo 提供了浏览器产品层 wrapper：`demo/mail-canvas-browser.js`。
+浏览器产品层 wrapper 位于 `browser/mail-canvas-browser.js`。
 
 ```js
 const renderer = await createMailCanvasRenderer({
+  workerUrl: new URL("./demo/worker.js", import.meta.url),
   fonts: ["./assets/NotoSans-Regular.ttf", "./assets/NotoSans-Bold.ttf"],
   limits: {
     maxAssetBytes: 10 * 1024 * 1024,

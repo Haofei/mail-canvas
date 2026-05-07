@@ -110,10 +110,11 @@ async function runBenchmark(baseUrl) {
 </html>`;
         }
 
-        const { createMailCanvasRenderer } = await import("./mail-canvas-browser.js");
+        const { createMailCanvasRenderer } = await import("/browser/mail-canvas-browser.js");
         const hero = await createHeroDataUrl(1400, 650);
         const renderer = await createMailCanvasRenderer({
           baseUrl: window.location.href,
+          workerUrl: new URL("/worker.js", window.location.href),
           fonts: ["./assets/NotoSans-Regular.ttf", "./assets/NotoSans-Bold.ttf"],
           limits: {
             maxAssetBytes: 10 * 1024 * 1024,

@@ -5,7 +5,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const demoRoot = path.resolve(__dirname, "..", "demo");
+const repoRoot = path.resolve(__dirname, "..");
+const demoRoot = path.join(repoRoot, "demo");
+const browserRoot = path.join(repoRoot, "browser");
 const host = "127.0.0.1";
 const startPort = Number(process.env.PORT || 4173);
 
@@ -25,6 +27,13 @@ const mimeTypes = new Map([
 
 function safePath(urlPath) {
   const decoded = decodeURIComponent(urlPath.split("?")[0]);
+  if (decoded.startsWith("/browser/")) {
+    const resolved = path.resolve(browserRoot, `.${decoded.slice("/browser".length)}`);
+    if (!resolved.startsWith(browserRoot)) {
+      return null;
+    }
+    return resolved;
+  }
   const relative = decoded === "/" ? "/index.html" : decoded;
   const resolved = path.resolve(demoRoot, `.${relative}`);
   if (!resolved.startsWith(demoRoot)) {
