@@ -1964,6 +1964,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         let available =
             (max_content_width - spacing * count.saturating_sub(1) as f32).max(count as f32);
         let mut widths = vec![0.0_f32; count];
+        let mut blockified_row_width: f32 = 0.0;
 
         for (col, width) in grid.col_widths.iter().enumerate().take(count) {
             if let Some(width) = width
@@ -1979,13 +1980,48 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             if row_style.display == Display::None {
                 continue;
             }
+            let mut styled_cells = Vec::with_capacity(row.cells.len());
             for cell in &row.cells {
                 let mut cell_style = self.style_for_node(&cell.node, &row_style);
                 if cell_style.display == Display::None {
                     continue;
                 }
                 cell_style.apply_table_cell_padding(table_style.cell_padding);
+                styled_cells.push((cell, cell_style));
+            }
+            if styled_cells.is_empty() {
+                continue;
+            }
 
+            if styled_cells
+                .iter()
+                .all(|(_, cell_style)| cell_style.display != Display::TableCell)
+            {
+                let mut row_width: f32 = 0.0;
+                for (cell, cell_style) in styled_cells {
+                    let intrinsic = if let Some(width) = cell_style
+                        .width
+                        .filter(length_is_intrinsic_fixed)
+                        .and_then(|width| width.resolve(available))
+                    {
+                        Some(cell_style.outer_width_for_declared(width))
+                    } else {
+                        self.fixed_replaced_content_min_width(&cell.node, &cell_style, available)?
+                            .map(|width| {
+                                width
+                                    + cell_style.padding.horizontal()
+                                    + cell_style.border.horizontal()
+                            })
+                    };
+                    if let Some(intrinsic) = intrinsic {
+                        row_width = row_width.max(intrinsic.max(0.0));
+                    }
+                }
+                blockified_row_width = blockified_row_width.max(row_width);
+                continue;
+            }
+
+            for (cell, cell_style) in styled_cells {
                 let intrinsic = if let Some(width) = cell_style
                     .width
                     .filter(length_is_intrinsic_fixed)
@@ -2012,7 +2048,8 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             }
         }
 
-        let content_width = widths.iter().sum::<f32>() + spacing * count.saturating_sub(1) as f32;
+        let content_width = (widths.iter().sum::<f32>() + spacing * count.saturating_sub(1) as f32)
+            .max(blockified_row_width);
         Ok(content_width + table_style.padding.horizontal() + table_style.border.horizontal())
     }
 

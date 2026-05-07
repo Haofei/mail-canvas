@@ -256,6 +256,49 @@ fn blockified_table_cells_stack_within_their_row() {
 }
 
 #[test]
+fn blockified_nested_table_cells_do_not_expand_parent_table_width() {
+    let layout = layout_for_test(
+        r#"
+        <table width="600" style="background:#231e15">
+          <tr>
+            <td style="padding:0 28px">
+              <table width="544" style="table-layout:fixed">
+                <tr>
+                  <th style="padding:0">
+                    <table width="262">
+                      <tr>
+                        <th style="display:block;padding:0" width="262"><img width="262" height="40" alt=""></th>
+                        <th style="display:block;padding:0;background:#b42855" width="262"><img width="262" height="80" alt=""></th>
+                      </tr>
+                    </table>
+                  </th>
+                  <th width="20" style="padding:0">&nbsp;</th>
+                  <th style="padding:0">
+                    <table width="262">
+                      <tr>
+                        <th style="display:block;padding:0" width="262"><img width="262" height="40" alt=""></th>
+                        <th style="display:block;padding:0;background:#ff7346" width="262"><img width="262" height="80" alt=""></th>
+                      </tr>
+                    </table>
+                  </th>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+        "#,
+        800,
+    );
+    let root_table =
+        find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+    assert!(
+        (root_table.rect.width - 600.0).abs() < 0.1,
+        "blockified nested cells should not expand parent background to {}",
+        root_table.rect.width
+    );
+}
+
+#[test]
 fn parses_unitless_line_height_as_font_multiplier() {
     let unitless = parse_line_height_declaration("1.625", 16.0).unwrap();
     assert!((unitless.height - 26.0).abs() < 0.1);
