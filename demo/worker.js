@@ -20,16 +20,18 @@ self.addEventListener("message", async (event) => {
       if (!renderer) {
         throw new Error("worker not initialized");
       }
+      const started = performance.now();
       renderer.clear_assets();
       for (const asset of message.assets ?? []) {
         renderer.register_asset(asset.url, new Uint8Array(asset.bytes));
       }
-      const png = renderer.render_png_with_base_url(
+      const png = renderer.render_png_with_base_url_and_max_height(
         message.html,
         message.width,
         message.viewportHeight,
         message.scale,
-        message.baseUrl
+        message.baseUrl,
+        message.maxHeight || 0
       );
       const diagnostics = JSON.parse(renderer.diagnostics_json());
       self.postMessage(
@@ -38,9 +40,21 @@ self.addEventListener("message", async (event) => {
           ok: true,
           png: png.buffer,
           diagnostics,
+          assetSummary: {
+            registered: renderer.asset_count(),
+          },
+          renderMs: performance.now() - started,
         },
         [png.buffer]
       );
+      return;
+    }
+
+    if (message.type === "clear") {
+      if (renderer) {
+        renderer.clear_assets();
+      }
+      self.postMessage({ requestId, ok: true });
       return;
     }
 

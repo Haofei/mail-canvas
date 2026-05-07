@@ -387,6 +387,37 @@ Both examples currently shell out to the native CLI instead of embedding a Node
 native module. That keeps the example path simple while the Rust public API
 stabilizes.
 
+### Browser WASM Wrapper
+
+The demo exposes a browser-oriented wrapper in `demo/mail-canvas-browser.js`:
+
+```js
+import { createMailCanvasRenderer } from "./mail-canvas-browser.js";
+
+const renderer = await createMailCanvasRenderer({
+  fonts: ["./assets/NotoSans-Regular.ttf", "./assets/NotoSans-Bold.ttf"],
+  limits: {
+    maxAssetBytes: 10 * 1024 * 1024,
+    maxTotalAssetBytes: 64 * 1024 * 1024,
+    maxAssetCount: 128,
+  },
+});
+
+const result = await renderer.renderThumbnail({
+  html,
+  width: 800,
+  height: 1200,
+  scale: 1,
+  baseUrl: window.location.href,
+});
+
+renderer.destroy();
+```
+
+The wrapper owns worker lifecycle, font registration, linked asset fetching,
+URL de-duplication, wrapper-level resource limits, and diagnostics parsing. The
+demo app uses this wrapper instead of calling raw wasm-bindgen APIs directly.
+
 ### Memory Benchmark
 
 Compare one corpus template against Chromium:
@@ -419,6 +450,16 @@ npm run benchmark:thumbnail -- --out /tmp/mail-canvas-thumbnail-800x1200.json
 This case uses a local `800x1200` marketing email with one large hero image and
 no remote resources. The benchmark builds the release CLI and compares it
 against Chromium screenshot capture through Playwright.
+
+Use the browser wrapper benchmark to exercise the worker/WASM product API:
+
+```sh
+npm run benchmark:wasm-thumbnail -- --out /tmp/mail-canvas-wasm-thumbnail.json --markdown-out /tmp/mail-canvas-wasm-thumbnail.md
+```
+
+This builds `demo/pkg`, starts the local demo server, calls
+`createMailCanvasRenderer()` and `renderThumbnail()` from Playwright, then writes
+JSON and optional Markdown timing output.
 
 ### Development Checks
 
@@ -740,6 +781,41 @@ npm run benchmark:thumbnail -- --out /tmp/mail-canvas-thumbnail-800x1200.json
 
 这个 case 使用本地营销邮件、一张大 hero 图、无远程资源，并用 release CLI 对比
 Playwright/Chromium 截图。
+
+浏览器 wrapper benchmark 会走 worker/WASM 产品 API：
+
+```sh
+npm run benchmark:wasm-thumbnail -- --out /tmp/mail-canvas-wasm-thumbnail.json --markdown-out /tmp/mail-canvas-wasm-thumbnail.md
+```
+
+它会构建 `demo/pkg`，启动本地 demo server，然后在 Playwright 页面里调用
+`createMailCanvasRenderer()` 和 `renderThumbnail()`。
+
+### 浏览器 WASM Wrapper
+
+demo 提供了浏览器产品层 wrapper：`demo/mail-canvas-browser.js`。
+
+```js
+const renderer = await createMailCanvasRenderer({
+  fonts: ["./assets/NotoSans-Regular.ttf", "./assets/NotoSans-Bold.ttf"],
+  limits: {
+    maxAssetBytes: 10 * 1024 * 1024,
+    maxTotalAssetBytes: 64 * 1024 * 1024,
+    maxAssetCount: 128,
+  },
+});
+
+const result = await renderer.renderThumbnail({
+  html,
+  width: 800,
+  height: 1200,
+  scale: 1,
+  baseUrl: window.location.href,
+});
+```
+
+这个 wrapper 负责 worker 生命周期、字体注册、链接资源抓取、URL 去重、资源限制和
+diagnostics 解析。demo app 不再直接调用 raw wasm-bindgen API。
 
 ### 开发检查
 

@@ -114,15 +114,36 @@ impl WasmRenderer {
         scale: f32,
         base_url: &str,
     ) -> Result<Uint8Array, JsValue> {
-        let rendered = self
-            .render_with_request(build_request(
-                html,
-                width,
-                viewport_height,
-                scale,
-                parse_optional_url(base_url)?,
-            ))
-            .map_err(js_error)?;
+        self.render_png_with_base_url_and_max_height(
+            html,
+            width,
+            viewport_height,
+            scale,
+            base_url,
+            0,
+        )
+    }
+
+    pub fn render_png_with_base_url_and_max_height(
+        &mut self,
+        html: &str,
+        width: u32,
+        viewport_height: u32,
+        scale: f32,
+        base_url: &str,
+        max_height: u32,
+    ) -> Result<Uint8Array, JsValue> {
+        let mut request = build_request(
+            html,
+            width,
+            viewport_height,
+            scale,
+            parse_optional_url(base_url)?,
+        );
+        if max_height > 0 {
+            request.max_height = Some(max_height);
+        }
+        let rendered = self.render_with_request(request).map_err(js_error)?;
         Ok(Uint8Array::from(rendered.png.as_slice()))
     }
 
