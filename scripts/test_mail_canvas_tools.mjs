@@ -16,11 +16,11 @@ async function main() {
   run(['check', BASIC_HTML, '--out-dir', path.join(WORK_DIR, 'check'), '--warnings-json', path.join(WORK_DIR, 'check', 'warnings.json')]);
   await assertFile(path.join(WORK_DIR, 'check', 'warnings.json'));
 
-  run(['preview', BASIC_HTML, '--out-dir', path.join(WORK_DIR, 'preview')]);
+  run(['preview', BASIC_HTML, '--out-dir', path.join(WORK_DIR, 'preview'), '--profile', 'desktop-800']);
   await assertFile(path.join(WORK_DIR, 'preview', 'preview.png'));
   await assertFile(path.join(WORK_DIR, 'preview', 'warnings.json'));
 
-  run(['diff', BASIC_HTML, BASIC_HTML, '--out', path.join(WORK_DIR, 'diff')]);
+  run(['diff', BASIC_HTML, BASIC_HTML, '--out', path.join(WORK_DIR, 'diff'), '--profile', 'generic']);
   await assertFile(path.join(WORK_DIR, 'diff', 'side-by-side.png'));
   const diffReport = JSON.parse(await readFile(path.join(WORK_DIR, 'diff', 'report.json'), 'utf8'));
   if (diffReport.diffPixels !== 0) {
@@ -35,8 +35,8 @@ async function main() {
     throw new Error('expected missing snapshot baseline to be reported');
   }
 
-  run(['snapshot', path.join(ROOT_DIR, 'examples', '*.html'), '--baseline', path.join(WORK_DIR, 'snapshots'), '--update']);
-  run(['snapshot', path.join(ROOT_DIR, 'examples', '*.html'), '--baseline', path.join(WORK_DIR, 'snapshots')]);
+  run(['snapshot', path.join(ROOT_DIR, 'examples', '*.html'), '--baseline', path.join(WORK_DIR, 'snapshots'), '--update', '--profile', 'mobile-375']);
+  run(['snapshot', path.join(ROOT_DIR, 'examples', '*.html'), '--baseline', path.join(WORK_DIR, 'snapshots'), '--profile', 'mobile-375']);
   await assertFile(path.join(WORK_DIR, 'snapshots', 'manifest.json'));
 
   console.log('mail-canvas tools smoke test passed');

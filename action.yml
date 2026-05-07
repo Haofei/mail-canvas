@@ -1,0 +1,99 @@
+name: MailCanvas QA
+description: Render, diff, snapshot, or check email HTML with MailCanvas.
+
+inputs:
+  command:
+    description: Tool command to run: check, diff, or snapshot.
+    required: false
+    default: check
+  html:
+    description: HTML file for check mode.
+    required: false
+  before:
+    description: Before HTML file for diff mode.
+    required: false
+  after:
+    description: After HTML file for diff mode.
+    required: false
+  patterns:
+    description: Space-separated HTML files, directories, or globs for snapshot mode.
+    required: false
+    default: ""
+  baseline:
+    description: Snapshot baseline directory.
+    required: false
+    default: snapshots
+  out:
+    description: Diff/check output directory.
+    required: false
+    default: mail-canvas-report
+  width:
+    description: CSS viewport width.
+    required: false
+    default: "800"
+  profile:
+    description: Viewport profile: generic, desktop-800, mobile-375, or thumbnail.
+    required: false
+    default: thumbnail
+  update:
+    description: Update snapshot baselines.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Install npm dependencies
+      shell: bash
+      run: npm ci
+    - name: Build MailCanvas CLI
+      shell: bash
+      run: cargo build -p mail-canvas-cli
+    - name: Run MailCanvas QA command
+      shell: bash
+      env:
+        MAIL_CANVAS_COMMAND: ${{ inputs.command }}
+        MAIL_CANVAS_HTML: ${{ inputs.html }}
+        MAIL_CANVAS_BEFORE: ${{ inputs.before }}
+        MAIL_CANVAS_AFTER: ${{ inputs.after }}
+        MAIL_CANVAS_PATTERNS: ${{ inputs.patterns }}
+        MAIL_CANVAS_BASELINE: ${{ inputs.baseline }}
+        MAIL_CANVAS_OUT: ${{ inputs.out }}
+        MAIL_CANVAS_WIDTH: ${{ inputs.width }}
+        MAIL_CANVAS_PROFILE: ${{ inputs.profile }}
+        MAIL_CANVAS_UPDATE: ${{ inputs.update }}
+      run: |
+        set -euo pipefail
+        command="$MAIL_CANVAS_COMMAND"
+        common=(--profile "$MAIL_CANVAS_PROFILE" --width "$MAIL_CANVAS_WIDTH")
+        case "$command" in
+          check)
+            if [ -z "$MAIL_CANVAS_HTML" ]; then
+              echo "html input is required for check mode" >&2
+              exit 2
+            fi
+            node scripts/mail_canvas_tools.mjs check "$MAIL_CANVAS_HTML" --out-dir "$MAIL_CANVAS_OUT" --warnings-json "$MAIL_CANVAS_OUT/warnings.json" "${common[@]}"
+            ;;
+          diff)
+            if [ -z "$MAIL_CANVAS_BEFORE" ] || [ -z "$MAIL_CANVAS_AFTER" ]; then
+              echo "before and after inputs are required for diff mode" >&2
+              exit 2
+            fi
+            node scripts/mail_canvas_tools.mjs diff "$MAIL_CANVAS_BEFORE" "$MAIL_CANVAS_AFTER" --out "$MAIL_CANVAS_OUT" "${common[@]}"
+            ;;
+          snapshot)
+            if [ -z "$MAIL_CANVAS_PATTERNS" ]; then
+              echo "patterns input is required for snapshot mode" >&2
+              exit 2
+            fi
+            update_arg=()
+            if [ "$MAIL_CANVAS_UPDATE" = "true" ]; then
+              update_arg=(--update)
+            fi
+            read -r -a patterns <<< "$MAIL_CANVAS_PATTERNS"
+            node scripts/mail_canvas_tools.mjs snapshot "${patterns[@]}" --baseline "$MAIL_CANVAS_BASELINE" "${update_arg[@]}" "${common[@]}"
+            ;;
+          *)
+            echo "unknown command: $command" >&2
+            exit 2
+            ;;
+        esac

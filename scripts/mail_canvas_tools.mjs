@@ -60,6 +60,7 @@ Common options:
   --width <px>              CSS viewport width, default ${DEFAULT_WIDTH}
   --viewport-height <px>    initial CSS viewport height, default ${DEFAULT_VIEWPORT_HEIGHT}
   --scale <n>               output device scale, default ${DEFAULT_SCALE}
+  --profile <name>          generic, desktop-800, mobile-375, or thumbnail
   --font-dir <dir>          deterministic font directory, default fixtures/fonts
   --renderer <path>         mail-canvas binary path, default target/debug/mail-canvas
   --allow-remote            allow remote resources
@@ -77,7 +78,9 @@ function parseCommon(rest, positionalCount) {
     allowRemote: false,
     allowHttp: false,
     maxHeight: null,
+    profile: 'thumbnail',
   };
+  const explicit = new Set();
   const positional = [];
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
@@ -92,12 +95,18 @@ function parseCommon(rest, positionalCount) {
         break;
       case '--width':
         options.width = positiveInt(next(), '--width');
+        explicit.add('width');
         break;
       case '--viewport-height':
         options.viewportHeight = positiveInt(next(), '--viewport-height');
+        explicit.add('viewportHeight');
         break;
       case '--scale':
         options.scale = positiveNumber(next(), '--scale');
+        explicit.add('scale');
+        break;
+      case '--profile':
+        applyProfile(options, next(), explicit);
         break;
       case '--font-dir':
         options.fontDir = path.resolve(next());
@@ -130,6 +139,23 @@ function parseCommon(rest, positionalCount) {
     }
   }
   return { options, args, commandOptions };
+}
+
+function applyProfile(options, profile, explicit) {
+  const profiles = {
+    generic: { width: 600, viewportHeight: 800, scale: 1 },
+    'desktop-800': { width: 800, viewportHeight: 1200, scale: 1 },
+    'mobile-375': { width: 375, viewportHeight: 900, scale: 1 },
+    thumbnail: { width: 800, viewportHeight: 1200, scale: 1 },
+  };
+  const preset = profiles[profile];
+  if (!preset) {
+    throw new Error(`unknown --profile ${profile}; expected ${Object.keys(profiles).join(', ')}`);
+  }
+  options.profile = profile;
+  if (!explicit.has('width')) options.width = preset.width;
+  if (!explicit.has('viewportHeight')) options.viewportHeight = preset.viewportHeight;
+  if (!explicit.has('scale')) options.scale = preset.scale;
 }
 
 function nextMaybe(rest, index) {
@@ -327,6 +353,7 @@ async function diff(rest) {
   await writeTriptych([paths.before, paths.after, paths.diff], paths.sideBySide);
   const report = {
     generatedAt: new Date().toISOString(),
+    profile: options.profile,
     width: options.width,
     scale: options.scale,
     before: path.resolve(args[0]),
@@ -402,6 +429,7 @@ async function snapshot(rest) {
   }
   const manifest = {
     generatedAt: new Date().toISOString(),
+    profile: options.profile,
     width: options.width,
     scale: options.scale,
     results,

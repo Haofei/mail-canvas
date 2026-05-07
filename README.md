@@ -106,6 +106,11 @@ npm run preview -- examples/basic.html
 npm run preview -- examples/basic.html --watch --port 4177
 ```
 
+Developer tool commands accept `--profile generic`, `--profile desktop-800`,
+`--profile mobile-375`, and `--profile thumbnail` as practical viewport presets.
+Explicit `--width`, `--viewport-height`, and `--scale` values override the
+selected profile.
+
 Generate a MailCanvas-only before/after visual diff:
 
 ```sh
@@ -132,6 +137,17 @@ npm run check -- examples/basic.html --warnings-json /tmp/basic.warnings.json
 Use the Playwright comparison commands below when you need Chromium as the
 oracle; use these tools when you need fast local rendering, MailCanvas-only
 diffs, or snapshot gating.
+
+The repository also exposes a composite GitHub Action:
+
+```yaml
+- uses: Haofei/mail-canvas@main
+  with:
+    command: snapshot
+    patterns: "templates/**/*.html"
+    baseline: snapshots
+    profile: desktop-800
+```
 
 Resource policy defaults:
 
@@ -627,6 +643,10 @@ npm run preview -- examples/basic.html
 npm run preview -- examples/basic.html --watch --port 4177
 ```
 
+这些工具命令支持 `--profile generic`、`--profile desktop-800`、
+`--profile mobile-375` 和 `--profile thumbnail` 作为实用 viewport preset。
+显式传入的 `--width`、`--viewport-height` 和 `--scale` 会覆盖 profile。
+
 生成 MailCanvas-only 的 before/after 视觉 diff：
 
 ```sh
@@ -652,6 +672,17 @@ npm run check -- examples/basic.html --warnings-json /tmp/basic.warnings.json
 `check` 在出现 renderer warning 或资源加载失败时返回非零退出码。需要 Chromium
 作为 oracle 时继续用下面的 Playwright 对比命令；需要快速本地渲染、MailCanvas
 内部 diff 或 snapshot gate 时用这些工具。
+
+仓库也提供 composite GitHub Action：
+
+```yaml
+- uses: Haofei/mail-canvas@main
+  with:
+    command: snapshot
+    patterns: "templates/**/*.html"
+    baseline: snapshots
+    profile: desktop-800
+```
 
 ### Rust API
 
