@@ -93,6 +93,46 @@ The diagnostics JSON currently includes:
 - `image_diagnostics`: image/background intrinsic size, target rect, and crop
   diagnostics
 
+### Developer Preview, Diff, Snapshot, and Check
+
+The product-facing developer tools live in `scripts/mail_canvas_tools.mjs` and
+wrap the native CLI without adding Chromium to the MailCanvas render path.
+
+Render once, or run a lightweight local preview server that re-renders when the
+HTML directory changes:
+
+```sh
+npm run preview -- examples/basic.html
+npm run preview -- examples/basic.html --watch --port 4177
+```
+
+Generate a MailCanvas-only before/after visual diff:
+
+```sh
+npm run diff -- before.html after.html --out /tmp/mail-canvas-diff
+```
+
+This writes `before.png`, `after.png`, `diff.png`, `side-by-side.png`,
+`report.json`, and `report.md`.
+
+Create or check local snapshot baselines for CI:
+
+```sh
+npm run snapshot -- "templates/**/*.html" --baseline snapshots --update
+npm run snapshot -- "templates/**/*.html" --baseline snapshots
+```
+
+Run a fast diagnostics check for one template:
+
+```sh
+npm run check -- examples/basic.html --warnings-json /tmp/basic.warnings.json
+```
+
+`check` exits non-zero when renderer warnings or failed assets are present.
+Use the Playwright comparison commands below when you need Chromium as the
+oracle; use these tools when you need fast local rendering, MailCanvas-only
+diffs, or snapshot gating.
+
 Resource policy defaults:
 
 - per-resource bytes: `10 MiB`
@@ -486,6 +526,7 @@ JSON and optional Markdown timing output.
 cargo fmt --check
 cargo test
 cargo clippy --all-targets --all-features
+npm run test:tools
 npm run test:wasm-thumbnail
 npm run test:visual
 ```
@@ -573,6 +614,44 @@ cargo run -p mail-canvas-cli -- \
 - `console_messages`: CLI 为兼容性保留的 stderr 文本消息
 - `image_diagnostics`: image/background 的 intrinsic size、目标 rect 和 crop
   诊断
+
+### 本地预览、Diff、Snapshot 和 Check
+
+面向日常开发的工具入口在 `scripts/mail_canvas_tools.mjs`。它复用 native CLI，
+不会把 Chromium 加入 MailCanvas 的渲染链路。
+
+单次渲染预览，或启动一个轻量本地预览服务，在 HTML 目录变化时自动重新渲染：
+
+```sh
+npm run preview -- examples/basic.html
+npm run preview -- examples/basic.html --watch --port 4177
+```
+
+生成 MailCanvas-only 的 before/after 视觉 diff：
+
+```sh
+npm run diff -- before.html after.html --out /tmp/mail-canvas-diff
+```
+
+输出包括 `before.png`、`after.png`、`diff.png`、`side-by-side.png`、
+`report.json` 和 `report.md`。
+
+为 CI 创建或检查本地 snapshot baseline：
+
+```sh
+npm run snapshot -- "templates/**/*.html" --baseline snapshots --update
+npm run snapshot -- "templates/**/*.html" --baseline snapshots
+```
+
+快速检查一个模板的 renderer warnings 和资源失败：
+
+```sh
+npm run check -- examples/basic.html --warnings-json /tmp/basic.warnings.json
+```
+
+`check` 在出现 renderer warning 或资源加载失败时返回非零退出码。需要 Chromium
+作为 oracle 时继续用下面的 Playwright 对比命令；需要快速本地渲染、MailCanvas
+内部 diff 或 snapshot gate 时用这些工具。
 
 ### Rust API
 
@@ -861,6 +940,7 @@ thumbnail 产品层；底层 `WasmRenderer` 只是实现细节。
 cargo fmt --check
 cargo test
 cargo clippy --all-targets --all-features
+npm run test:tools
 npm run test:wasm-thumbnail
 npm run test:visual
 ```

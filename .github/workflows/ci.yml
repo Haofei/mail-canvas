@@ -47,6 +47,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Generate corpus manifest
         run: npm run corpus:manifest
+      - name: Run MailCanvas tools smoke test
+        run: npm run test:tools
       - name: Build browser WASM bundle
         run: npm run build:browser
       - name: Run WASM thumbnail smoke test
