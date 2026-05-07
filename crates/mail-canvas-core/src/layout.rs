@@ -16,26 +16,19 @@ use crate::resource::ResourceProvider;
 use crate::style::{
     AlignItems, BorderCollapse, BoxSizing, Clear, Display, FlexDirection, FlexWrap, FloatSide,
     JustifyContent, Length, ListStyleType, PlacedFloat, Position, Rect, Style, TextAlign, TextSpan,
-    TextWrap, VerticalAlign, parse_length, style_for_node_with_fonts,
+    TextWrap, VerticalAlign, parse_length, style_for_node, style_for_node_with_fonts,
 };
 use crate::table::{
     TableGrid, build_table_grid, column_offset, distribute_fixed_table_column_widths,
     length_is_intrinsic_fixed, spanned_width,
 };
 use crate::text::{
-    blink_font_descent_from_db, resolved_line_height_from_db, resolved_line_height_from_run_db,
-    wrap_width_adjustment,
+    append_inline_spans, append_text_span, blink_font_descent_from_db, is_collapsible_whitespace,
+    normalize_text_spans, resolved_line_height_from_db, resolved_line_height_from_run_db,
+    rich_text_style_spans, spans_text, text_content, text_spans_are_only_collapsible_whitespace,
+    text_spans_match_style, wrap_width_adjustment,
 };
-use crate::{
-    HARD_BREAK, ImageData, align_block_child_to_legacy_align_attribute,
-    align_table_child_to_parent_text, append_inline_spans, append_text_span,
-    block_allows_trailing_margin_collapse, can_collapse_sibling_margin,
-    cell_contains_only_intrinsic_fixed_replaced_content, flush_inline_row, inline_can_flatten,
-    inline_flow_line_advance, inline_flow_uses_bottom_edge_baseline, inline_style_has_own_box,
-    is_collapsible_whitespace, is_inline_flow, normalize_text_spans, rich_text_style_spans,
-    spans_text, table_cell_is_spacer, text_content, text_spans_are_only_collapsible_whitespace,
-    text_spans_match_style, translate_layout, translate_layout_children,
-};
+use crate::{HARD_BREAK, ImageData};
 
 pub(crate) struct RenderLimits {
     max_layout_depth: usize,
@@ -2207,4 +2200,239 @@ pub(crate) fn normalize_preview_text(text: &str) -> String {
         .chars()
         .take(120)
         .collect()
+}
+
+fn translate_layout_children(layout: &mut LayoutBox, dx: f32, dy: f32) {
+    for child in &mut layout.children {
+        translate_layout(child, dx, dy);
+    }
+}
+fn translate_layout(layout: &mut LayoutBox, dx: f32, dy: f32) {
+    layout.rect.x += dx;
+    layout.rect.y += dy;
+    for child in &mut layout.children {
+        translate_layout(child, dx, dy);
+    }
+}
+fn is_inline_flow(tag: &str, style: &Style) -> bool {
+    matches!(style.display, Display::InlineBlock | Display::InlineTable)
+        || (style.display == Display::Inline && (tag == "img" || inline_style_has_own_box(style)))
+}
+fn inline_flow_uses_bottom_edge_baseline(layout: &LayoutBox) -> bool {
+    matches!(layout.kind, LayoutKind::Image(_)) || !layout_contains_line_box(layout)
+}
+fn inline_flow_line_advance(
+    layout: &LayoutBox,
+    advance: f32,
+    parent_line_height: f32,
+    db: &fontdb::Database,
+) -> f32 {
+    match layout.style.display {
+        Display::Inline if layout_contains_line_box(layout) => {
+            resolved_line_height_from_db(db, &layout.style)
+        }
+        Display::InlineBlock | Display::InlineTable
+            if !matches!(layout.kind, LayoutKind::Image(_)) =>
+        {
+            layout.style.margin.vertical() + layout.rect.height.max(parent_line_height)
+        }
+        _ => advance,
+    }
+}
+fn layout_contains_line_box(layout: &LayoutBox) -> bool {
+    matches!(layout.kind, LayoutKind::Text(_) | LayoutKind::RichText(_))
+        || layout.children.iter().any(layout_contains_line_box)
+}
+fn inline_style_has_own_box(style: &Style) -> bool {
+    style.background.is_some()
+        || style.background_image.is_some()
+        || !style.padding.is_zero()
+        || style.border.max_width() > 0.0
+        || style.border_radius > 0.0
+}
+fn flush_inline_row(
+    row: &mut Vec<LayoutBox>,
+    row_width: &mut f32,
+    row_height: &mut f32,
+    style: &Style,
+    containing_width: f32,
+    cursor_y: &mut f32,
+    children: &mut Vec<LayoutBox>,
+) -> bool {
+    if row.is_empty() {
+        return false;
+    }
+
+    let free = (containing_width - *row_width).max(0.0);
+    let dx = match style.text_align {
+        TextAlign::Left => 0.0,
+        TextAlign::Center => free / 2.0,
+        TextAlign::Right => free,
+    };
+    for mut child in row.drain(..) {
+        if dx > 0.0 {
+            translate_layout(&mut child, dx, 0.0);
+        }
+        children.push(child);
+    }
+    *cursor_y += *row_height;
+    *row_width = 0.0;
+    *row_height = 0.0;
+    true
+}
+fn align_table_child_to_parent_text(
+    child: &mut LayoutBox,
+    parent_style: &Style,
+    container_x: f32,
+    container_width: f32,
+) {
+    if !matches!(child.kind, LayoutKind::Table)
+        || child.style.margin_left_auto
+        || child.style.margin_right_auto
+    {
+        return;
+    }
+
+    let free = (container_width - child.rect.width).max(0.0);
+    let target_x = match parent_style.text_align {
+        TextAlign::Center => container_x + free / 2.0,
+        TextAlign::Right => container_x + free,
+        TextAlign::Left => return,
+    };
+    let dx = target_x - child.rect.x;
+    if dx.abs() > f32::EPSILON {
+        translate_layout(child, dx, 0.0);
+    }
+}
+fn align_block_child_to_legacy_align_attribute(
+    child: &mut LayoutBox,
+    parent_style: &Style,
+    container_x: f32,
+    container_width: f32,
+) {
+    if !parent_style.align_from_attribute || !legacy_align_attribute_applies_to_child(child) {
+        return;
+    }
+
+    let free = (container_width - child.rect.width).max(0.0);
+    let target_x = match parent_style.text_align {
+        TextAlign::Center => container_x + free / 2.0,
+        TextAlign::Right => container_x + free,
+        TextAlign::Left => return,
+    };
+    let dx = target_x - child.rect.x;
+    if dx.abs() > f32::EPSILON {
+        translate_layout(child, dx, 0.0);
+    }
+}
+fn legacy_align_attribute_applies_to_child(child: &LayoutBox) -> bool {
+    match child.kind {
+        LayoutKind::Image(_) => true,
+        LayoutKind::Block => !child.style.margin_left_auto && !child.style.margin_right_auto,
+        _ => false,
+    }
+}
+fn can_collapse_sibling_margin(display: Display) -> bool {
+    matches!(display, Display::Block | Display::Table)
+}
+fn block_allows_trailing_margin_collapse(style: &Style) -> bool {
+    style.height.is_none()
+        && style.min_height.is_none()
+        && style.border.top <= 0.0
+        && style.border.bottom <= 0.0
+        && style.padding.top <= 0.0
+        && style.padding.bottom <= 0.0
+}
+fn table_cell_is_spacer(node: &NodeRef) -> bool {
+    let text = text_content(node);
+    text.chars().any(|ch| ch == '\u{00a0}')
+        && text
+            .chars()
+            .all(|ch| ch == '\u{00a0}' || is_collapsible_whitespace(ch))
+}
+fn cell_contains_only_intrinsic_fixed_replaced_content(node: &NodeRef, style: &Style) -> bool {
+    let mut saw_replaced = false;
+    cell_contains_only_intrinsic_fixed_replaced_content_inner(node, style, &mut saw_replaced)
+        && saw_replaced
+}
+fn cell_contains_only_intrinsic_fixed_replaced_content_inner(
+    node: &NodeRef,
+    style: &Style,
+    saw_replaced: &mut bool,
+) -> bool {
+    for child in node.children() {
+        if let Some(text) = child.as_text() {
+            if !text.borrow().chars().all(is_collapsible_whitespace) {
+                return false;
+            }
+            continue;
+        }
+
+        let Some(tag) = element_tag(&child) else {
+            continue;
+        };
+        if is_metadata_tag(&tag) || tag == "br" {
+            continue;
+        }
+        let child_style = style_for_node(&child, style);
+        if child_style.display == Display::None {
+            continue;
+        }
+        if tag == "img" {
+            *saw_replaced = true;
+            if child_style
+                .width
+                .is_some_and(|width| matches!(width, Length::Percent(_)))
+            {
+                return false;
+            }
+            continue;
+        }
+        if !matches!(child_style.display, Display::Inline) {
+            return false;
+        }
+        if !cell_contains_only_intrinsic_fixed_replaced_content_inner(
+            &child,
+            &child_style,
+            saw_replaced,
+        ) {
+            return false;
+        }
+    }
+    true
+}
+fn inline_can_flatten(node: &NodeRef, style: &Style) -> bool {
+    for child in node.children() {
+        if child.as_text().is_some() {
+            continue;
+        }
+
+        let Some(tag) = element_tag(&child) else {
+            continue;
+        };
+        if is_metadata_tag(&tag) || tag == "br" {
+            continue;
+        }
+        if tag == "img" {
+            return false;
+        }
+
+        let child_style = style_for_node(&child, style);
+        match child_style.display {
+            Display::None => {}
+            Display::Inline => {
+                if !inline_can_flatten(&child, &child_style) {
+                    return false;
+                }
+            }
+            Display::Block
+            | Display::InlineBlock
+            | Display::InlineTable
+            | Display::Flex
+            | Display::Table
+            | Display::TableRow
+            | Display::TableCell => return false,
+        }
+    }
+    true
 }

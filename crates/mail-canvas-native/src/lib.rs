@@ -78,7 +78,7 @@ pub fn build_document_from_files(
             Some(url::Url::parse(raw).with_context(|| format!("invalid --base-url {raw}"))?)
         }
         None => {
-            let dir = html_path.parent().unwrap_or_else(|| Path::new("."));
+            let dir = html_parent_dir(html_path);
             let dir = dir.canonicalize().with_context(|| {
                 format!("failed to resolve HTML parent directory: {}", dir.display())
             })?;
@@ -95,6 +95,13 @@ pub fn build_document_from_files(
         html: build_document(&html, css.as_deref(), base.as_ref(), width),
         base_url: base,
     })
+}
+
+fn html_parent_dir(html_path: &Path) -> &Path {
+    html_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
 }
 
 impl EmailRenderer for MailCanvasRenderer {
@@ -250,4 +257,22 @@ fn scaled_dimension(value: u32, scale: f32, label: &str) -> Result<u32> {
         );
     }
     Ok(scaled.ceil().max(1.0) as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bare_html_filename_uses_current_directory_as_base_url() {
+        assert_eq!(html_parent_dir(Path::new("email.html")), Path::new("."));
+    }
+
+    #[test]
+    fn nested_html_filename_uses_explicit_parent_directory() {
+        assert_eq!(
+            html_parent_dir(Path::new("templates/email.html")),
+            Path::new("templates")
+        );
+    }
 }

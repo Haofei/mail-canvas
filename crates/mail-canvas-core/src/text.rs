@@ -8,12 +8,16 @@
 use cosmic_text::{
     Attrs, CacheKeyFlags, Family as FontFamily, Style as FontStyle, Weight as FontWeight,
 };
+use kuchiki::NodeRef;
 
+use crate::HARD_BREAK;
+use crate::dom::{attr, element_tag, is_metadata_tag};
 use crate::font_catalog::{
     generic_font_family as generic_font_family_name, normalized_font_family,
 };
-
-use super::{Style, TextRunStyle, TextSpan, parse_css_length};
+use crate::style::{
+    Display, Style, TextRunStyle, TextSpan, TextTransform, parse_css_length, style_for_node,
+};
 
 const BLINK_WEB_STANDARD_ASCENT_ADJUSTMENT_FACTOR: f32 = 0.15;
 const BLINK_WEB_STANDARD_ASCENT_ADJUSTMENT_BIAS: f32 = 0.5;
@@ -342,4 +346,235 @@ pub(super) fn rich_text_baseline_leading_offset(spans: &[TextSpan], style: &Styl
         return 0.0;
     }
     ((style.line_height - style.font_size).max(0.0) * RICH_TEXT_BASELINE_LEADING_FACTOR).round()
+}
+
+pub(crate) fn text_content(node: &NodeRef) -> String {
+    if let Some(text) = node.as_text() {
+        return text.borrow().to_string();
+    }
+
+    let Some(tag) = element_tag(node) else {
+        return String::new();
+    };
+    if is_metadata_tag(&tag) {
+        return String::new();
+    }
+    if tag == "br" {
+        return HARD_BREAK.to_string();
+    }
+    if tag == "img" {
+        return String::new();
+    }
+
+    let mut out = String::new();
+    for child in node.children() {
+        append_text(&mut out, &text_content(&child));
+    }
+    out
+}
+fn append_text(out: &mut String, text: &str) {
+    out.push_str(text);
+}
+pub(crate) fn append_text_span(out: &mut Vec<TextSpan>, text: &str, style: &Style) {
+    if !text.is_empty() {
+        out.push(TextSpan::from_style(text.to_string(), style));
+    }
+}
+pub(crate) fn text_spans_are_only_collapsible_whitespace(spans: &[TextSpan]) -> bool {
+    spans.is_empty()
+        || spans
+            .iter()
+            .all(|span| span.text.chars().all(is_collapsible_whitespace))
+}
+pub(crate) fn append_inline_spans(node: &NodeRef, style: &Style, out: &mut Vec<TextSpan>) {
+    if let Some(text) = node.as_text() {
+        append_text_span(out, &text.borrow(), style);
+        return;
+    }
+
+    let Some(tag) = element_tag(node) else {
+        return;
+    };
+    if is_metadata_tag(&tag) {
+        return;
+    }
+    if tag == "br" {
+        append_text_span(out, &HARD_BREAK.to_string(), style);
+        return;
+    }
+    if tag == "img" {
+        append_text_span(out, &attr(node, "alt").unwrap_or_default(), style);
+        return;
+    }
+
+    for child in node.children() {
+        if child.as_text().is_some() {
+            append_inline_spans(&child, style, out);
+            continue;
+        }
+        let Some(child_tag) = element_tag(&child) else {
+            continue;
+        };
+        if is_metadata_tag(&child_tag) {
+            continue;
+        }
+        let child_style = style_for_node(&child, style);
+        if child_style.display != Display::None {
+            append_inline_spans(&child, &child_style, out);
+        }
+    }
+}
+#[cfg(test)]
+pub(crate) fn normalize_text(text: &str) -> String {
+    let style = Style::initial();
+    spans_text(&normalize_text_spans(&[TextSpan::from_style(
+        text.to_string(),
+        &style,
+    )]))
+}
+pub(crate) fn normalize_text_spans(spans: &[TextSpan]) -> Vec<TextSpan> {
+    let mut out = Vec::new();
+    let mut pending_space_style: Option<TextRunStyle> = None;
+
+    for span in spans {
+        let mut segment = String::new();
+        for ch in span.text.chars() {
+            if ch == HARD_BREAK {
+                while segment.ends_with(' ') {
+                    segment.pop();
+                }
+                push_text_span_segment(&mut out, segment, &span.style);
+                trim_trailing_span_space(&mut out);
+                out.push(TextSpan::with_run_style(
+                    "\n".to_string(),
+                    span.style.clone(),
+                ));
+                segment = String::new();
+                pending_space_style = None;
+            } else if is_collapsible_whitespace(ch) {
+                pending_space_style.get_or_insert_with(|| span.style.clone());
+            } else {
+                let at_line_start_after_break =
+                    segment.is_empty() && rich_text_ends_with_newline(&out);
+                if let Some(space_style) = pending_space_style.take() {
+                    if (!out.is_empty() || !segment.is_empty())
+                        && !segment.ends_with('\n')
+                        && !at_line_start_after_break
+                    {
+                        if space_style == span.style {
+                            segment.push(' ');
+                        } else {
+                            push_text_span_segment(&mut out, segment, &span.style);
+                            segment = String::new();
+                            push_text_span_segment(&mut out, " ".to_string(), &space_style);
+                        }
+                    }
+                }
+                segment.push(ch);
+            }
+        }
+        push_text_span_segment(&mut out, segment, &span.style);
+    }
+
+    trim_leading_span_space(&mut out);
+    trim_trailing_span_space(&mut out);
+    out
+}
+fn push_text_span_segment(out: &mut Vec<TextSpan>, text: String, style: &TextRunStyle) {
+    if text.is_empty() {
+        return;
+    }
+    let text = apply_text_transform(&text, style.text_transform);
+    if !text.is_empty() {
+        if let Some(last) = out.last_mut() {
+            if last.style == *style {
+                last.text.push_str(&text);
+                return;
+            }
+        }
+        out.push(TextSpan::with_run_style(text, style.clone()));
+    }
+}
+fn trim_leading_span_space(spans: &mut Vec<TextSpan>) {
+    while let Some(first) = spans.first_mut() {
+        let trimmed = first
+            .text
+            .trim_start_matches(|ch: char| ch != '\n' && is_collapsible_whitespace(ch))
+            .to_string();
+        first.text = trimmed;
+        if first.text.is_empty() {
+            spans.remove(0);
+        } else {
+            break;
+        }
+    }
+}
+fn trim_trailing_span_space(spans: &mut Vec<TextSpan>) {
+    while let Some(last) = spans.last_mut() {
+        let trimmed = last
+            .text
+            .trim_end_matches(|ch: char| ch != '\n' && is_collapsible_whitespace(ch))
+            .to_string();
+        last.text = trimmed;
+        if last.text.is_empty() {
+            spans.pop();
+        } else {
+            break;
+        }
+    }
+}
+fn rich_text_ends_with_newline(spans: &[TextSpan]) -> bool {
+    spans.last().is_some_and(|span| span.text.ends_with('\n'))
+}
+pub(crate) fn is_collapsible_whitespace(ch: char) -> bool {
+    ch != '\u{00a0}' && ch.is_whitespace()
+}
+pub(crate) fn spans_text(spans: &[TextSpan]) -> String {
+    spans.iter().map(|span| span.text.as_str()).collect()
+}
+pub(crate) fn text_spans_match_style(spans: &[TextSpan], style: &Style) -> bool {
+    let parent_style = TextRunStyle::from_style(style);
+    spans.iter().all(|span| span.style == parent_style)
+}
+fn apply_text_transform(text: &str, transform: TextTransform) -> String {
+    match transform {
+        TextTransform::None => text.to_string(),
+        TextTransform::Uppercase => text.to_uppercase(),
+        TextTransform::Lowercase => text.to_lowercase(),
+        TextTransform::Capitalize => {
+            let mut out = String::with_capacity(text.len());
+            let mut at_word_start = true;
+            for ch in text.chars() {
+                if ch.is_alphanumeric() {
+                    if at_word_start {
+                        out.extend(ch.to_uppercase());
+                    } else {
+                        out.extend(ch.to_lowercase());
+                    }
+                    at_word_start = false;
+                } else {
+                    out.push(ch);
+                    at_word_start = ch.is_whitespace();
+                }
+            }
+            out
+        }
+    }
+}
+
+pub(crate) fn rich_text_style_spans<'a>(
+    spans: &'a [TextSpan],
+    db: &fontdb::Database,
+    scale: f32,
+    parent_style: &'a Style,
+) -> Vec<(&'a str, Attrs<'a>)> {
+    spans
+        .iter()
+        .map(|span| {
+            (
+                span.text.as_str(),
+                span.style.text_attrs_for_span(db, scale, parent_style),
+            )
+        })
+        .collect()
 }

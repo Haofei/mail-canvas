@@ -1,18 +1,17 @@
 use cosmic_text::{Buffer, FontSystem, Metrics, Shaping};
 use serde::Serialize;
 
+use crate::ImageData;
 use crate::api::RenderDebugOptions;
 use crate::layout::{LayoutBox, LayoutKind, normalize_preview_text};
+use crate::paint::{background_tile_size, object_fit_rect, positioned_offset};
 use crate::style::{
     BackgroundPosition, BackgroundRepeat, BackgroundSize, Display, ObjectFit, ObjectPosition,
     PositionAxis, Rect, Style, TextAlign, VerticalAlign,
 };
 use crate::text::{
-    resolved_line_height_from_db, rich_text_baseline_leading_offset, wrap_width_adjustment,
-};
-use crate::{
-    ImageData, background_tile_size, object_fit_rect, positioned_offset, rich_text_style_spans,
-    spans_text,
+    resolved_line_height_from_db, rich_text_baseline_leading_offset, rich_text_style_spans,
+    spans_text, wrap_width_adjustment,
 };
 
 #[derive(Debug, Clone, Serialize)]
