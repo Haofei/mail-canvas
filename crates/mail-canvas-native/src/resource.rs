@@ -407,18 +407,20 @@ fn load_file_url(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
     let path = url
         .to_file_path()
         .map_err(|()| anyhow!("invalid file URL: {url}"))?;
-    if let Some(base) = &policy.base_url {
-        if base.scheme() == "file" {
-            if let Ok(root) = base.to_file_path() {
-                let root = root.canonicalize().unwrap_or(root);
-                let target = path.canonicalize().unwrap_or(path.clone());
-                if !target.starts_with(&root) {
-                    bail!(
-                        "file resource is outside the base directory: {}",
-                        target.display()
-                    );
-                }
-            }
+    let Some(base) = &policy.base_url else {
+        bail!("file resources require a file base URL");
+    };
+    if base.scheme() != "file" {
+        bail!("file resources require a file base URL");
+    }
+    if let Ok(root) = base.to_file_path() {
+        let root = root.canonicalize().unwrap_or(root);
+        let target = path.canonicalize().unwrap_or(path.clone());
+        if !target.starts_with(&root) {
+            bail!(
+                "file resource is outside the base directory: {}",
+                target.display()
+            );
         }
     }
     let bytes = fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
@@ -703,6 +705,44 @@ mod tests {
 
         let _ = fs::remove_file(image_path);
         let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn file_resources_require_file_base_url() {
+        let dir =
+            std::env::temp_dir().join(format!("mail-canvas-file-policy-{}", std::process::id()));
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let file_path = dir.join("asset.txt");
+        fs::write(&file_path, b"asset").expect("write asset");
+        let file_url = Url::from_file_path(&file_path).expect("file url");
+        let policy = test_policy();
+
+        let error = load_file_url(&file_url, &policy).expect_err("file base is required");
+
+        assert!(error.to_string().contains("file base URL"));
+        let _ = fs::remove_file(file_path);
+        let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn file_resources_stay_under_file_base_url() {
+        let root =
+            std::env::temp_dir().join(format!("mail-canvas-file-root-{}", std::process::id()));
+        let outside = std::env::temp_dir().join(format!(
+            "mail-canvas-file-outside-{}.txt",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("create root");
+        fs::write(&outside, b"outside").expect("write outside");
+        let mut policy = test_policy();
+        policy.base_url = Some(Url::from_directory_path(&root).expect("file base url"));
+        let outside_url = Url::from_file_path(&outside).expect("outside file url");
+
+        let error = load_file_url(&outside_url, &policy).expect_err("outside should be rejected");
+
+        assert!(error.to_string().contains("outside the base directory"));
+        let _ = fs::remove_file(outside);
+        let _ = fs::remove_dir(root);
     }
 
     #[test]
