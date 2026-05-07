@@ -40,6 +40,9 @@ function parseArgs(argv) {
     keep: false,
     expectations: null,
     fixtureFonts: false,
+    maxImageBytes: null,
+    maxDecodedPixels: null,
+    maxTotalResourceBytes: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -104,6 +107,15 @@ function parseArgs(argv) {
       case '--fixture-fonts':
         args.fixtureFonts = true;
         break;
+      case '--max-image-bytes':
+        args.maxImageBytes = Number.parseInt(next(), 10);
+        break;
+      case '--max-decoded-pixels':
+        args.maxDecodedPixels = Number.parseInt(next(), 10);
+        break;
+      case '--max-total-resource-bytes':
+        args.maxTotalResourceBytes = Number.parseInt(next(), 10);
+        break;
       default:
         throw new Error(`unknown argument: ${arg}`);
     }
@@ -114,6 +126,15 @@ function parseArgs(argv) {
   }
   if (!Number.isFinite(args.timeoutMs) || args.timeoutMs <= 0) {
     throw new Error('--timeout-ms must be a positive integer');
+  }
+  for (const [name, value] of [
+    ['--max-image-bytes', args.maxImageBytes],
+    ['--max-decoded-pixels', args.maxDecodedPixels],
+    ['--max-total-resource-bytes', args.maxTotalResourceBytes],
+  ]) {
+    if (value !== null && (!Number.isFinite(value) || value <= 0)) {
+      throw new Error(`${name} must be a positive integer`);
+    }
   }
   return args;
 }
@@ -340,6 +361,15 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
   if (args.allowRemote) {
     renderArgs.push('--allow-remote');
     renderArgs.push('--allow-http');
+  }
+  if (args.maxImageBytes !== null) {
+    renderArgs.push('--max-image-bytes', String(args.maxImageBytes));
+  }
+  if (args.maxDecodedPixels !== null) {
+    renderArgs.push('--max-decoded-pixels', String(args.maxDecodedPixels));
+  }
+  if (args.maxTotalResourceBytes !== null) {
+    renderArgs.push('--max-total-resource-bytes', String(args.maxTotalResourceBytes));
   }
   const render = spawnSync(renderer, renderArgs, {
     cwd: ROOT_DIR,

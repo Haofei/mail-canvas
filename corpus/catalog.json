@@ -1,8 +1,283 @@
 [
   {
+    "name": "beefree-confirm-and-you-are-official",
+    "url": "https://beefree.io/template/confirm-and-you-are-official",
+    "sourcePath": "corpus/beefree/beefree-confirm-and-you-are-official.html"
+  },
+  {
+    "name": "beefree-discover-ireland-this-st-patricks-day-2022",
+    "url": "https://beefree.io/template/discover-ireland-this-st-patricks-day-2022",
+    "sourcePath": "corpus/beefree/beefree-discover-ireland-this-st-patricks-day-2022.html"
+  },
+  {
+    "name": "beefree-empty",
+    "url": "https://beefree.io/template/empty",
+    "sourcePath": "corpus/beefree/beefree-empty.html"
+  },
+  {
+    "name": "beefree-get-ready-for-the-big-game",
+    "url": "https://beefree.io/template/get-ready-for-the-big-game",
+    "sourcePath": "corpus/beefree/beefree-get-ready-for-the-big-game.html"
+  },
+  {
+    "name": "beefree-highlights-and-shared-wins",
+    "url": "https://beefree.io/template/highlights-and-shared-wins",
+    "sourcePath": "corpus/beefree/beefree-highlights-and-shared-wins.html"
+  },
+  {
+    "name": "beefree-inside-insights-monthly-marketing-roundup",
+    "url": "https://beefree.io/template/inside-insights-monthly-marketing-roundup",
+    "sourcePath": "corpus/beefree/beefree-inside-insights-monthly-marketing-roundup.html"
+  },
+  {
+    "name": "beefree-just-one-last-step",
+    "url": "https://beefree.io/template/just-one-last-step",
+    "sourcePath": "corpus/beefree/beefree-just-one-last-step.html"
+  },
+  {
+    "name": "beefree-love-me-gift-me-kiss-me",
+    "url": "https://beefree.io/template/love-me-gift-me-kiss-me",
+    "sourcePath": "corpus/beefree/beefree-love-me-gift-me-kiss-me.html"
+  },
+  {
+    "name": "beefree-monthly-marketing-dispatch",
+    "url": "https://beefree.io/template/monthly-marketing-dispatch",
+    "sourcePath": "corpus/beefree/beefree-monthly-marketing-dispatch.html"
+  },
+  {
+    "name": "beefree-new-terms-same-commitment-to-you",
+    "url": "https://beefree.io/template/new-terms-same-commitment-to-you",
+    "sourcePath": "corpus/beefree/beefree-new-terms-same-commitment-to-you.html"
+  },
+  {
+    "name": "beefree-surprise-your-valentine",
+    "url": "https://beefree.io/template/surprise-your-valentine",
+    "sourcePath": "corpus/beefree/beefree-surprise-your-valentine.html"
+  },
+  {
+    "name": "beefree-the-big-game-viewing-event",
+    "url": "https://beefree.io/template/the-big-game-viewing-event",
+    "sourcePath": "corpus/beefree/beefree-the-big-game-viewing-event.html"
+  },
+  {
+    "name": "beefree-try-premium-for-free-this-valentines-day",
+    "url": "https://beefree.io/template/try-premium-for-free-this-valentines-day",
+    "sourcePath": "corpus/beefree/beefree-try-premium-for-free-this-valentines-day.html"
+  },
+  {
+    "name": "beefree-voices-that-shape-us",
+    "url": "https://beefree.io/template/voices-that-shape-us",
+    "sourcePath": "corpus/beefree/beefree-voices-that-shape-us.html"
+  },
+  {
+    "name": "beefree-we-have-updated-our-terms",
+    "url": "https://beefree.io/template/we-have-updated-our-terms",
+    "sourcePath": "corpus/beefree/beefree-we-have-updated-our-terms.html"
+  },
+  {
+    "name": "beefree-we-have-updated-the-fine-print",
+    "url": "https://beefree.io/template/we-have-updated-the-fine-print",
+    "sourcePath": "corpus/beefree/beefree-we-have-updated-the-fine-print.html"
+  },
+  {
+    "name": "beefree-we-would-love-your-feedback",
+    "url": "https://beefree.io/template/we-would-love-your-feedback",
+    "sourcePath": "corpus/beefree/beefree-we-would-love-your-feedback.html"
+  },
+  {
+    "name": "beefree-wine-down-valentines-day-promo",
+    "url": "https://beefree.io/template/wine-down-valentines-day-promo",
+    "sourcePath": "corpus/beefree/beefree-wine-down-valentines-day-promo.html"
+  },
+  {
+    "name": "beefree-your-journey-in-review",
+    "url": "https://beefree.io/template/your-journey-in-review",
+    "sourcePath": "corpus/beefree/beefree-your-journey-in-review.html"
+  },
+  {
+    "name": "beefree-your-voice-matters",
+    "url": "https://beefree.io/template/your-voice-matters",
+    "sourcePath": "corpus/beefree/beefree-your-voice-matters.html"
+  },
+  {
+    "name": "cerberus-fluid",
+    "url": "https://raw.githubusercontent.com/emailmonday/Cerberus/master/cerberus-fluid.html",
+    "sourcePath": "corpus/cerberus/cerberus-fluid.html"
+  },
+  {
+    "name": "cerberus-hybrid",
+    "url": "https://raw.githubusercontent.com/emailmonday/Cerberus/master/cerberus-hybrid.html",
+    "sourcePath": "corpus/cerberus/cerberus-hybrid.html"
+  },
+  {
+    "name": "cerberus-responsive",
+    "url": "https://raw.githubusercontent.com/emailmonday/Cerberus/master/cerberus-responsive.html",
+    "sourcePath": "corpus/cerberus/cerberus-responsive.html"
+  },
+  {
+    "name": "ckissi-confirm-email",
+    "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Confirm%20Email/confirm-email.html",
+    "sourcePath": "corpus/ckissi/ckissi-confirm-email.html"
+  },
+  {
+    "name": "ckissi-invoice",
+    "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Invoice/invoice.html",
+    "sourcePath": "corpus/ckissi/ckissi-invoice.html"
+  },
+  {
+    "name": "ckissi-reset-password",
+    "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Reset%20password/reset-password.html",
+    "sourcePath": "corpus/ckissi/ckissi-reset-password.html"
+  },
+  {
+    "name": "ckissi-trial-expired",
+    "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Trial%20Expired/trial-expired.html",
+    "sourcePath": "corpus/ckissi/ckissi-trial-expired.html"
+  },
+  {
+    "name": "ckissi-welcome",
+    "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Welcome/welcome.html",
+    "sourcePath": "corpus/ckissi/ckissi-welcome.html"
+  },
+  {
+    "name": "codedmails-notification-ormes",
+    "url": "https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/notification-email-ormes.html",
+    "sourcePath": "corpus/codedmails/codedmails-notification-ormes.html"
+  },
+  {
+    "name": "codedmails-receipt-faedra",
+    "url": "https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/receipt-email-faedra.html",
+    "sourcePath": "corpus/codedmails/codedmails-receipt-faedra.html"
+  },
+  {
+    "name": "codedmails-reset-dineos",
+    "url": "https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/reset-email-dineos.html",
+    "sourcePath": "corpus/codedmails/codedmails-reset-dineos.html"
+  },
+  {
+    "name": "codedmails-welcome-aleos",
+    "url": "https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/welcome-email-aleos.html",
+    "sourcePath": "corpus/codedmails/codedmails-welcome-aleos.html"
+  },
+  {
+    "name": "colorlib-template-1",
+    "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/1/index.html",
+    "sourcePath": "corpus/colorlib/colorlib-template-1.html"
+  },
+  {
+    "name": "colorlib-template-2",
+    "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/2/index.html",
+    "sourcePath": "corpus/colorlib/colorlib-template-2.html"
+  },
+  {
+    "name": "colorlib-template-3",
+    "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/3/index.html",
+    "sourcePath": "corpus/colorlib/colorlib-template-3.html"
+  },
+  {
+    "name": "colorlib-template-4",
+    "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/4/index.html",
+    "sourcePath": "corpus/colorlib/colorlib-template-4.html"
+  },
+  {
+    "name": "colorlib-template-5",
+    "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/5/index.html",
+    "sourcePath": "corpus/colorlib/colorlib-template-5.html"
+  },
+  {
+    "name": "davidamunga-reset-password",
+    "url": "https://raw.githubusercontent.com/DavidAmunga/html-email-templates/master/reset-password.html",
+    "sourcePath": "corpus/davidamunga/davidamunga-reset-password.html"
+  },
+  {
+    "name": "davidamunga-welcome",
+    "url": "https://raw.githubusercontent.com/DavidAmunga/html-email-templates/master/welcome.html",
+    "sourcePath": "corpus/davidamunga/davidamunga-welcome.html"
+  },
+  {
+    "name": "emailoctopus-abacus-transactional",
+    "url": "https://raw.githubusercontent.com/threeheartsdigital/emailoctopus-templates/master/abacus/transactional.html",
+    "sourcePath": "corpus/emailoctopus/emailoctopus-abacus-transactional.html"
+  },
+  {
+    "name": "emailoctopus-karakol-transactional",
+    "url": "https://raw.githubusercontent.com/threeheartsdigital/emailoctopus-templates/master/karakol/transactional.html",
+    "sourcePath": "corpus/emailoctopus/emailoctopus-karakol-transactional.html"
+  },
+  {
+    "name": "emailoctopus-wayfair-transactional",
+    "url": "https://raw.githubusercontent.com/threeheartsdigital/emailoctopus-templates/master/wayfair/transactional.html",
+    "sourcePath": "corpus/emailoctopus/emailoctopus-wayfair-transactional.html"
+  },
+  {
+    "name": "inkandthunder-notification",
+    "url": "https://raw.githubusercontent.com/inkandthunder/email-templates/master/notification.html",
+    "sourcePath": "corpus/inkandthunder/inkandthunder-notification.html"
+  },
+  {
+    "name": "konsav-explorational",
+    "url": "https://raw.githubusercontent.com/konsav/email-templates/master/explorational.html",
+    "sourcePath": "corpus/konsav/konsav-explorational.html"
+  },
+  {
+    "name": "konsav-general",
+    "url": "https://raw.githubusercontent.com/konsav/email-templates/master/general.html",
+    "sourcePath": "corpus/konsav/konsav-general.html"
+  },
+  {
+    "name": "konsav-promotional",
+    "url": "https://raw.githubusercontent.com/konsav/email-templates/master/promotional.html",
+    "sourcePath": "corpus/konsav/konsav-promotional.html"
+  },
+  {
     "name": "leemunroe-inlined",
     "url": "https://raw.githubusercontent.com/leemunroe/responsive-html-email-template/master/email-inlined.html",
     "sourcePath": "corpus/leemunroe/leemunroe-inlined.html"
+  },
+  {
+    "name": "mailersend-feedback",
+    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/03-%20Keeping%20in%20Touch%20/feedback.html",
+    "sourcePath": "corpus/mailersend/mailersend-feedback.html"
+  },
+  {
+    "name": "mailersend-invoice",
+    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/02-%20Order%20Management%20/invoice.html",
+    "sourcePath": "corpus/mailersend/mailersend-invoice.html"
+  },
+  {
+    "name": "mailersend-invoice-2",
+    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/02-%20Order%20Management%20/invoice-2.html",
+    "sourcePath": "corpus/mailersend/mailersend-invoice-2.html"
+  },
+  {
+    "name": "mailersend-order-confirmation",
+    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/02-%20Order%20Management%20/order-confirmation.html",
+    "sourcePath": "corpus/mailersend/mailersend-order-confirmation.html"
+  },
+  {
+    "name": "mailersend-password-reminder",
+    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/01-%20Setting%20Up%20Account%20/password-reminder.html",
+    "sourcePath": "corpus/mailersend/mailersend-password-reminder.html"
+  },
+  {
+    "name": "mailersend-password-reminder-2",
+    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/01-%20Setting%20Up%20Account%20/password-reminder-2.html",
+    "sourcePath": "corpus/mailersend/mailersend-password-reminder-2.html"
+  },
+  {
+    "name": "mailersend-product-announcement",
+    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/03-%20Keeping%20in%20Touch%20/product-announcement.html",
+    "sourcePath": "corpus/mailersend/mailersend-product-announcement.html"
+  },
+  {
+    "name": "mailersend-welcome-01",
+    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/01-%20Setting%20Up%20Account%20/welcome-email-01.html",
+    "sourcePath": "corpus/mailersend/mailersend-welcome-01.html"
+  },
+  {
+    "name": "mailersend-welcome-2",
+    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/01-%20Setting%20Up%20Account%20/welcome-email-2.html",
+    "sourcePath": "corpus/mailersend/mailersend-welcome-2.html"
   },
   {
     "name": "mailgun-action",
@@ -18,6 +293,289 @@
     "name": "mailgun-billing",
     "url": "https://raw.githubusercontent.com/mailgun/transactional-email-templates/master/templates/inlined/billing.html",
     "sourcePath": "corpus/mailgun/mailgun-billing.html"
+  },
+  {
+    "name": "mailpace-account-deleted",
+    "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/account_deleted.html",
+    "sourcePath": "corpus/mailpace/mailpace-account-deleted.html"
+  },
+  {
+    "name": "mailpace-confirmation",
+    "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/confirmation.html",
+    "sourcePath": "corpus/mailpace/mailpace-confirmation.html"
+  },
+  {
+    "name": "mailpace-password-reset",
+    "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/password_reset.html",
+    "sourcePath": "corpus/mailpace/mailpace-password-reset.html"
+  },
+  {
+    "name": "mailpace-receipt",
+    "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/receipt.html",
+    "sourcePath": "corpus/mailpace/mailpace-receipt.html"
+  },
+  {
+    "name": "mailpace-security-alert",
+    "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/security_alert.html",
+    "sourcePath": "corpus/mailpace/mailpace-security-alert.html"
+  },
+  {
+    "name": "mailpace-welcome",
+    "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/welcome.html",
+    "sourcePath": "corpus/mailpace/mailpace-welcome.html"
+  },
+  {
+    "name": "mjml-alert",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/alert.mjml",
+    "sourcePath": "corpus/mjml/mjml-alert.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-arturia",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/arturia.mjml",
+    "sourcePath": "corpus/mjml/mjml-arturia.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-austin",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/austin.mjml",
+    "sourcePath": "corpus/mjml/mjml-austin.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-basic",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/basic.mjml",
+    "sourcePath": "corpus/mjml/mjml-basic.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-black-friday",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/black-friday.mjml",
+    "sourcePath": "corpus/mjml/mjml-black-friday.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-card",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/card.mjml",
+    "sourcePath": "corpus/mjml/mjml-card.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-christmas",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/christmas.mjml",
+    "sourcePath": "corpus/mjml/mjml-christmas.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-delivery",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/delivery.mjml",
+    "sourcePath": "corpus/mjml/mjml-delivery.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-happy-new-year",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/happy-new-year.mjml",
+    "sourcePath": "corpus/mjml/mjml-happy-new-year.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-loyalty-client",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/loyalty-client.mjml",
+    "sourcePath": "corpus/mjml/mjml-loyalty-client.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-newsletter",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/newsletter.mjml",
+    "sourcePath": "corpus/mjml/mjml-newsletter.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-onepage",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/onepage.mjml",
+    "sourcePath": "corpus/mjml/mjml-onepage.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-proof",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/proof.mjml",
+    "sourcePath": "corpus/mjml/mjml-proof.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-reactivation-email",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/reactivation-email.mjml",
+    "sourcePath": "corpus/mjml/mjml-reactivation-email.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-real-estate",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/real-estate.mjml",
+    "sourcePath": "corpus/mjml/mjml-real-estate.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-referral-email",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/referral-email.mjml",
+    "sourcePath": "corpus/mjml/mjml-referral-email.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-tech-geek",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/tech-geek.mjml",
+    "sourcePath": "corpus/mjml/mjml-tech-geek.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "mjml-welcome-email",
+    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/welcome-email.mjml",
+    "sourcePath": "corpus/mjml/mjml-welcome-email.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "postmark-comment-notification",
+    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/comment-notification/content.html",
+    "sourcePath": "corpus/postmark/postmark-comment-notification.html"
+  },
+  {
+    "name": "postmark-dunning",
+    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/dunning/content.html",
+    "sourcePath": "corpus/postmark/postmark-dunning.html"
+  },
+  {
+    "name": "postmark-example",
+    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/example/content.html",
+    "sourcePath": "corpus/postmark/postmark-example.html"
+  },
+  {
+    "name": "postmark-invoice",
+    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/invoice/content.html",
+    "sourcePath": "corpus/postmark/postmark-invoice.html"
+  },
+  {
+    "name": "postmark-password-reset",
+    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/password-reset/content.html",
+    "sourcePath": "corpus/postmark/postmark-password-reset.html"
+  },
+  {
+    "name": "postmark-password-reset-help",
+    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/password-reset-help/content.html",
+    "sourcePath": "corpus/postmark/postmark-password-reset-help.html"
+  },
+  {
+    "name": "postmark-receipt",
+    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/receipt/content.html",
+    "sourcePath": "corpus/postmark/postmark-receipt.html"
+  },
+  {
+    "name": "postmark-trial-expired",
+    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/trial-expired/content.html",
+    "sourcePath": "corpus/postmark/postmark-trial-expired.html"
+  },
+  {
+    "name": "postmark-trial-expiring",
+    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/trial-expiring/content.html",
+    "sourcePath": "corpus/postmark/postmark-trial-expiring.html"
+  },
+  {
+    "name": "postmark-user-invitation",
+    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/user-invitation/content.html",
+    "sourcePath": "corpus/postmark/postmark-user-invitation.html"
+  },
+  {
+    "name": "postmark-welcome",
+    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/welcome/content.html",
+    "sourcePath": "corpus/postmark/postmark-welcome.html"
+  },
+  {
+    "name": "reallygoodemails-counter-print-latest-books-and-magazines",
+    "url": "https://reallygoodemails.com/emails/counter-print-latest-books-and-magazines",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-counter-print-latest-books-and-magazines.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-heres-the-latest-news-from-waymo",
+    "url": "https://reallygoodemails.com/emails/heres-the-latest-news-from-waymo",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-heres-the-latest-news-from-waymo.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-latest-arrivals-from-nyc-based-nomia",
+    "url": "https://reallygoodemails.com/emails/latest-arrivals-from-nyc-based-nomia",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-latest-arrivals-from-nyc-based-nomia.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-mailchimp-latest-updates-heavy-lifting",
+    "url": "https://reallygoodemails.com/emails/mailchimp-latest-updates-heavy-lifting",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-mailchimp-latest-updates-heavy-lifting.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-the-latest-updates-from-loops",
+    "url": "https://reallygoodemails.com/emails/the-latest-updates-from-loops",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-the-latest-updates-from-loops.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "sendgrid-call-to-action",
+    "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/dynamic-templates/transactional-actions/call_to_action.html",
+    "sourcePath": "corpus/sendgrid/sendgrid-call-to-action.html"
+  },
+  {
+    "name": "sendgrid-dynamic-receipt",
+    "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/dynamic-templates/receipt/receipt.html",
+    "sourcePath": "corpus/sendgrid/sendgrid-dynamic-receipt.html"
+  },
+  {
+    "name": "sendgrid-merriweather-receipt",
+    "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/merriweather-templates/receipt.html",
+    "sourcePath": "corpus/sendgrid/sendgrid-merriweather-receipt.html"
+  },
+  {
+    "name": "sendgrid-merriweather-welcome",
+    "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/merriweather-templates/welcome.html",
+    "sourcePath": "corpus/sendgrid/sendgrid-merriweather-welcome.html"
+  },
+  {
+    "name": "sendgrid-paste-password-reset",
+    "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/paste-templates/password-reset.html",
+    "sourcePath": "corpus/sendgrid/sendgrid-paste-password-reset.html"
+  },
+  {
+    "name": "sendgrid-paste-welcome",
+    "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/paste-templates/welcome.html",
+    "sourcePath": "corpus/sendgrid/sendgrid-paste-welcome.html"
+  },
+  {
+    "name": "stripo-mothers-day-best-flavors",
+    "url": "https://viewstripo.email/preview/web/template/6e4c7cf8-df48-4ee1-8f53-e3d303e85e81",
+    "sourcePath": "corpus/stripo/stripo-mothers-day-best-flavors.html"
+  },
+  {
+    "name": "stripo-mothers-day-childhood-memory",
+    "url": "https://viewstripo.email/preview/web/template/cf99cd31-85de-4587-9948-e6ee48298491",
+    "sourcePath": "corpus/stripo/stripo-mothers-day-childhood-memory.html"
+  },
+  {
+    "name": "stripo-mothers-day-gadgets-story",
+    "url": "https://viewstripo.email/preview/web/template/f895dacc-6a5f-4b59-915f-918a2804d1a9",
+    "sourcePath": "corpus/stripo/stripo-mothers-day-gadgets-story.html"
+  },
+  {
+    "name": "stripo-mothers-day-help-mama",
+    "url": "https://viewstripo.email/preview/web/template/754bd273-5595-490d-9a87-e47a60db2380",
+    "sourcePath": "corpus/stripo/stripo-mothers-day-help-mama.html"
+  },
+  {
+    "name": "stripo-mothers-day-thank-for-everything",
+    "url": "https://viewstripo.email/preview/web/template/d540384c-5ad3-42d9-8c12-d3ecd3662c57",
+    "sourcePath": "corpus/stripo/stripo-mothers-day-thank-for-everything.html"
+  },
+  {
+    "name": "stripo-promo-make-your-mom-happy",
+    "url": "https://viewstripo.email/preview/web/template/cf9f8bca-81eb-40cb-b6b5-f26d8369826e",
+    "sourcePath": "corpus/stripo/stripo-promo-make-your-mom-happy.html"
   },
   {
     "name": "waypoint-banking-payout",
@@ -145,14 +703,14 @@
     "sourcePath": "corpus/waypoint/waypoint-saas-payment-declined.html"
   },
   {
-    "name": "waypoint-saas-reset-password",
-    "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-reset-password.html",
-    "sourcePath": "corpus/waypoint/waypoint-saas-reset-password.html"
-  },
-  {
     "name": "waypoint-saas-receipt",
     "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-subscription-receipt.html",
     "sourcePath": "corpus/waypoint/waypoint-saas-receipt.html"
+  },
+  {
+    "name": "waypoint-saas-reset-password",
+    "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/saas-reset-password.html",
+    "sourcePath": "corpus/waypoint/waypoint-saas-reset-password.html"
   },
   {
     "name": "waypoint-saas-trial-ends-soon",
@@ -188,533 +746,5 @@
     "name": "waypoint-social-yearly-wrapped-report",
     "url": "https://raw.githubusercontent.com/usewaypoint/responsive-transactional-email-templates/main/templates/social-yearly-wrapped-report.html",
     "sourcePath": "corpus/waypoint/waypoint-social-yearly-wrapped-report.html"
-  },
-  {
-    "name": "mailpace-welcome",
-    "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/welcome.html",
-    "sourcePath": "corpus/mailpace/mailpace-welcome.html"
-  },
-  {
-    "name": "mailpace-confirmation",
-    "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/confirmation.html",
-    "sourcePath": "corpus/mailpace/mailpace-confirmation.html"
-  },
-  {
-    "name": "mailpace-password-reset",
-    "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/password_reset.html",
-    "sourcePath": "corpus/mailpace/mailpace-password-reset.html"
-  },
-  {
-    "name": "mailpace-receipt",
-    "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/receipt.html",
-    "sourcePath": "corpus/mailpace/mailpace-receipt.html"
-  },
-  {
-    "name": "mailpace-security-alert",
-    "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/security_alert.html",
-    "sourcePath": "corpus/mailpace/mailpace-security-alert.html"
-  },
-  {
-    "name": "mailpace-account-deleted",
-    "url": "https://raw.githubusercontent.com/mailpace/templates/main/dist/account_deleted.html",
-    "sourcePath": "corpus/mailpace/mailpace-account-deleted.html"
-  },
-  {
-    "name": "postmark-comment-notification",
-    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/comment-notification/content.html",
-    "sourcePath": "corpus/postmark/postmark-comment-notification.html"
-  },
-  {
-    "name": "postmark-dunning",
-    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/dunning/content.html",
-    "sourcePath": "corpus/postmark/postmark-dunning.html"
-  },
-  {
-    "name": "postmark-example",
-    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/example/content.html",
-    "sourcePath": "corpus/postmark/postmark-example.html"
-  },
-  {
-    "name": "postmark-invoice",
-    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/invoice/content.html",
-    "sourcePath": "corpus/postmark/postmark-invoice.html"
-  },
-  {
-    "name": "postmark-password-reset-help",
-    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/password-reset-help/content.html",
-    "sourcePath": "corpus/postmark/postmark-password-reset-help.html"
-  },
-  {
-    "name": "postmark-password-reset",
-    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/password-reset/content.html",
-    "sourcePath": "corpus/postmark/postmark-password-reset.html"
-  },
-  {
-    "name": "postmark-receipt",
-    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/receipt/content.html",
-    "sourcePath": "corpus/postmark/postmark-receipt.html"
-  },
-  {
-    "name": "postmark-trial-expired",
-    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/trial-expired/content.html",
-    "sourcePath": "corpus/postmark/postmark-trial-expired.html"
-  },
-  {
-    "name": "postmark-trial-expiring",
-    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/trial-expiring/content.html",
-    "sourcePath": "corpus/postmark/postmark-trial-expiring.html"
-  },
-  {
-    "name": "postmark-user-invitation",
-    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/user-invitation/content.html",
-    "sourcePath": "corpus/postmark/postmark-user-invitation.html"
-  },
-  {
-    "name": "postmark-welcome",
-    "url": "https://raw.githubusercontent.com/ActiveCampaign/postmark-templates/main/templates/basic/welcome/content.html",
-    "sourcePath": "corpus/postmark/postmark-welcome.html"
-  },
-  {
-    "name": "mailersend-password-reminder",
-    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/01-%20Setting%20Up%20Account%20/password-reminder.html",
-    "sourcePath": "corpus/mailersend/mailersend-password-reminder.html"
-  },
-  {
-    "name": "mailersend-password-reminder-2",
-    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/01-%20Setting%20Up%20Account%20/password-reminder-2.html",
-    "sourcePath": "corpus/mailersend/mailersend-password-reminder-2.html"
-  },
-  {
-    "name": "mailersend-welcome-01",
-    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/01-%20Setting%20Up%20Account%20/welcome-email-01.html",
-    "sourcePath": "corpus/mailersend/mailersend-welcome-01.html"
-  },
-  {
-    "name": "mailersend-welcome-2",
-    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/01-%20Setting%20Up%20Account%20/welcome-email-2.html",
-    "sourcePath": "corpus/mailersend/mailersend-welcome-2.html"
-  },
-  {
-    "name": "mailersend-invoice",
-    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/02-%20Order%20Management%20/invoice.html",
-    "sourcePath": "corpus/mailersend/mailersend-invoice.html"
-  },
-  {
-    "name": "mailersend-invoice-2",
-    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/02-%20Order%20Management%20/invoice-2.html",
-    "sourcePath": "corpus/mailersend/mailersend-invoice-2.html"
-  },
-  {
-    "name": "mailersend-order-confirmation",
-    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/02-%20Order%20Management%20/order-confirmation.html",
-    "sourcePath": "corpus/mailersend/mailersend-order-confirmation.html"
-  },
-  {
-    "name": "mailersend-feedback",
-    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/03-%20Keeping%20in%20Touch%20/feedback.html",
-    "sourcePath": "corpus/mailersend/mailersend-feedback.html"
-  },
-  {
-    "name": "mailersend-product-announcement",
-    "url": "https://raw.githubusercontent.com/mailersend/transactional-email-templates/main/03-%20Keeping%20in%20Touch%20/product-announcement.html",
-    "sourcePath": "corpus/mailersend/mailersend-product-announcement.html"
-  },
-  {
-    "name": "sendgrid-dynamic-receipt",
-    "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/dynamic-templates/receipt/receipt.html",
-    "sourcePath": "corpus/sendgrid/sendgrid-dynamic-receipt.html"
-  },
-  {
-    "name": "sendgrid-call-to-action",
-    "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/dynamic-templates/transactional-actions/call_to_action.html",
-    "sourcePath": "corpus/sendgrid/sendgrid-call-to-action.html"
-  },
-  {
-    "name": "sendgrid-paste-password-reset",
-    "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/paste-templates/password-reset.html",
-    "sourcePath": "corpus/sendgrid/sendgrid-paste-password-reset.html"
-  },
-  {
-    "name": "sendgrid-paste-welcome",
-    "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/paste-templates/welcome.html",
-    "sourcePath": "corpus/sendgrid/sendgrid-paste-welcome.html"
-  },
-  {
-    "name": "sendgrid-merriweather-receipt",
-    "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/merriweather-templates/receipt.html",
-    "sourcePath": "corpus/sendgrid/sendgrid-merriweather-receipt.html"
-  },
-  {
-    "name": "sendgrid-merriweather-welcome",
-    "url": "https://raw.githubusercontent.com/sendgrid/email-templates/master/merriweather-templates/welcome.html",
-    "sourcePath": "corpus/sendgrid/sendgrid-merriweather-welcome.html"
-  },
-  {
-    "name": "ckissi-welcome",
-    "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Welcome/welcome.html",
-    "sourcePath": "corpus/ckissi/ckissi-welcome.html"
-  },
-  {
-    "name": "ckissi-reset-password",
-    "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Reset%20password/reset-password.html",
-    "sourcePath": "corpus/ckissi/ckissi-reset-password.html"
-  },
-  {
-    "name": "ckissi-confirm-email",
-    "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Confirm%20Email/confirm-email.html",
-    "sourcePath": "corpus/ckissi/ckissi-confirm-email.html"
-  },
-  {
-    "name": "ckissi-invoice",
-    "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Invoice/invoice.html",
-    "sourcePath": "corpus/ckissi/ckissi-invoice.html"
-  },
-  {
-    "name": "ckissi-trial-expired",
-    "url": "https://raw.githubusercontent.com/ckissi/responsive-html-email-templates/master/Trial%20Expired/trial-expired.html",
-    "sourcePath": "corpus/ckissi/ckissi-trial-expired.html"
-  },
-  {
-    "name": "davidamunga-welcome",
-    "url": "https://raw.githubusercontent.com/DavidAmunga/html-email-templates/master/welcome.html",
-    "sourcePath": "corpus/davidamunga/davidamunga-welcome.html"
-  },
-  {
-    "name": "davidamunga-reset-password",
-    "url": "https://raw.githubusercontent.com/DavidAmunga/html-email-templates/master/reset-password.html",
-    "sourcePath": "corpus/davidamunga/davidamunga-reset-password.html"
-  },
-  {
-    "name": "colorlib-template-1",
-    "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/1/index.html",
-    "sourcePath": "corpus/colorlib/colorlib-template-1.html"
-  },
-  {
-    "name": "colorlib-template-2",
-    "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/2/index.html",
-    "sourcePath": "corpus/colorlib/colorlib-template-2.html"
-  },
-  {
-    "name": "colorlib-template-3",
-    "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/3/index.html",
-    "sourcePath": "corpus/colorlib/colorlib-template-3.html"
-  },
-  {
-    "name": "colorlib-template-4",
-    "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/4/index.html",
-    "sourcePath": "corpus/colorlib/colorlib-template-4.html"
-  },
-  {
-    "name": "colorlib-template-5",
-    "url": "https://raw.githubusercontent.com/ColorlibHQ/email-templates/master/5/index.html",
-    "sourcePath": "corpus/colorlib/colorlib-template-5.html"
-  },
-  {
-    "name": "emailoctopus-abacus-transactional",
-    "url": "https://raw.githubusercontent.com/threeheartsdigital/emailoctopus-templates/master/abacus/transactional.html",
-    "sourcePath": "corpus/emailoctopus/emailoctopus-abacus-transactional.html"
-  },
-  {
-    "name": "emailoctopus-karakol-transactional",
-    "url": "https://raw.githubusercontent.com/threeheartsdigital/emailoctopus-templates/master/karakol/transactional.html",
-    "sourcePath": "corpus/emailoctopus/emailoctopus-karakol-transactional.html"
-  },
-  {
-    "name": "emailoctopus-wayfair-transactional",
-    "url": "https://raw.githubusercontent.com/threeheartsdigital/emailoctopus-templates/master/wayfair/transactional.html",
-    "sourcePath": "corpus/emailoctopus/emailoctopus-wayfair-transactional.html"
-  },
-  {
-    "name": "codedmails-welcome-aleos",
-    "url": "https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/welcome-email-aleos.html",
-    "sourcePath": "corpus/codedmails/codedmails-welcome-aleos.html"
-  },
-  {
-    "name": "codedmails-reset-dineos",
-    "url": "https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/reset-email-dineos.html",
-    "sourcePath": "corpus/codedmails/codedmails-reset-dineos.html"
-  },
-  {
-    "name": "codedmails-receipt-faedra",
-    "url": "https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/receipt-email-faedra.html",
-    "sourcePath": "corpus/codedmails/codedmails-receipt-faedra.html"
-  },
-  {
-    "name": "codedmails-notification-ormes",
-    "url": "https://raw.githubusercontent.com/hunzaboy/CodedMailsFree/master/html/notification-email-ormes.html",
-    "sourcePath": "corpus/codedmails/codedmails-notification-ormes.html"
-  },
-  {
-    "name": "cerberus-fluid",
-    "url": "https://raw.githubusercontent.com/emailmonday/Cerberus/master/cerberus-fluid.html",
-    "sourcePath": "corpus/cerberus/cerberus-fluid.html"
-  },
-  {
-    "name": "cerberus-hybrid",
-    "url": "https://raw.githubusercontent.com/emailmonday/Cerberus/master/cerberus-hybrid.html",
-    "sourcePath": "corpus/cerberus/cerberus-hybrid.html"
-  },
-  {
-    "name": "cerberus-responsive",
-    "url": "https://raw.githubusercontent.com/emailmonday/Cerberus/master/cerberus-responsive.html",
-    "sourcePath": "corpus/cerberus/cerberus-responsive.html"
-  },
-  {
-    "name": "konsav-general",
-    "url": "https://raw.githubusercontent.com/konsav/email-templates/master/general.html",
-    "sourcePath": "corpus/konsav/konsav-general.html"
-  },
-  {
-    "name": "konsav-promotional",
-    "url": "https://raw.githubusercontent.com/konsav/email-templates/master/promotional.html",
-    "sourcePath": "corpus/konsav/konsav-promotional.html"
-  },
-  {
-    "name": "konsav-explorational",
-    "url": "https://raw.githubusercontent.com/konsav/email-templates/master/explorational.html",
-    "sourcePath": "corpus/konsav/konsav-explorational.html"
-  },
-  {
-    "name": "inkandthunder-notification",
-    "url": "https://raw.githubusercontent.com/inkandthunder/email-templates/master/notification.html",
-    "sourcePath": "corpus/inkandthunder/inkandthunder-notification.html"
-  },
-  {
-    "name": "stripo-mothers-day-childhood-memory",
-    "url": "https://viewstripo.email/preview/web/template/cf99cd31-85de-4587-9948-e6ee48298491",
-    "sourcePath": "corpus/stripo/stripo-mothers-day-childhood-memory.html"
-  },
-  {
-    "name": "stripo-mothers-day-thank-for-everything",
-    "url": "https://viewstripo.email/preview/web/template/d540384c-5ad3-42d9-8c12-d3ecd3662c57",
-    "sourcePath": "corpus/stripo/stripo-mothers-day-thank-for-everything.html"
-  },
-  {
-    "name": "stripo-mothers-day-help-mama",
-    "url": "https://viewstripo.email/preview/web/template/754bd273-5595-490d-9a87-e47a60db2380",
-    "sourcePath": "corpus/stripo/stripo-mothers-day-help-mama.html"
-  },
-  {
-    "name": "stripo-mothers-day-gadgets-story",
-    "url": "https://viewstripo.email/preview/web/template/f895dacc-6a5f-4b59-915f-918a2804d1a9",
-    "sourcePath": "corpus/stripo/stripo-mothers-day-gadgets-story.html"
-  },
-  {
-    "name": "stripo-mothers-day-best-flavors",
-    "url": "https://viewstripo.email/preview/web/template/6e4c7cf8-df48-4ee1-8f53-e3d303e85e81",
-    "sourcePath": "corpus/stripo/stripo-mothers-day-best-flavors.html"
-  },
-  {
-    "name": "stripo-promo-make-your-mom-happy",
-    "url": "https://viewstripo.email/preview/web/template/cf9f8bca-81eb-40cb-b6b5-f26d8369826e",
-    "sourcePath": "corpus/stripo/stripo-promo-make-your-mom-happy.html"
-  },
-  {
-    "name": "beefree-confirm-and-you-are-official",
-    "url": "https://beefree.io/template/confirm-and-you-are-official",
-    "sourcePath": "corpus/beefree/beefree-confirm-and-you-are-official.html"
-  },
-  {
-    "name": "beefree-discover-ireland-this-st-patricks-day-2022",
-    "url": "https://beefree.io/template/discover-ireland-this-st-patricks-day-2022",
-    "sourcePath": "corpus/beefree/beefree-discover-ireland-this-st-patricks-day-2022.html"
-  },
-  {
-    "name": "beefree-empty",
-    "url": "https://beefree.io/template/empty",
-    "sourcePath": "corpus/beefree/beefree-empty.html"
-  },
-  {
-    "name": "beefree-get-ready-for-the-big-game",
-    "url": "https://beefree.io/template/get-ready-for-the-big-game",
-    "sourcePath": "corpus/beefree/beefree-get-ready-for-the-big-game.html"
-  },
-  {
-    "name": "beefree-highlights-and-shared-wins",
-    "url": "https://beefree.io/template/highlights-and-shared-wins",
-    "sourcePath": "corpus/beefree/beefree-highlights-and-shared-wins.html"
-  },
-  {
-    "name": "beefree-inside-insights-monthly-marketing-roundup",
-    "url": "https://beefree.io/template/inside-insights-monthly-marketing-roundup",
-    "sourcePath": "corpus/beefree/beefree-inside-insights-monthly-marketing-roundup.html"
-  },
-  {
-    "name": "beefree-just-one-last-step",
-    "url": "https://beefree.io/template/just-one-last-step",
-    "sourcePath": "corpus/beefree/beefree-just-one-last-step.html"
-  },
-  {
-    "name": "beefree-love-me-gift-me-kiss-me",
-    "url": "https://beefree.io/template/love-me-gift-me-kiss-me",
-    "sourcePath": "corpus/beefree/beefree-love-me-gift-me-kiss-me.html"
-  },
-  {
-    "name": "beefree-monthly-marketing-dispatch",
-    "url": "https://beefree.io/template/monthly-marketing-dispatch",
-    "sourcePath": "corpus/beefree/beefree-monthly-marketing-dispatch.html"
-  },
-  {
-    "name": "beefree-new-terms-same-commitment-to-you",
-    "url": "https://beefree.io/template/new-terms-same-commitment-to-you",
-    "sourcePath": "corpus/beefree/beefree-new-terms-same-commitment-to-you.html"
-  },
-  {
-    "name": "beefree-surprise-your-valentine",
-    "url": "https://beefree.io/template/surprise-your-valentine",
-    "sourcePath": "corpus/beefree/beefree-surprise-your-valentine.html"
-  },
-  {
-    "name": "beefree-the-big-game-viewing-event",
-    "url": "https://beefree.io/template/the-big-game-viewing-event",
-    "sourcePath": "corpus/beefree/beefree-the-big-game-viewing-event.html"
-  },
-  {
-    "name": "beefree-try-premium-for-free-this-valentines-day",
-    "url": "https://beefree.io/template/try-premium-for-free-this-valentines-day",
-    "sourcePath": "corpus/beefree/beefree-try-premium-for-free-this-valentines-day.html"
-  },
-  {
-    "name": "beefree-voices-that-shape-us",
-    "url": "https://beefree.io/template/voices-that-shape-us",
-    "sourcePath": "corpus/beefree/beefree-voices-that-shape-us.html"
-  },
-  {
-    "name": "beefree-we-have-updated-our-terms",
-    "url": "https://beefree.io/template/we-have-updated-our-terms",
-    "sourcePath": "corpus/beefree/beefree-we-have-updated-our-terms.html"
-  },
-  {
-    "name": "beefree-we-have-updated-the-fine-print",
-    "url": "https://beefree.io/template/we-have-updated-the-fine-print",
-    "sourcePath": "corpus/beefree/beefree-we-have-updated-the-fine-print.html"
-  },
-  {
-    "name": "beefree-we-would-love-your-feedback",
-    "url": "https://beefree.io/template/we-would-love-your-feedback",
-    "sourcePath": "corpus/beefree/beefree-we-would-love-your-feedback.html"
-  },
-  {
-    "name": "beefree-wine-down-valentines-day-promo",
-    "url": "https://beefree.io/template/wine-down-valentines-day-promo",
-    "sourcePath": "corpus/beefree/beefree-wine-down-valentines-day-promo.html"
-  },
-  {
-    "name": "beefree-your-journey-in-review",
-    "url": "https://beefree.io/template/your-journey-in-review",
-    "sourcePath": "corpus/beefree/beefree-your-journey-in-review.html"
-  },
-  {
-    "name": "beefree-your-voice-matters",
-    "url": "https://beefree.io/template/your-voice-matters",
-    "sourcePath": "corpus/beefree/beefree-your-voice-matters.html"
-  },
-  {
-    "name": "mjml-alert",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/alert.mjml",
-    "sourcePath": "corpus/mjml/mjml-alert.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-arturia",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/arturia.mjml",
-    "sourcePath": "corpus/mjml/mjml-arturia.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-austin",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/austin.mjml",
-    "sourcePath": "corpus/mjml/mjml-austin.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-basic",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/basic.mjml",
-    "sourcePath": "corpus/mjml/mjml-basic.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-black-friday",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/black-friday.mjml",
-    "sourcePath": "corpus/mjml/mjml-black-friday.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-card",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/card.mjml",
-    "sourcePath": "corpus/mjml/mjml-card.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-christmas",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/christmas.mjml",
-    "sourcePath": "corpus/mjml/mjml-christmas.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-delivery",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/delivery.mjml",
-    "sourcePath": "corpus/mjml/mjml-delivery.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-happy-new-year",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/happy-new-year.mjml",
-    "sourcePath": "corpus/mjml/mjml-happy-new-year.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-loyalty-client",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/loyalty-client.mjml",
-    "sourcePath": "corpus/mjml/mjml-loyalty-client.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-newsletter",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/newsletter.mjml",
-    "sourcePath": "corpus/mjml/mjml-newsletter.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-onepage",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/onepage.mjml",
-    "sourcePath": "corpus/mjml/mjml-onepage.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-proof",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/proof.mjml",
-    "sourcePath": "corpus/mjml/mjml-proof.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-reactivation-email",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/reactivation-email.mjml",
-    "sourcePath": "corpus/mjml/mjml-reactivation-email.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-real-estate",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/real-estate.mjml",
-    "sourcePath": "corpus/mjml/mjml-real-estate.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-referral-email",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/referral-email.mjml",
-    "sourcePath": "corpus/mjml/mjml-referral-email.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-tech-geek",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/tech-geek.mjml",
-    "sourcePath": "corpus/mjml/mjml-tech-geek.html",
-    "preserveLocal": true
-  },
-  {
-    "name": "mjml-welcome-email",
-    "url": "https://github.com/mjmlio/email-templates/blob/master/templates/welcome-email.mjml",
-    "sourcePath": "corpus/mjml/mjml-welcome-email.html",
-    "preserveLocal": true
   }
 ]

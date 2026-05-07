@@ -928,6 +928,11 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
     ) -> Result<Option<FlowBox>> {
         let grid = build_table_grid(node, self.limits.max_table_cells)?;
         if grid.rows.is_empty() {
+            if let Some(flow) =
+                self.layout_css_table_cells(node, style.clone(), x, y, containing_width, depth)?
+            {
+                return Ok(Some(flow));
+            }
             return self.layout_block(node, style, x, y, containing_width, depth);
         }
 
@@ -976,14 +981,58 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 continue;
             }
 
-            let mut cell_boxes = Vec::with_capacity(row.cells.len());
-            let mut row_height: f32 = 0.0;
-
+            let mut styled_cells = Vec::with_capacity(row.cells.len());
             for cell in row.cells {
-                let mut cell_style = self.style_for_node(&cell.node, &row_style);
+                let cell_style = self.style_for_node(&cell.node, &row_style);
                 if cell_style.display == Display::None {
                     continue;
                 }
+                styled_cells.push((cell, cell_style));
+            }
+            if styled_cells.is_empty() {
+                continue;
+            }
+
+            if styled_cells
+                .iter()
+                .all(|(_, cell_style)| cell_style.display != Display::TableCell)
+            {
+                let mut row_children = Vec::with_capacity(styled_cells.len());
+                let mut block_y = row_y;
+                for (cell, cell_style) in styled_cells {
+                    let Some(flow) = self.layout_element_with_style(
+                        &cell.node,
+                        cell_style,
+                        content_x,
+                        block_y,
+                        content_width,
+                        depth + 1,
+                    )?
+                    else {
+                        continue;
+                    };
+                    block_y += flow.advance;
+                    row_children.push(flow.node);
+                }
+                if row_children.is_empty() {
+                    continue;
+                }
+                let row_height = (block_y - row_y).max(1.0);
+                row_boxes.push(LayoutBox {
+                    kind: LayoutKind::Row,
+                    rect: Rect::new(content_x, row_y, content_width, row_height),
+                    style: row_style,
+                    debug: LayoutDebugMeta::for_node(&row.node, "tr"),
+                    children: row_children,
+                });
+                row_y += row_height + spacing;
+                continue;
+            }
+
+            let mut cell_boxes = Vec::with_capacity(styled_cells.len());
+            let mut row_height: f32 = 0.0;
+
+            for (cell, mut cell_style) in styled_cells {
                 cell_style.apply_table_cell_padding(style.cell_padding);
 
                 let cell_x = content_x + column_offset(&column_widths, cell.col, spacing);
@@ -1071,6 +1120,150 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 style,
                 debug: LayoutDebugMeta::for_node(node, "table"),
                 children: row_boxes,
+            },
+        }))
+    }
+
+    fn layout_css_table_cells(
+        &mut self,
+        node: &NodeRef,
+        style: Style,
+        x: f32,
+        y: f32,
+        containing_width: f32,
+        depth: usize,
+    ) -> Result<Option<FlowBox>> {
+        let mut cell_nodes = Vec::new();
+        for child in node.children() {
+            if let Some(text_node) = child.as_text() {
+                if text_node
+                    .borrow()
+                    .chars()
+                    .any(|ch| !is_collapsible_whitespace(ch))
+                {
+                    return Ok(None);
+                }
+                continue;
+            }
+
+            let Some(tag) = element_tag(&child) else {
+                continue;
+            };
+            if is_metadata_tag(&tag) {
+                continue;
+            }
+            let child_style = self.style_for_node(&child, &style);
+            if child_style.display == Display::None {
+                continue;
+            }
+            if matches!(child_style.position, Position::Absolute | Position::Fixed) {
+                continue;
+            }
+            if child_style.display != Display::TableCell {
+                return Ok(None);
+            }
+            cell_nodes.push((child, child_style));
+        }
+
+        if cell_nodes.is_empty() {
+            return Ok(None);
+        }
+
+        let max_table_width = (containing_width - style.margin.horizontal()).max(1.0);
+        let table_width = style
+            .resolve_width(containing_width)
+            .map(|width| style.outer_width_for_declared(width))
+            .unwrap_or(max_table_width);
+        let table_width = style
+            .constrain_outer_width(table_width, containing_width)
+            .max(1.0);
+        let rect_x = x + style.horizontal_offset(containing_width, table_width);
+        let rect_y = y + style.margin.top;
+        let content_x = rect_x + style.border.left + style.padding.left;
+        let content_y = rect_y + style.border.top + style.padding.top;
+        let content_width = style.inner_width_for_outer(table_width).max(1.0);
+
+        let column_widths = css_table_cell_widths(&cell_nodes, content_width);
+        let mut cell_boxes = Vec::with_capacity(cell_nodes.len());
+        let mut row_height: f32 = 0.0;
+        let mut cursor_x = content_x;
+
+        for ((cell_node, cell_style), cell_width) in cell_nodes.iter().zip(column_widths.iter()) {
+            let cell_width = (*cell_width).max(1.0);
+            let cell_padding = cell_style.resolved_padding(cell_width);
+            let cell_inner_x = cursor_x + cell_style.border.left + cell_padding.left;
+            let cell_inner_y = content_y + cell_style.border.top + cell_padding.top;
+            let cell_inner_width =
+                (cell_width - cell_padding.horizontal() - cell_style.border.horizontal()).max(1.0);
+            let content = self.layout_children(
+                cell_node,
+                cell_style,
+                cell_inner_x,
+                cell_inner_y,
+                cell_inner_width,
+                depth + 1,
+            )?;
+            let explicit_height = cell_style.resolve_height(0.0).unwrap_or(0.0);
+            let natural_cell_height =
+                (content.advance + cell_padding.vertical() + cell_style.border.vertical()).max(1.0);
+            let cell_height = natural_cell_height.max(explicit_height).max(1.0);
+            row_height = row_height.max(cell_height);
+            cell_boxes.push((
+                cell_node.clone(),
+                LayoutBox {
+                    kind: LayoutKind::Cell,
+                    rect: Rect::new(cursor_x, content_y, cell_width, cell_height),
+                    style: cell_style.clone(),
+                    debug: LayoutDebugMeta::for_node(cell_node, "td"),
+                    children: content.children,
+                },
+                natural_cell_height,
+            ));
+            cursor_x += cell_width;
+        }
+
+        for (cell_node, cell, natural_cell_height) in &mut cell_boxes {
+            let delta = (row_height - *natural_cell_height).max(0.0);
+            let offset_y = match cell.style.vertical_align {
+                VerticalAlign::Baseline | VerticalAlign::Top => 0.0,
+                VerticalAlign::Middle => delta / 2.0,
+                VerticalAlign::Bottom => delta,
+            };
+            if offset_y > 0.0 {
+                translate_layout_children(cell, 0.0, offset_y);
+            }
+            cell.rect.height = row_height;
+            self.append_absolute_children(
+                cell_node,
+                &cell.style,
+                cell.rect,
+                &mut cell.children,
+                depth + 1,
+            )?;
+        }
+
+        let row_box = LayoutBox {
+            kind: LayoutKind::Row,
+            rect: Rect::new(content_x, content_y, content_width, row_height),
+            style: style.clone(),
+            debug: LayoutDebugMeta::for_tag("tr"),
+            children: cell_boxes.into_iter().map(|(_, cell, _)| cell).collect(),
+        };
+        let explicit_height = style.resolve_height(0.0).unwrap_or(0.0);
+        let table_height = (row_height + style.padding.vertical() + style.border.vertical())
+            .max(explicit_height)
+            .max(1.0);
+        let collapsible_margin_bottom = style.margin.bottom;
+
+        Ok(Some(FlowBox {
+            advance: style.margin.top + table_height + collapsible_margin_bottom,
+            collapsible_margin_bottom,
+            node: LayoutBox {
+                kind: LayoutKind::Table,
+                rect: Rect::new(rect_x, rect_y, table_width, table_height),
+                style,
+                debug: LayoutDebugMeta::for_node(node, "table"),
+                children: vec![row_box],
             },
         }))
     }
@@ -1306,9 +1499,10 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 let per_col = ((preferred - spacing * cell.colspan.saturating_sub(1) as f32)
                     / cell.colspan as f32)
                     .max(0.0);
+                let spacer_cell = table_cell_is_spacer(&cell.node);
                 let uses_intrinsic_fixed_width =
                     style.width.as_ref().is_some_and(length_is_intrinsic_fixed)
-                        || table_cell_is_spacer(&cell.node)
+                        || (spacer_cell && cell.colspan == 1)
                         || style.wrap == TextWrap::None
                         || cell_contains_only_intrinsic_fixed_replaced_content(&cell.node, &style);
                 if uses_intrinsic_fixed_width {
@@ -1322,7 +1516,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     if col < preferreds.len() {
                         preferreds[col] = preferreds[col].max(per_col);
                     }
-                    if table_cell_is_spacer(&cell.node) && col < minimums.len() {
+                    if spacer_cell && col < minimums.len() {
                         minimums[col] = minimums[col].max(per_col);
                     }
                 }
@@ -2106,6 +2300,55 @@ pub(crate) fn taffy_align_items(align: AlignItems) -> TaffyAlignItems {
         AlignItems::Baseline => TaffyAlignItems::Baseline,
         AlignItems::Stretch => TaffyAlignItems::Stretch,
     }
+}
+
+fn css_table_cell_widths(cells: &[(NodeRef, Style)], content_width: f32) -> Vec<f32> {
+    let count = cells.len().max(1);
+    let mut widths = vec![None; count];
+    let mut fixed_total = 0.0_f32;
+    let mut auto_count = 0usize;
+
+    for (idx, (_, style)) in cells.iter().enumerate() {
+        if let Some(width) = style.width.and_then(|width| width.resolve(content_width)) {
+            let outer_width = style.outer_width_for_declared(width).max(1.0);
+            widths[idx] = Some(outer_width);
+            fixed_total += outer_width;
+        } else {
+            auto_count += 1;
+        }
+    }
+
+    if fixed_total > content_width + f32::EPSILON {
+        let scale = content_width / fixed_total;
+        return widths
+            .into_iter()
+            .map(|width| width.unwrap_or(0.0) * scale)
+            .collect();
+    }
+
+    if auto_count > 0 {
+        let auto_width = ((content_width - fixed_total).max(0.0) / auto_count as f32).max(1.0);
+        return widths
+            .into_iter()
+            .map(|width| width.unwrap_or(auto_width))
+            .collect();
+    }
+
+    if fixed_total > 0.0 && fixed_total < content_width {
+        let slack = content_width - fixed_total;
+        return widths
+            .into_iter()
+            .map(|width| {
+                let width = width.unwrap_or(0.0);
+                width + slack * (width / fixed_total)
+            })
+            .collect();
+    }
+
+    widths
+        .into_iter()
+        .map(|width| width.unwrap_or(content_width / count as f32))
+        .collect()
 }
 
 #[derive(Debug, Clone)]

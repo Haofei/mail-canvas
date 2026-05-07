@@ -19,6 +19,7 @@ const DEFAULT_STORAGE_STATE = path.join(ROOT_DIR, '.rge-auth', 'storage-state.js
 function parseArgs(argv) {
   const args = {
     category: 'promotional',
+    collection: null,
     limit: 12,
     outDir: CORPUS_DIR,
     catalogPath: CATALOG_PATH,
@@ -39,6 +40,9 @@ function parseArgs(argv) {
     switch (arg) {
       case '--category':
         args.category = next();
+        break;
+      case '--collection':
+        args.collection = next();
         break;
       case '--limit':
         args.limit = positiveInt(next(), '--limit');
@@ -146,7 +150,10 @@ async function loginIfNeeded(context, args) {
 }
 
 async function collectSlugs(page, args) {
-  const url = `${RGE_ORIGIN}/categories/${encodeURIComponent(args.category)}`;
+  const url =
+    args.collection === 'latest'
+      ? `${RGE_ORIGIN}/latest`
+      : `${RGE_ORIGIN}/categories/${encodeURIComponent(args.category)}`;
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: args.timeoutMs });
   await page.waitForTimeout(1500);
   const slugs = await page.evaluate(() => {
@@ -165,7 +172,7 @@ async function collectSlugs(page, args) {
     }
     return [...found].filter((slug) => slug && !slug.includes('/'));
   });
-  return [...new Set(slugs)].sort();
+  return [...new Set(slugs)];
 }
 
 async function vendorSlug(context, slug, args) {

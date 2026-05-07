@@ -15,7 +15,7 @@
     "compare:dirty": "node scripts/playwright_compare.mjs --work-dir /tmp/mail-canvas-playwright-dirty --timeout-ms 30000 --width 800 --all --no-remote --fixture-fonts --corpus-group real-world-dirty",
     "compare:editors": "node scripts/playwright_compare.mjs --work-dir /tmp/mail-canvas-playwright-editors --timeout-ms 30000 --width 800 --all --no-remote --fixture-fonts --provider beefree --provider stripo --provider mjml",
     "compare:local": "node scripts/playwright_compare.mjs --work-dir /tmp/mail-canvas-playwright-local --timeout-ms 30000 --width 800 --no-remote --fixture-fonts",
-    "compare:rge": "node scripts/playwright_compare.mjs --work-dir /tmp/mail-canvas-playwright-rge --timeout-ms 30000 --width 800 --all --no-remote --fixture-fonts --provider reallygoodemails",
+    "compare:rge": "node scripts/playwright_compare.mjs --work-dir /tmp/mail-canvas-playwright-rge --timeout-ms 30000 --width 800 --all --no-remote --fixture-fonts --provider reallygoodemails --max-image-bytes 20971520 --max-decoded-pixels 50000000 --max-total-resource-bytes 134217728",
     "corpus:audit": "node scripts/audit_corpus.mjs",
     "corpus:manifest": "node scripts/export_corpus_manifest.mjs",
     "corpus:rge": "node scripts/vendor_reallygoodemails.mjs",

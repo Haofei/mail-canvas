@@ -298,7 +298,7 @@ Download a small authorized Really Good Emails sample and compare it:
 
 ```sh
 RGE_EMAIL=you@example.com RGE_PASSWORD='...' npm run corpus:rge -- \
-  --category promotional \
+  --collection latest \
   --limit 12 \
   --replace-provider \
   --login
@@ -860,7 +860,7 @@ npm run compare:editors
 
 ```sh
 RGE_EMAIL=you@example.com RGE_PASSWORD='...' npm run corpus:rge -- \
-  --category promotional \
+  --collection latest \
   --limit 12 \
   --replace-provider \
   --login

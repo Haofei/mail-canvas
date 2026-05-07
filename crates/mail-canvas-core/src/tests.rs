@@ -194,6 +194,68 @@ fn active_media_rule_can_stack_inline_tables() {
 }
 
 #[test]
+fn css_display_table_cells_share_one_row() {
+    let layout = layout_for_test(
+        r#"
+        <div style="display:table;width:600px">
+          <div style="display:table-cell;width:33.333333%;vertical-align:top">
+            <img width="100" height="50" alt="">
+          </div>
+          <div style="display:table-cell;width:33.333333%;vertical-align:top">
+            <img width="100" height="70" alt="">
+          </div>
+          <div style="display:table-cell;width:33.333333%;vertical-align:top">
+            <img width="100" height="60" alt="">
+          </div>
+        </div>
+        "#,
+        800,
+    );
+    let tables: Vec<&LayoutBox> = collect_layouts(&layout, &|child| {
+        matches!(child.kind, LayoutKind::Table) && child.style.display == Display::Table
+    });
+    let table = tables.last().expect("css table");
+    assert_eq!(table.children.len(), 1);
+    let row = &table.children[0];
+    assert_eq!(row.children.len(), 3);
+    assert!((table.rect.width - 600.0).abs() < 0.1);
+    assert!(
+        table.rect.height < 80.0,
+        "cells should occupy one row instead of stacking, got height {}",
+        table.rect.height
+    );
+    assert!((row.children[0].rect.width - 200.0).abs() < 0.5);
+    assert!((row.children[1].rect.x - row.children[0].rect.x - 200.0).abs() < 0.5);
+    assert!((row.children[2].rect.x - row.children[0].rect.x - 400.0).abs() < 0.5);
+}
+
+#[test]
+fn blockified_table_cells_stack_within_their_row() {
+    let layout = layout_for_test(
+        r#"
+        <table width="262" style="border-collapse:collapse">
+          <tr>
+            <th style="display:block;padding:0" width="262"><img width="262" height="40" alt=""></th>
+            <th style="display:block;padding:0" width="262"><img width="262" height="80" alt=""></th>
+          </tr>
+        </table>
+        "#,
+        600,
+    );
+    let table =
+        find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+    let row = &table.children[0];
+    assert_eq!(row.children.len(), 2);
+    assert!((row.children[0].rect.x - row.children[1].rect.x).abs() < 0.1);
+    assert!(row.children[1].rect.y >= row.children[0].rect.y + row.children[0].rect.height - 0.1);
+    assert!(
+        table.rect.height >= 120.0 && table.rect.height < 125.0,
+        "blockified cells should stack vertically, got table height {}",
+        table.rect.height
+    );
+}
+
+#[test]
 fn parses_unitless_line_height_as_font_multiplier() {
     let unitless = parse_line_height_declaration("1.625", 16.0).unwrap();
     assert!((unitless.height - 26.0).abs() < 0.1);
@@ -1222,6 +1284,29 @@ fn table_spacer_cells_keep_non_breaking_space_width() {
     assert!(cells[0].rect.width > 1.0);
     assert!(cells[1].rect.width < 600.0);
     assert!(cells[2].rect.width > 1.0);
+}
+
+#[test]
+fn colspan_spacer_does_not_freeze_auto_table_columns() {
+    let layout = layout_for_test(
+        r#"<table width="600" cellpadding="0" cellspacing="0">
+            <tr><td colspan="2" style="font-size:0;line-height:1">&nbsp;</td></tr>
+            <tr>
+              <td style="width:125px;padding:0 28px"><img width="125" height="35" alt=""></td>
+              <td style="padding:0 28px;text-align:right"><table align="right" style="float:right"><tr><td style="padding:8px 16px;font-size:10px;line-height:10px"><a style="display:block;font-size:10px;line-height:10px">Log in</a></td></tr></table></td>
+            </tr>
+          </table>"#,
+        800,
+    );
+    let table =
+        find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+    let cells = &table.children[1].children;
+    assert!((cells[0].rect.width - 181.0).abs() < 0.1);
+    assert!(
+        cells[1].rect.width > 300.0,
+        "auto column should receive the remaining table width, got {}",
+        cells[1].rect.width
+    );
 }
 
 #[test]

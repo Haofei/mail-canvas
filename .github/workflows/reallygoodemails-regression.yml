@@ -6,9 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       category:
-        description: Really Good Emails category slug.
+        description: Really Good Emails category slug when collection is empty.
         required: false
         default: promotional
+      collection:
+        description: Really Good Emails collection, for example latest.
+        required: false
+        default: latest
       limit:
         description: Number of templates to vendor and compare.
         required: false
@@ -19,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RGE_CATEGORY: ${{ github.event.inputs.category || 'promotional' }}
+      RGE_COLLECTION: ${{ github.event.inputs.collection || 'latest' }}
       RGE_LIMIT: ${{ github.event.inputs.limit || '12' }}
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +48,7 @@ jobs:
           fi
           npm run corpus:rge -- \
             --category "$RGE_CATEGORY" \
+            --collection "$RGE_COLLECTION" \
             --limit "$RGE_LIMIT" \
             --replace-provider \
             "${login_args[@]}"
@@ -52,6 +58,7 @@ jobs:
         if: always()
         run: |
           echo "## Really Good Emails regression" >> "$GITHUB_STEP_SUMMARY"
+          echo "- collection: $RGE_COLLECTION" >> "$GITHUB_STEP_SUMMARY"
           echo "- category: $RGE_CATEGORY" >> "$GITHUB_STEP_SUMMARY"
           echo "- limit: $RGE_LIMIT" >> "$GITHUB_STEP_SUMMARY"
           if [ -f /tmp/mail-canvas-playwright-rge/report.md ]; then
