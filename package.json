@@ -6,6 +6,7 @@
   "scripts": {
     "benchmark:memory": "node scripts/benchmark_memory.mjs",
     "benchmark:repeated-image": "node scripts/benchmark_memory.mjs --case repeated-image --width 800",
+    "benchmark:thumbnail": "node scripts/benchmark_memory.mjs --case thumbnail-800x1200",
     "build:demo": "bash scripts/build_wasm_demo.sh",
     "compare:corpus": "node scripts/playwright_compare.mjs --expectations scripts/playwright_expectations.json --work-dir /tmp/mail-canvas-playwright-corpus --timeout-ms 30000 --all --no-remote --corpus-group golden",
     "compare:dirty": "node scripts/playwright_compare.mjs --work-dir /tmp/mail-canvas-playwright-dirty --timeout-ms 30000 --width 800 --all --no-remote --fixture-fonts --corpus-group real-world-dirty",

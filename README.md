@@ -410,6 +410,16 @@ npm run benchmark:memory -- --case repeated-image --width 800 --out /tmp/mail-ca
 This synthetic case repeats the same large PNG many times in one email, so it is
 useful for catching regressions in per-render image caching and clone behavior.
 
+Use the fixed thumbnail case for the production-style `800x1200` preview path:
+
+```sh
+npm run benchmark:thumbnail -- --out /tmp/mail-canvas-thumbnail-800x1200.json
+```
+
+This case uses a local `800x1200` marketing email with one large hero image and
+no remote resources. The benchmark builds the release CLI and compares it
+against Chromium screenshot capture through Playwright.
+
 ### Development Checks
 
 ```sh
@@ -721,6 +731,15 @@ npm run benchmark:memory -- --template colorlib-template-1 --out /tmp/mail-canva
 ```sh
 npm run benchmark:memory -- --case repeated-image --width 800 --out /tmp/mail-canvas-repeated-image.json
 ```
+
+固定缩略图场景用于验证实际会用到的 `800x1200` 预览路径：
+
+```sh
+npm run benchmark:thumbnail -- --out /tmp/mail-canvas-thumbnail-800x1200.json
+```
+
+这个 case 使用本地营销邮件、一张大 hero 图、无远程资源，并用 release CLI 对比
+Playwright/Chromium 截图。
 
 ### 开发检查
 
