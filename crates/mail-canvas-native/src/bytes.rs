@@ -104,8 +104,7 @@ pub(crate) fn load_resolved_resource_bytes_inner(
     if kind != AssetKind::Image {
         if let Some(bytes) = policy
             .byte_cache
-            .lock()
-            .expect("byte cache mutex poisoned")
+            .borrow()
             .get(resolved.resolved_url.as_str())
             .cloned()
         {
@@ -285,8 +284,7 @@ fn cache_resource_bytes(url: &Url, kind: AssetKind, policy: &ResourcePolicy, byt
     }
     policy
         .byte_cache
-        .lock()
-        .expect("byte cache mutex poisoned")
+        .borrow_mut()
         .insert(url.as_str().to_owned(), Arc::clone(bytes));
 }
 

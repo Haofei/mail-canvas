@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
+use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use mail_canvas_core::{
@@ -21,10 +23,10 @@ const MAX_ASSET_REPORTS: usize = 512;
 pub struct ResourcePolicy {
     pub(crate) base_url: Option<Url>,
     pub(crate) policy: mail_canvas_core::ResourcePolicy,
-    pub(crate) usage: Arc<Mutex<ResourceUsage>>,
-    pub(crate) asset_reports: Arc<Mutex<Vec<AssetReport>>>,
-    image_cache: Arc<Mutex<HashMap<String, ImageData>>>,
-    pub(crate) byte_cache: Arc<Mutex<HashMap<String, Arc<[u8]>>>>,
+    pub(crate) usage: Rc<RefCell<ResourceUsage>>,
+    pub(crate) asset_reports: Rc<RefCell<Vec<AssetReport>>>,
+    image_cache: Rc<RefCell<HashMap<String, ImageData>>>,
+    pub(crate) byte_cache: Rc<RefCell<HashMap<String, Arc<[u8]>>>>,
     pub(crate) agent: ureq::Agent,
 }
 
@@ -40,20 +42,16 @@ impl ResourcePolicy {
         Self {
             base_url: request.base_url.clone().or(document_base_url),
             policy: request.resource_policy.clone(),
-            usage: Arc::new(Mutex::new(ResourceUsage::default())),
-            asset_reports: Arc::new(Mutex::new(Vec::new())),
-            image_cache: Arc::new(Mutex::new(HashMap::new())),
-            byte_cache: Arc::new(Mutex::new(HashMap::new())),
+            usage: Rc::new(RefCell::new(ResourceUsage::default())),
+            asset_reports: Rc::new(RefCell::new(Vec::new())),
+            image_cache: Rc::new(RefCell::new(HashMap::new())),
+            byte_cache: Rc::new(RefCell::new(HashMap::new())),
             agent,
         }
     }
 
     pub(crate) fn take_asset_reports(&self) -> Vec<AssetReport> {
-        let mut reports = self
-            .asset_reports
-            .lock()
-            .expect("asset report mutex poisoned");
-        std::mem::take(&mut *reports)
+        std::mem::take(&mut *self.asset_reports.borrow_mut())
     }
 
     pub(crate) fn record_asset_report(&self, report: AssetReport) {
@@ -61,10 +59,7 @@ impl ResourcePolicy {
     }
 
     pub(crate) fn push_asset_report(&self, report: AssetReport) {
-        let mut reports = self
-            .asset_reports
-            .lock()
-            .expect("asset report mutex poisoned");
+        let mut reports = self.asset_reports.borrow_mut();
         if let Some(existing) = reports.iter_mut().find(|existing| {
             existing.kind == report.kind
                 && existing.request_url == report.request_url
@@ -80,7 +75,7 @@ impl ResourcePolicy {
     }
 
     pub(crate) fn record_resource_usage(&self, bytes: usize) -> Result<()> {
-        let mut usage = self.usage.lock().expect("resource usage mutex poisoned");
+        let mut usage = self.usage.borrow_mut();
         usage.count = usage.count.saturating_add(1);
         if usage.count > self.policy.max_resource_count {
             bail!(
@@ -149,13 +144,7 @@ pub(crate) fn load_image(
 
     if let Some(resolved) = resolved.as_ref().filter(|resolved| resolved.cacheable()) {
         let key = resolved.resolved_url.as_str();
-        if let Some(image) = policy
-            .image_cache
-            .lock()
-            .expect("image cache mutex poisoned")
-            .get(key)
-            .cloned()
-        {
+        if let Some(image) = policy.image_cache.borrow().get(key).cloned() {
             policy.push_asset_report(
                 asset_report(AssetKind::Image, AssetStatus::Loaded, src)
                     .with_source(resolved.source)
@@ -182,8 +171,7 @@ pub(crate) fn load_image(
             if let Some(key) = loaded.resolved_url.as_ref().filter(|_| loaded.cacheable()) {
                 policy
                     .image_cache
-                    .lock()
-                    .expect("image cache mutex poisoned")
+                    .borrow_mut()
                     .insert(key.clone(), image.clone());
             }
             policy.push_asset_report(
@@ -257,10 +245,10 @@ mod tests {
         ResourcePolicy {
             base_url: None,
             policy,
-            usage: Arc::new(Mutex::new(ResourceUsage::default())),
-            asset_reports: Arc::new(Mutex::new(Vec::new())),
-            image_cache: Arc::new(Mutex::new(HashMap::new())),
-            byte_cache: Arc::new(Mutex::new(HashMap::new())),
+            usage: Rc::new(RefCell::new(ResourceUsage::default())),
+            asset_reports: Rc::new(RefCell::new(Vec::new())),
+            image_cache: Rc::new(RefCell::new(HashMap::new())),
+            byte_cache: Rc::new(RefCell::new(HashMap::new())),
             agent,
         }
     }
@@ -284,7 +272,7 @@ mod tests {
         let second = load_image("pixel.png", &policy, "img").expect("second load");
 
         assert!(Arc::ptr_eq(&first.rgba, &second.rgba));
-        assert_eq!(policy.usage.lock().expect("resource usage mutex").count, 1);
+        assert_eq!(policy.usage.borrow().count, 1);
 
         let _ = fs::remove_file(image_path);
         let _ = fs::remove_dir(dir);
@@ -310,7 +298,7 @@ mod tests {
 
         assert_eq!(first, second);
         assert!(Arc::ptr_eq(&first, &second));
-        let usage = policy.usage.lock().expect("resource usage mutex");
+        let usage = policy.usage.borrow();
         assert_eq!(usage.count, 1);
         assert_eq!(usage.total_bytes, first.len());
 
