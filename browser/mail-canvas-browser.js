@@ -338,7 +338,9 @@ function isStylesheetBytes(bytes) {
   if (bytes.length === 0) {
     return false;
   }
-  const head = new TextDecoder().decode(bytes.slice(0, Math.min(bytes.length, 32))).trimStart();
+  const head = new TextDecoder()
+    .decode(bytes.subarray(0, Math.min(bytes.length, 32)))
+    .trimStart();
   return head.startsWith("@") || head.includes("{");
 }
 
