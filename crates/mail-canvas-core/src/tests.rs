@@ -1,4 +1,5 @@
 use super::*;
+use crate::layout::LayoutDebugMeta;
 use crate::style::{
     AlignItems, Clear, FlexDirection, FlexWrap, FloatSide, JustifyContent, Position, TextWrap,
     parse_color, parse_edges_with_font, parse_font_family, parse_font_family_selection,
@@ -1134,6 +1135,7 @@ fn body_color_inherits_to_paragraph_text() {
         FontFamilyIndex::default(),
         Vec::new(),
         RenderLimits::default(),
+        true,
     );
     let layout = engine.layout_document(&document, 200).unwrap();
     let text = find_text_layout(&layout).expect("text");
@@ -2650,6 +2652,32 @@ fn debug_snapshot_is_opt_in() {
     let debug = image.debug.expect("debug snapshot");
     assert!(debug.layout.is_some());
     assert!(!debug.text_rects.is_empty());
+}
+
+#[test]
+fn layout_debug_metadata_is_opt_in() {
+    let html = build_document(
+        r#"<p id="hero" class="title">Hello debug</p>"#,
+        None,
+        None,
+        320,
+    );
+    let html = inline_css(&html, 320, 240).unwrap();
+    let document = kuchiki::parse_html().one(html);
+    let mut font_system = FontSystem::new();
+    let mut engine = LayoutEngine::new(
+        &mut font_system,
+        resource_policy_for_test(),
+        FontFamilyIndex::default(),
+        Vec::new(),
+        RenderLimits::default(),
+        false,
+    );
+    let layout = engine.layout_document(&document, 320).unwrap();
+    let text = find_text_layout(&layout).expect("text layout");
+
+    assert_eq!(layout.debug, LayoutDebugMeta::default());
+    assert_eq!(text.debug, LayoutDebugMeta::default());
 }
 
 #[test]

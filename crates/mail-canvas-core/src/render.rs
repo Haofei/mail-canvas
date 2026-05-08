@@ -126,6 +126,7 @@ impl RendererCore {
             available_font_families,
             web_font_faces,
             limits,
+            request.debug.any(),
         );
         let mut layout = engine.layout_document(&document, request.width)?;
         for warning in std::mem::take(&mut engine.warnings) {

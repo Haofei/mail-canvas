@@ -157,6 +157,7 @@ pub(crate) fn layout_for_test(html: &str, width: u32) -> LayoutBox {
         FontFamilyIndex::default(),
         Vec::new(),
         RenderLimits::default(),
+        true,
     );
     engine.layout_document(&document, width).unwrap()
 }

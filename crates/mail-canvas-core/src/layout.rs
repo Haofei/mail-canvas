@@ -63,6 +63,7 @@ pub(crate) struct LayoutEngine<'a, R: ResourceProvider> {
     limits: RenderLimits,
     available_font_families: FontFamilyIndex,
     web_font_faces: Vec<WebFontFace>,
+    collect_debug_meta: bool,
     pub(crate) warnings: Vec<RenderWarning>,
 }
 
@@ -73,6 +74,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         available_font_families: FontFamilyIndex,
         web_font_faces: Vec<WebFontFace>,
         limits: RenderLimits,
+        collect_debug_meta: bool,
     ) -> Self {
         Self {
             font_system,
@@ -80,6 +82,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             limits,
             available_font_families,
             web_font_faces,
+            collect_debug_meta,
             warnings: Vec::new(),
         }
     }
@@ -104,6 +107,54 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         }
         if let Ok(image) = self.resources.load_image(src, "background-image") {
             style.background_image = Some(image);
+        }
+    }
+
+    fn debug_for_node(&self, node: &NodeRef, fallback_tag: &str) -> LayoutDebugMeta {
+        if self.collect_debug_meta {
+            LayoutDebugMeta::for_node(node, fallback_tag)
+        } else {
+            LayoutDebugMeta::default()
+        }
+    }
+
+    fn debug_for_tag(&self, tag: &str) -> LayoutDebugMeta {
+        if self.collect_debug_meta {
+            LayoutDebugMeta::for_tag(tag)
+        } else {
+            LayoutDebugMeta::default()
+        }
+    }
+
+    fn debug_for_text(&self, text: &str) -> LayoutDebugMeta {
+        if self.collect_debug_meta {
+            LayoutDebugMeta::for_text(text)
+        } else {
+            LayoutDebugMeta::default()
+        }
+    }
+
+    fn debug_for_text_spans(&self, spans: &[TextSpan]) -> LayoutDebugMeta {
+        if self.collect_debug_meta {
+            LayoutDebugMeta::for_text(&spans_text(spans))
+        } else {
+            LayoutDebugMeta::default()
+        }
+    }
+
+    fn debug_for_marker(&self) -> LayoutDebugMeta {
+        if self.collect_debug_meta {
+            LayoutDebugMeta::for_marker()
+        } else {
+            LayoutDebugMeta::default()
+        }
+    }
+
+    fn debug_for_image_node(&self, node: &NodeRef) -> LayoutDebugMeta {
+        if self.collect_debug_meta {
+            LayoutDebugMeta::for_image_node(node)
+        } else {
+            LayoutDebugMeta::default()
         }
     }
 
@@ -134,7 +185,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             kind: LayoutKind::Block,
             rect: Rect::new(0.0, 0.0, layout_width, content.advance.max(1.0)),
             style: root_style,
-            debug: LayoutDebugMeta::for_node(&root_node, "body"),
+            debug: self.debug_for_node(&root_node, "body"),
             children: content.children,
         })
     }
@@ -508,8 +559,8 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             LayoutKind::RichText(normalized)
         };
         let debug = match &kind {
-            LayoutKind::Text(text) => LayoutDebugMeta::for_text(text),
-            LayoutKind::RichText(spans) => LayoutDebugMeta::for_text(&spans_text(spans)),
+            LayoutKind::Text(text) => self.debug_for_text(text),
+            LayoutKind::RichText(spans) => self.debug_for_text_spans(spans),
             _ => LayoutDebugMeta::default(),
         };
         children.push(LayoutBox {
@@ -580,8 +631,8 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             LayoutKind::RichText(normalized)
         };
         let debug = match &kind {
-            LayoutKind::Text(text) => LayoutDebugMeta::for_text(text),
-            LayoutKind::RichText(spans) => LayoutDebugMeta::for_text(&spans_text(spans)),
+            LayoutKind::Text(text) => self.debug_for_text(text),
+            LayoutKind::RichText(spans) => self.debug_for_text_spans(spans),
             _ => LayoutDebugMeta::default(),
         };
 
@@ -707,7 +758,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 kind: LayoutKind::Block,
                 rect: Rect::new(rect_x, rect_y, rect_width, rect_height),
                 style,
-                debug: LayoutDebugMeta::for_node(node, "div"),
+                debug: self.debug_for_node(node, "div"),
                 children: content.children,
             },
         }))
@@ -770,7 +821,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 kind: LayoutKind::Block,
                 rect: Rect::new(rect_x, rect_y, outer_width, rect_height),
                 style,
-                debug: LayoutDebugMeta::for_node(node, "div"),
+                debug: self.debug_for_node(node, "div"),
                 children: content.children,
             },
         }))
@@ -833,8 +884,8 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     LayoutKind::RichText(normalized)
                 };
                 let debug = match &kind {
-                    LayoutKind::Text(text) => LayoutDebugMeta::for_text(text),
-                    LayoutKind::RichText(spans) => LayoutDebugMeta::for_text(&spans_text(spans)),
+                    LayoutKind::Text(text) => self.debug_for_text(text),
+                    LayoutKind::RichText(spans) => self.debug_for_text_spans(spans),
                     _ => LayoutDebugMeta::default(),
                 };
                 let item = LayoutBox {
@@ -932,7 +983,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 kind: LayoutKind::Block,
                 rect: Rect::new(rect_x, rect_y, outer_width, rect_height),
                 style,
-                debug: LayoutDebugMeta::for_node(node, "div"),
+                debug: self.debug_for_node(node, "div"),
                 children,
             },
         }))
@@ -1048,7 +1099,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     kind: LayoutKind::Row,
                     rect: Rect::new(content_x, row_y, content_width, row_height),
                     style: row_style,
-                    debug: LayoutDebugMeta::for_node(&row.node, "tr"),
+                    debug: self.debug_for_node(&row.node, "tr"),
                     children: row_children,
                 });
                 row_y += row_height + spacing;
@@ -1089,7 +1140,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                         kind: LayoutKind::Cell,
                         rect: Rect::new(cell_x, row_y, cell_width, cell_height),
                         style: cell_style,
-                        debug: LayoutDebugMeta::for_node(&cell.node, "td"),
+                        debug: self.debug_for_node(&cell.node, "td"),
                         children: content.children,
                     },
                     natural_cell_height,
@@ -1124,7 +1175,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 kind: LayoutKind::Row,
                 rect: Rect::new(content_x, row_y, content_width, row_height),
                 style: row_style,
-                debug: LayoutDebugMeta::for_node(&row.node, "tr"),
+                debug: self.debug_for_node(&row.node, "tr"),
                 children: cell_boxes.into_iter().map(|(_, cell, _)| cell).collect(),
             });
             row_y += row_height + spacing;
@@ -1144,7 +1195,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 kind: LayoutKind::Table,
                 rect: Rect::new(rect_x, rect_y, table_width, table_height),
                 style,
-                debug: LayoutDebugMeta::for_node(node, "table"),
+                debug: self.debug_for_node(node, "table"),
                 children: row_boxes,
             },
         }))
@@ -1250,7 +1301,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                         kind: LayoutKind::Cell,
                         rect: Rect::new(cursor_x, row_y, cell_width, cell_height),
                         style: cell_style.clone(),
-                        debug: LayoutDebugMeta::for_node(cell_node, "td"),
+                        debug: self.debug_for_node(cell_node, "td"),
                         children: content.children,
                     },
                     natural_cell_height,
@@ -1286,7 +1337,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 kind: LayoutKind::Row,
                 rect: Rect::new(content_x, row_y, content_width, row_height),
                 style: row_style,
-                debug: LayoutDebugMeta::for_node(&row_node, "tr"),
+                debug: self.debug_for_node(&row_node, "tr"),
                 children: cell_boxes.into_iter().map(|(_, cell, _)| cell).collect(),
             });
             row_y += row_height;
@@ -1310,7 +1361,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 kind: LayoutKind::Table,
                 rect: Rect::new(rect_x, rect_y, table_width, table_height),
                 style,
-                debug: LayoutDebugMeta::for_node(node, "table"),
+                debug: self.debug_for_node(node, "table"),
                 children: row_boxes,
             },
         }))
@@ -1445,7 +1496,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     kind: LayoutKind::Cell,
                     rect: Rect::new(cursor_x, content_y, cell_width, cell_height),
                     style: cell_style.clone(),
-                    debug: LayoutDebugMeta::for_node(cell_node, "td"),
+                    debug: self.debug_for_node(cell_node, "td"),
                     children: content.children,
                 },
                 natural_cell_height,
@@ -1477,7 +1528,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             kind: LayoutKind::Row,
             rect: Rect::new(content_x, content_y, content_width, row_height),
             style: style.clone(),
-            debug: LayoutDebugMeta::for_tag("tr"),
+            debug: self.debug_for_tag("tr"),
             children: cell_boxes.into_iter().map(|(_, cell, _)| cell).collect(),
         };
         let explicit_height = style.resolve_height(0.0).unwrap_or(0.0);
@@ -1493,7 +1544,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 kind: LayoutKind::Table,
                 rect: Rect::new(rect_x, rect_y, table_width, table_height),
                 style,
-                debug: LayoutDebugMeta::for_node(node, "table"),
+                debug: self.debug_for_node(node, "table"),
                 children: vec![row_box],
             },
         }))
@@ -1882,7 +1933,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     height,
                 ),
                 style,
-                debug: LayoutDebugMeta::for_image_node(node),
+                debug: self.debug_for_image_node(node),
                 children: Vec::new(),
             },
         }
@@ -1926,7 +1977,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     resolved_line_height_from_db(self.font_system.db(), &style),
                 ),
                 style: marker_style,
-                debug: LayoutDebugMeta::for_marker(),
+                debug: self.debug_for_marker(),
                 children: Vec::new(),
             },
         );
@@ -1953,7 +2004,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 kind: LayoutKind::Block,
                 rect: Rect::new(rect_x, rect_y, outer_width, rect_height),
                 style,
-                debug: LayoutDebugMeta::for_node(node, "li"),
+                debug: self.debug_for_node(node, "li"),
                 children,
             },
         }))
@@ -1974,7 +2025,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 kind: LayoutKind::Block,
                 rect: Rect::new(x + style.margin.left, y + style.margin.top, width, height),
                 style,
-                debug: LayoutDebugMeta::for_tag("hr"),
+                debug: self.debug_for_tag("hr"),
                 children: Vec::new(),
             },
         }
@@ -2719,7 +2770,7 @@ struct LayoutChildren {
     trailing_collapsible_margin: f32,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct LayoutDebugMeta {
     pub(crate) tag: String,
     pub(crate) id: Option<String>,
