@@ -106,7 +106,7 @@ async function main() {
         '--allow-remote',
         '--allow-http',
         ...(args.fixtureFonts
-          ? FIXTURE_FONT_FILES.flatMap((fontPath) => ['--font-file', fontPath])
+          ? fixtureFontFilesForHtml(source.html).flatMap((fontPath) => ['--font-file', fontPath])
           : []),
       ],
       ROOT_DIR,
@@ -293,6 +293,21 @@ function createGradientPng(width, height) {
     }
   }
   return png;
+}
+
+function fixtureFontFilesForHtml(html) {
+  if (htmlNeedsEmojiFont(html)) {
+    return FIXTURE_FONT_FILES;
+  }
+  return FIXTURE_FONT_FILES.filter((fontPath) => !/emoji/i.test(path.basename(fontPath)));
+}
+
+function htmlNeedsEmojiFont(html) {
+  return (
+    /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(html) ||
+    /&#x(?:1f[0-9a-f]{3,4}|2[6-7][0-9a-f]{2});/i.test(html) ||
+    /&#(?:12[7-9]\d{3});/.test(html)
+  );
 }
 
 async function runOrThrow(command, args, cwd) {

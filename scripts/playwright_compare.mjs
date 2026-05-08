@@ -154,9 +154,6 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.fixtureFonts) {
     args.fixtureFontFaces = await loadFixtureFontFaces();
-    args.fixtureFontFiles = [
-      ...new Set(args.fixtureFontFaces.map((face) => path.resolve(ROOT_DIR, 'fixtures', 'fonts', face.path))),
-    ];
   }
   const expectations = args.expectations ? await loadExpectations(args.expectations) : null;
   if (expectations?.width && args.width === DEFAULT_WIDTH) {
@@ -349,9 +346,12 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
 
   const sourceHtml = await readFile(template.htmlPath, 'utf8');
   const baseUrl = template.sourceBaseUrl ?? template.baseUrl ?? new URL('.', template.url).href;
+  const fixtureFontFaces = args.fixtureFontFaces
+    ? fixtureFontFacesForHtml(args.fixtureFontFaces, sourceHtml)
+    : null;
   await writeFile(
     preparedPath,
-    buildBrowserDocument(sourceHtml, baseUrl, args.width, args.fixtureFontFaces),
+    buildBrowserDocument(sourceHtml, baseUrl, args.width, fixtureFontFaces),
   );
 
   const browserMetrics = await browserScreenshotWithCache(
@@ -379,8 +379,8 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     '--layout-json',
     layoutPath,
   ];
-  if (args.fixtureFontFiles) {
-    for (const fontPath of args.fixtureFontFiles) {
+  if (fixtureFontFaces) {
+    for (const fontPath of fixtureFontFilesForFaces(fixtureFontFaces)) {
       renderArgs.push('--font-file', fontPath);
     }
   }
@@ -1270,6 +1270,35 @@ function fallbackFixtureFontFaces() {
       aliases: ['Apple Color Emoji', 'Segoe UI Emoji'],
     },
   ];
+}
+
+function fixtureFontFacesForHtml(fontFaces, html) {
+  if (htmlNeedsEmojiFont(html)) {
+    return fontFaces;
+  }
+  return fontFaces.filter((face) => !isEmojiFontFace(face));
+}
+
+function fixtureFontFilesForFaces(fontFaces) {
+  return [
+    ...new Set(fontFaces.map((face) => path.resolve(ROOT_DIR, 'fixtures', 'fonts', face.path))),
+  ];
+}
+
+function isEmojiFontFace(face) {
+  return (
+    /emoji/i.test(face.family || '') ||
+    /emoji/i.test(face.path || '') ||
+    (face.aliases ?? []).some((alias) => /emoji/i.test(alias))
+  );
+}
+
+function htmlNeedsEmojiFont(html) {
+  return (
+    /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(html) ||
+    /&#x(?:1f[0-9a-f]{3,4}|2[6-7][0-9a-f]{2});/i.test(html) ||
+    /&#(?:12[7-9]\d{3});/.test(html)
+  );
 }
 
 function fixtureFontCss(fontFaces) {

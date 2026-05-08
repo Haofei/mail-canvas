@@ -331,8 +331,10 @@ npm run fonts:download
 The committed bundle intentionally stays small: email-safe aliases are mapped to
 Arimo/Tinos, Noto covers generic fallback/math symbols/default emoji, and common
 Google Fonts such as Roboto, Open Sans, Lato, Montserrat, Poppins, Inter, Source
-Sans 3, Merriweather, and Nunito Sans are vendored as latin subsets. Avoid
-adding template-specific font workarounds to the fixture catalog.
+Sans 3, Merriweather, and Nunito Sans are vendored as latin subsets. The
+comparison and benchmark scripts load the emoji fixture only when the source
+HTML actually contains emoji. Avoid adding template-specific font workarounds to
+the fixture catalog.
 
 Compare one local HTML file:
 
