@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-08T02:39:48.577Z",
+  "updatedAt": "2026-05-08T02:49:18.005Z",
   "templates": [
     {
       "name": "beefree-confirm-and-you-are-official",
@@ -1397,6 +1397,28 @@
       }
     },
     {
+      "name": "reallygoodemails-counter-print-latest-books-paul-rand",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/counter-print-latest-books-paul-rand",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-counter-print-latest-books-paul-rand.html",
+      "htmlMd5": "ff9d6ef8b52c35cbe6e7132cdc2b09c5",
+      "htmlBytes": 158144,
+      "assetCount": 18,
+      "assetBytes": 1012154,
+      "assetManifestMd5": "1a2de46988d54a256a403851b2a236a5",
+      "contentMd5": "b6eb72cde5c9241b6e93f3ea21ba6956",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T02:49:17.848Z",
+        "commit": "4d8c9b6",
+        "workDir": "runs/pipeline-two-new-20260507-194853",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "6.61%",
+        "heightDelta": -16
+      }
+    },
+    {
       "name": "reallygoodemails-dear-october-14th-me-did-you-go",
       "provider": "reallygoodemails",
       "url": "https://reallygoodemails.com/emails/dear-october-14th-me-did-you-go",
@@ -1521,6 +1543,28 @@
       "contentMd5": "1133013f96bd972a35beab2237d09db6",
       "retainedInRepo": false,
       "lastRun": null
+    },
+    {
+      "name": "reallygoodemails-have-you-seen-buffers-latest-features",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/have-you-seen-buffers-latest-features",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-have-you-seen-buffers-latest-features.html",
+      "htmlMd5": "cd2c37098154ba156d5a9a822e0a7f3a",
+      "htmlBytes": 39033,
+      "assetCount": 7,
+      "assetBytes": 393829,
+      "assetManifestMd5": "b253480f2e949cc384ce61be2cce5433",
+      "contentMd5": "aa75badd765d177c3355285c5ed07315",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T02:49:17.848Z",
+        "commit": "4d8c9b6",
+        "workDir": "runs/pipeline-two-new-20260507-194853",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "3.09%",
+        "heightDelta": -1
+      }
     },
     {
       "name": "reallygoodemails-have-you-seen-the-latest-features",

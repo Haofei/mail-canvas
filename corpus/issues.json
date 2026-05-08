@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-08T02:39:48.395Z",
+  "updatedAt": "2026-05-08T02:49:17.849Z",
   "summary": {
-    "pendingCount": 3,
+    "pendingCount": 5,
     "fixedCount": 0,
     "byType": [
       {
         "type": "text_coverage_mismatch",
-        "pendingTemplates": 2,
+        "pendingTemplates": 4,
         "fixedTemplates": 0,
-        "totalTemplates": 2,
-        "totalOccurrences": 2,
+        "totalTemplates": 4,
+        "totalOccurrences": 4,
         "currentRunOccurrences": 2,
-        "latestSeenAt": "2026-05-08T02:39:48.395Z"
+        "latestSeenAt": "2026-05-08T02:49:17.849Z"
       },
       {
         "type": "text_position_wrap_mismatch",
@@ -20,7 +20,7 @@
         "fixedTemplates": 0,
         "totalTemplates": 1,
         "totalOccurrences": 1,
-        "currentRunOccurrences": 1,
+        "currentRunOccurrences": 0,
         "latestSeenAt": "2026-05-08T02:39:48.395Z"
       }
     ]
@@ -60,6 +60,86 @@
         "assets": {
           "total": 14,
           "loaded": 14,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-counter-print-latest-books-paul-rand:text_coverage_mismatch",
+      "name": "reallygoodemails-counter-print-latest-books-paul-rand",
+      "type": "text_coverage_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T02:49:17.849Z",
+      "lastSeenAt": "2026-05-08T02:49:17.849Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T02:49:17.849Z",
+        "commit": "4d8c9b6",
+        "workDir": "runs/pipeline-two-new-20260507-194853",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "6.61%",
+        "heightDelta": -16,
+        "firstBadRegion": {
+          "y0": 1100,
+          "y1": 1200,
+          "diffPixels": 9798,
+          "diffRatio": 0.122475
+        },
+        "nonMediaNonTextPercent": "2.54%",
+        "mediaPercent": "8.40%",
+        "mediaRectDeltaPercent": "2.18%",
+        "textCoverageDeltaPercent": "12.34%",
+        "textRectDeltaPercent": "22.79%",
+        "warnings": 0,
+        "assets": {
+          "total": 18,
+          "loaded": 18,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-have-you-seen-buffers-latest-features:text_coverage_mismatch",
+      "name": "reallygoodemails-have-you-seen-buffers-latest-features",
+      "type": "text_coverage_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T02:49:17.849Z",
+      "lastSeenAt": "2026-05-08T02:49:17.849Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T02:49:17.849Z",
+        "commit": "4d8c9b6",
+        "workDir": "runs/pipeline-two-new-20260507-194853",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "3.09%",
+        "heightDelta": -1,
+        "firstBadRegion": {
+          "y0": 1300,
+          "y1": 1400,
+          "diffPixels": 4364,
+          "diffRatio": 0.05455
+        },
+        "nonMediaNonTextPercent": "0.13%",
+        "mediaPercent": "12.75%",
+        "mediaRectDeltaPercent": "4.05%",
+        "textCoverageDeltaPercent": "14.76%",
+        "textRectDeltaPercent": "84.70%",
+        "warnings": 0,
+        "assets": {
+          "total": 7,
+          "loaded": 7,
           "blocked": 0,
           "failed": 0,
           "failedByKind": {}
