@@ -305,10 +305,21 @@ function classifyResult(result, corpusIssue) {
   if (result.status === 'render-failed') {
     return { priority: 'P0', reason: result.error ?? 'renderer failed' };
   }
-  const heightDelta = Math.abs(result.rust.height - result.browser.height);
   if ((result.assetSummary?.failed ?? 0) > 0) {
-    return { priority: 'P0', reason: 'asset failed to load' };
+    const failedByKind = result.assetSummary?.failedByKind ?? {};
+    const failedImages =
+      (failedByKind.image ?? 0) +
+      (failedByKind.background_image ?? 0) +
+      (failedByKind.background ?? 0);
+    if (failedImages > 0) {
+      return { priority: 'P0', reason: 'image asset failed to load' };
+    }
+    if ((failedByKind.web_font ?? 0) === result.assetSummary.failed) {
+      return { priority: 'P2', reason: 'web font failed; using fallback font' };
+    }
+    return { priority: 'P1', reason: 'non-image asset failed to load' };
   }
+  const heightDelta = Math.abs(result.rust.height - result.browser.height);
   if (heightDelta > 300) {
     return { priority: 'P0', reason: `large height delta (${heightDelta}px)` };
   }
@@ -394,12 +405,14 @@ function blit(source, target, offsetX, offsetY) {
 }
 
 async function writeTriageMarkdown(args, compare, triage, audit) {
+  const counts = countTriagePriorities(triage);
   const lines = [
     '# Corpus Pipeline Report',
     '',
     `- Generated: ${new Date().toISOString()}`,
     `- Width: ${args.width}px`,
     `- Targets: ${triage.length}`,
+    `- Priority counts: P0=${counts.P0}, P1=${counts.P1}, P2=${counts.P2}, P3=${counts.P3}`,
     `- Browser cache: \`${args.browserCacheDir}\``,
     `- Compare report: \`${compare.reportMd}\``,
     `- Audit issues: ${(audit.issues ?? []).length}`,
@@ -427,6 +440,16 @@ async function writeTriageMarkdown(args, compare, triage, audit) {
   }
   lines.push('');
   await writeFile(path.join(args.workDir, 'triage.md'), `${lines.join('\n')}\n`);
+}
+
+function countTriagePriorities(triage) {
+  const counts = { P0: 0, P1: 0, P2: 0, P3: 0 };
+  for (const item of triage) {
+    if (Object.prototype.hasOwnProperty.call(counts, item.priority)) {
+      counts[item.priority] += 1;
+    }
+  }
+  return counts;
 }
 
 async function writeManifest(args, targets) {

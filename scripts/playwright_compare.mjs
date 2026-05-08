@@ -538,11 +538,21 @@ function emptyMetric() {
 }
 
 function summarizeAssets(assets) {
-  const summary = { total: assets.length, loaded: 0, blocked: 0, failed: 0 };
+  const summary = {
+    total: assets.length,
+    loaded: 0,
+    blocked: 0,
+    failed: 0,
+    failedByKind: {},
+  };
   for (const asset of assets) {
     if (asset.status === 'loaded') summary.loaded += 1;
     if (asset.status === 'blocked') summary.blocked += 1;
-    if (asset.status === 'failed') summary.failed += 1;
+    if (asset.status === 'failed') {
+      summary.failed += 1;
+      const kind = asset.kind ?? 'unknown';
+      summary.failedByKind[kind] = (summary.failedByKind[kind] ?? 0) + 1;
+    }
   }
   return summary;
 }
