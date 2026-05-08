@@ -250,11 +250,11 @@ pub(crate) fn strip_hidden_conditional_comments(html: &str) -> String {
             continue;
         }
 
-        let Some(end) = find_ascii_case_insensitive_from(html, "<![endif]-->", start) else {
+        let Some((_, end)) = find_conditional_endif_from(html, start) else {
             out.push_str(&html[start..]);
             return out;
         };
-        offset = end + "<![endif]-->".len();
+        offset = end;
     }
 
     out.push_str(&html[offset..]);
@@ -264,9 +264,9 @@ pub(crate) fn strip_hidden_conditional_comments(html: &str) -> String {
 fn downlevel_revealed_content_end(html: &str, content_start: usize) -> Option<(usize, usize)> {
     let mut offset = content_start;
     let mut depth = 0usize;
-    let endif_start = loop {
+    let (endif_start, close_end) = loop {
         let next_if = find_ascii_case_insensitive_from(html, "<!--[if", offset);
-        let next_endif = find_ascii_case_insensitive_from(html, "<![endif]-->", offset)?;
+        let (next_endif, next_endif_end) = find_conditional_endif_from(html, offset)?;
         if let Some(next_if) = next_if {
             if next_if < next_endif {
                 depth += 1;
@@ -276,12 +276,11 @@ fn downlevel_revealed_content_end(html: &str, content_start: usize) -> Option<(u
         }
         if depth > 0 {
             depth -= 1;
-            offset = next_endif + "<![endif]-->".len();
+            offset = next_endif_end;
             continue;
         }
-        break next_endif;
+        break (next_endif, next_endif_end);
     };
-    let close_end = endif_start + "<![endif]-->".len();
     let before_endif = &html[content_start..endif_start];
     let comment_start = before_endif.rfind("<!--")?;
     let candidate_end = content_start + comment_start;
@@ -291,6 +290,40 @@ fn downlevel_revealed_content_end(html: &str, content_start: usize) -> Option<(u
     } else {
         Some((endif_start, close_end))
     }
+}
+
+fn find_conditional_endif_from(html: &str, offset: usize) -> Option<(usize, usize)> {
+    let mut search_offset = offset;
+    while let Some(rel) = html[search_offset..].find("<!") {
+        let start = search_offset + rel;
+        let mut cursor = start + "<!".len();
+        while html
+            .as_bytes()
+            .get(cursor)
+            .is_some_and(u8::is_ascii_whitespace)
+        {
+            cursor += 1;
+        }
+        const ENDIF: &str = "[endif]";
+        if html[cursor..]
+            .get(..ENDIF.len())?
+            .eq_ignore_ascii_case(ENDIF)
+        {
+            cursor += ENDIF.len();
+            while html
+                .as_bytes()
+                .get(cursor)
+                .is_some_and(u8::is_ascii_whitespace)
+            {
+                cursor += 1;
+            }
+            if html[cursor..].starts_with("-->") {
+                return Some((start, cursor + "-->".len()));
+            }
+        }
+        search_offset = start + "<!".len();
+    }
+    None
 }
 
 fn downlevel_revealed_content_start(html: &str, start: usize) -> Option<usize> {
@@ -1463,5 +1496,15 @@ mod tests {
         assert!(stripped.contains(r#"<table class="row-8">"#));
         assert!(!stripped.contains("v:roundrect"));
         assert!(!stripped.contains("[endif]"));
+    }
+
+    #[test]
+    fn strips_mso_conditionals_with_spaced_endif_marker() {
+        let html =
+            "<a><!--[if mso]><i hidden>skip</i><!\n            [endif]--><span>Button</span></a>";
+
+        let stripped = strip_hidden_conditional_comments(html);
+
+        assert_eq!(stripped, "<a><span>Button</span></a>");
     }
 }
