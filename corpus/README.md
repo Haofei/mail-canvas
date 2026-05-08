@@ -10,6 +10,8 @@ MD5s, aggregate asset size, whether the template is still retained in the repo,
 and the latest pipeline result when available. `issues.json` records P0/P1/P2
 rendering problems found by corpus runs; unresolved entries stay `pending`,
 and rerunning a template after the issue disappears marks that entry `fixed`.
+It also includes `summary.byType`, which counts repeated problem classes across
+templates and runs so the highest-impact renderer fixes are visible.
 
 ## Tiers
 

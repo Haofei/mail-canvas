@@ -642,9 +642,15 @@ async function updateIssueLog(steps, args, triage, targets) {
   }
 
   const issues = [...byKey.values()].map(normalizeIssue).sort(compareIssues);
+  const summaryByType = summarizeIssuesByType(issues, currentRunIssues);
   const log = {
     schemaVersion: existing.schemaVersion ?? 1,
     updatedAt: runAt,
+    summary: {
+      pendingCount: issues.filter((issue) => issue.status === 'pending').length,
+      fixedCount: issues.filter((issue) => issue.status === 'fixed').length,
+      byType: summaryByType,
+    },
     issues,
   };
   await writeJson(args.issuesLogPath, log);
@@ -654,6 +660,7 @@ async function updateIssueLog(steps, args, triage, targets) {
     fixedCount: issues.filter((issue) => issue.status === 'fixed').length,
     currentRunPendingCount: currentRunIssues.length,
     currentRunIssues: currentRunIssues.map((issue) => issue.key),
+    byType: summaryByType,
   };
   await writeJson(path.join(args.workDir, 'issues.json'), runSummary);
   steps.push({
@@ -730,6 +737,51 @@ function compareIssues(left, right) {
     (statusRank[left.status] ?? 9) - (statusRank[right.status] ?? 9) ||
     left.name.localeCompare(right.name) ||
     left.type.localeCompare(right.type)
+  );
+}
+
+function summarizeIssuesByType(issues, currentRunIssues = []) {
+  const currentRunCounts = new Map();
+  for (const issue of currentRunIssues) {
+    currentRunCounts.set(issue.type, (currentRunCounts.get(issue.type) ?? 0) + 1);
+  }
+
+  const byType = new Map();
+  for (const issue of issues) {
+    const entry = byType.get(issue.type) ?? {
+      type: issue.type,
+      pendingTemplates: 0,
+      fixedTemplates: 0,
+      totalTemplates: 0,
+      totalOccurrences: 0,
+      currentRunOccurrences: 0,
+      latestSeenAt: null,
+    };
+    entry.totalTemplates += 1;
+    entry.totalOccurrences += issue.occurrences ?? 0;
+    if (issue.status === 'pending') {
+      entry.pendingTemplates += 1;
+    } else if (issue.status === 'fixed') {
+      entry.fixedTemplates += 1;
+    }
+    if (!entry.latestSeenAt || (issue.lastSeenAt && issue.lastSeenAt > entry.latestSeenAt)) {
+      entry.latestSeenAt = issue.lastSeenAt;
+    }
+    byType.set(issue.type, entry);
+  }
+
+  for (const [type, count] of currentRunCounts) {
+    const entry = byType.get(type);
+    if (entry) {
+      entry.currentRunOccurrences = count;
+    }
+  }
+
+  return [...byType.values()].sort(
+    (left, right) =>
+      right.pendingTemplates - left.pendingTemplates ||
+      right.totalOccurrences - left.totalOccurrences ||
+      left.type.localeCompare(right.type),
   );
 }
 

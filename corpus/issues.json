@@ -1,6 +1,30 @@
 {
   "schemaVersion": 1,
   "updatedAt": "2026-05-08T02:39:48.395Z",
+  "summary": {
+    "pendingCount": 3,
+    "fixedCount": 0,
+    "byType": [
+      {
+        "type": "text_coverage_mismatch",
+        "pendingTemplates": 2,
+        "fixedTemplates": 0,
+        "totalTemplates": 2,
+        "totalOccurrences": 2,
+        "currentRunOccurrences": 2,
+        "latestSeenAt": "2026-05-08T02:39:48.395Z"
+      },
+      {
+        "type": "text_position_wrap_mismatch",
+        "pendingTemplates": 1,
+        "fixedTemplates": 0,
+        "totalTemplates": 1,
+        "totalOccurrences": 1,
+        "currentRunOccurrences": 1,
+        "latestSeenAt": "2026-05-08T02:39:48.395Z"
+      }
+    ]
+  },
   "issues": [
     {
       "key": "reallygoodemails-counter-print-latest-books-designers-republic:text_coverage_mismatch",
