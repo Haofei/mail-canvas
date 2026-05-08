@@ -13,8 +13,8 @@ const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const RGE_ORIGIN = 'https://reallygoodemails.com';
 const PROVIDER = 'reallygoodemails';
 const CORPUS_DIR = path.join(ROOT_DIR, 'corpus', PROVIDER);
-const CATALOG_PATH = path.join(ROOT_DIR, 'corpus', 'catalog.json');
-const REGISTRY_PATH = path.join(ROOT_DIR, 'corpus', 'registry.json');
+const CATALOG_PATH = path.join(CORPUS_DIR, 'catalog.json');
+const REGISTRY_PATH = path.join(CORPUS_DIR, 'registry.json');
 const DEFAULT_STORAGE_STATE = path.join(ROOT_DIR, '.rge-auth', 'storage-state.json');
 
 function parseArgs(argv) {
@@ -29,6 +29,8 @@ function parseArgs(argv) {
     headful: false,
     login: Boolean(process.env.RGE_EMAIL && process.env.RGE_PASSWORD),
     timeoutMs: 30000,
+    scrollAttempts: 12,
+    stableScrolls: 3,
     random: false,
     excludeExisting: false,
     excludeSeen: false,
@@ -73,6 +75,12 @@ function parseArgs(argv) {
         break;
       case '--timeout-ms':
         args.timeoutMs = positiveInt(next(), '--timeout-ms');
+        break;
+      case '--scroll-attempts':
+        args.scrollAttempts = positiveInt(next(), '--scroll-attempts');
+        break;
+      case '--stable-scrolls':
+        args.stableScrolls = positiveInt(next(), '--stable-scrolls');
         break;
       case '--random':
         args.random = true;
@@ -202,6 +210,42 @@ async function collectSlugs(page, args) {
       : `${RGE_ORIGIN}/categories/${encodeURIComponent(args.category)}`;
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: args.timeoutMs });
   await page.waitForTimeout(1500);
+  const slugs = new Set(await slugsFromPage(page));
+  let stableCount = 0;
+  let previousCount = slugs.size;
+  for (let attempt = 0; attempt < args.scrollAttempts; attempt += 1) {
+    await clickLoadMore(page);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.waitForTimeout(1000);
+    for (const slug of await slugsFromPage(page)) {
+      slugs.add(slug);
+    }
+    if (slugs.size === previousCount) {
+      stableCount += 1;
+      if (stableCount >= args.stableScrolls) {
+        break;
+      }
+    } else {
+      stableCount = 0;
+      previousCount = slugs.size;
+    }
+  }
+  return [...slugs];
+}
+
+async function clickLoadMore(page) {
+  const clicked = await page
+    .locator('button:has-text("Load more"), a:has-text("Load more"), button:has-text("Show more"), a:has-text("Show more")')
+    .last()
+    .click({ timeout: 500 })
+    .then(() => true)
+    .catch(() => false);
+  if (clicked) {
+    await page.waitForTimeout(1000);
+  }
+}
+
+async function slugsFromPage(page) {
   const slugs = await page.evaluate(() => {
     const found = new Set();
     for (const link of document.querySelectorAll('a[href*="/emails/"]')) {

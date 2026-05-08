@@ -6,6 +6,8 @@
 /.rge-auth/
 /.cache/
 /runs/
+corpus/reallygoodemails/
 /.idea/
 /.vscode/
+.DS_Store
 *.png

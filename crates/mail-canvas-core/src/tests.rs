@@ -840,6 +840,22 @@ fn parses_background_images_from_css_and_html_attributes() {
 }
 
 #[test]
+fn unsupported_gradient_background_uses_first_color_stop_as_fallback() {
+    let mut style = Style::initial();
+    style.apply_declaration(
+        "background",
+        "linear-gradient(180deg, #BA2B5F 60%, #FDAF08 100%)",
+    );
+    assert_eq!(style.background, Some(Rgba::rgb(0xba, 0x2b, 0x5f)));
+
+    style.apply_declaration(
+        "background",
+        "linear-gradient(to bottom, rgb(10, 20, 30) 0%, #ffffff 100%)",
+    );
+    assert_eq!(style.background, Some(Rgba::rgb(10, 20, 30)));
+}
+
+#[test]
 fn parses_bare_hex_html_color_attributes() {
     let document = kuchiki::parse_html()
         .one(r#"<table bgcolor="5c9085" bordercolor="ffffff"><tr><td>A</td></tr></table>"#);
@@ -1668,6 +1684,43 @@ fn inline_table_participates_in_inline_flow() {
     });
     assert_eq!(tables.len(), 2);
     assert!(tables[1].rect.x >= tables[0].rect.x + tables[0].rect.width - 0.1);
+}
+
+#[test]
+fn table_row_with_inline_block_cells_stays_on_one_row() {
+    let layout = layout_for_test(
+        r#"
+        <table width="600">
+          <tr style="font-size:0;text-align:center">
+            <td style="display:inline-block"><a style="display:inline-block;padding:10px 20px;font-size:12px">JOIN NOW</a></td>
+            <td style="display:inline-block"><a style="display:inline-block;padding:10px 20px;font-size:12px">REVIEWS</a></td>
+            <td style="display:inline-block"><a style="display:inline-block;padding:10px 20px;font-size:12px">PRICING</a></td>
+          </tr>
+        </table>
+        "#,
+        800,
+    );
+    let cells: Vec<&LayoutBox> = collect_layouts(&layout, &|child| child.debug.tag == "td");
+    assert_eq!(cells.len(), 3);
+    let first_y = cells[0].rect.y;
+    assert!(
+        cells.iter().all(|cell| (cell.rect.y - first_y).abs() < 0.1),
+        "inline-block cells should stay on one row: {:?}",
+        cells
+            .iter()
+            .map(|cell| (cell.debug.text.as_str(), cell.rect))
+            .collect::<Vec<_>>()
+    );
+    assert!(cells[0].rect.x < cells[1].rect.x);
+    assert!(cells[1].rect.x < cells[2].rect.x);
+    assert!(
+        cells[0].rect.x > 100.0,
+        "centered inline row should not start at the table edge: {:?}",
+        cells
+            .iter()
+            .map(|cell| (cell.debug.text.as_str(), cell.rect))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]

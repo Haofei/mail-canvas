@@ -562,7 +562,9 @@ impl Style {
             "padding-bottom" => self.set_padding_edge("bottom", value),
             "padding-left" => self.set_padding_edge("left", value),
             "background" => {
-                if let Some(color) = parse_color(value) {
+                if let Some(color) =
+                    parse_gradient_fallback_color(value).or_else(|| parse_color(value))
+                {
                     self.background = Some(color);
                 }
                 if let Some(src) = parse_background_image(value) {
@@ -2160,6 +2162,62 @@ pub(crate) fn parse_background_image(value: &str) -> Option<String> {
         return None;
     }
     first_css_url(value).map(|url| unquote_css_value(&url))
+}
+
+pub(crate) fn parse_gradient_fallback_color(value: &str) -> Option<Rgba> {
+    let value = strip_important(value).trim();
+    let gradient = find_ascii_case_insensitive_from(value, "gradient(", 0)?;
+    let open = value[gradient..].find('(')? + gradient;
+    let close = matching_closing_paren(value, open)?;
+    let body = &value[open + 1..close];
+    for segment in top_level_comma_segments(body) {
+        if let Some(color) = parse_color(segment) {
+            return Some(color);
+        }
+    }
+    None
+}
+
+fn matching_closing_paren(value: &str, open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (idx, ch) in value.char_indices().skip_while(|(idx, _)| *idx < open) {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(idx);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn top_level_comma_segments(value: &str) -> Vec<&str> {
+    let mut segments = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (idx, ch) in value.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                let segment = value[start..idx].trim();
+                if !segment.is_empty() {
+                    segments.push(segment);
+                }
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    let segment = value[start..].trim();
+    if !segment.is_empty() {
+        segments.push(segment);
+    }
+    segments
 }
 
 pub(crate) fn background_shorthand_removes_image(value: &str) -> bool {

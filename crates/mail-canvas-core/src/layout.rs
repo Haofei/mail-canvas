@@ -1073,27 +1073,85 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 .iter()
                 .all(|(_, cell_style)| cell_style.display != Display::TableCell)
             {
+                let row_is_inline_flow = styled_cells.iter().all(|(cell, cell_style)| {
+                    element_tag(&cell.node)
+                        .as_deref()
+                        .is_some_and(|tag| is_inline_flow(tag, cell_style))
+                });
                 let mut row_children = Vec::with_capacity(styled_cells.len());
-                let mut block_y = row_y;
-                for (cell, cell_style) in styled_cells {
-                    let Some(flow) = self.layout_element_with_style(
-                        &cell.node,
-                        cell_style,
-                        content_x,
-                        block_y,
-                        content_width,
-                        depth + 1,
-                    )?
-                    else {
-                        continue;
+                let mut row_height = 0.0_f32;
+
+                if row_is_inline_flow {
+                    let mut row_width = 0.0_f32;
+                    for (cell, cell_style) in styled_cells {
+                        let Some(flow) = self.layout_element_with_style(
+                            &cell.node,
+                            cell_style,
+                            0.0,
+                            0.0,
+                            content_width,
+                            depth + 1,
+                        )?
+                        else {
+                            continue;
+                        };
+                        let mut child = flow.node;
+                        let child_outer_width = child.style.margin.horizontal() + child.rect.width;
+                        let child_target_x = content_x
+                            + row_width
+                            + if child.style.margin_left_auto {
+                                0.0
+                            } else {
+                                child.style.margin.left
+                            };
+                        let child_target_y = row_y
+                            + if child.style.margin.top > 0.0 {
+                                child.style.margin.top
+                            } else {
+                                0.0
+                            };
+                        let dx = child_target_x - child.rect.x;
+                        let dy = child_target_y - child.rect.y;
+                        translate_layout(&mut child, dx, dy);
+                        row_width += child_outer_width;
+                        row_height = row_height.max(flow.advance.max(child.rect.height));
+                        row_children.push(child);
+                    }
+                    let free = (content_width - row_width).max(0.0);
+                    let dx = match row_style.text_align {
+                        TextAlign::Left => 0.0,
+                        TextAlign::Center => free / 2.0,
+                        TextAlign::Right => free,
                     };
-                    block_y += flow.advance;
-                    row_children.push(flow.node);
+                    if dx > 0.0 {
+                        for child in &mut row_children {
+                            translate_layout(child, dx, 0.0);
+                        }
+                    }
+                    row_height = row_height.max(1.0);
+                } else {
+                    let mut block_y = row_y;
+                    for (cell, cell_style) in styled_cells {
+                        let Some(flow) = self.layout_element_with_style(
+                            &cell.node,
+                            cell_style,
+                            content_x,
+                            block_y,
+                            content_width,
+                            depth + 1,
+                        )?
+                        else {
+                            continue;
+                        };
+                        block_y += flow.advance;
+                        row_children.push(flow.node);
+                    }
+                    row_height = (block_y - row_y).max(1.0);
                 }
+
                 if row_children.is_empty() {
                     continue;
                 }
-                let row_height = (block_y - row_y).max(1.0);
                 row_boxes.push(LayoutBox {
                     kind: LayoutKind::Row,
                     rect: Rect::new(content_x, row_y, content_width, row_height),
