@@ -349,8 +349,46 @@ screenshots are cached by prepared HTML and width via `--browser-cache-dir` so
 unchanged templates avoid repeated Chromium screenshot work across pipeline
 runs.
 
-For a large local Really Good Emails mirror in the gitignored
-`corpus/reallygoodemails/` directory, use the incremental local comparer:
+For a large local Really Good Emails mirror, put downloaded templates in the
+gitignored `rge/` directory. The expected shape is:
+
+```text
+rge/
+  template-name.html
+  template-name.assets/
+```
+
+Use the local corpus store for repeated large-corpus evaluation:
+
+```sh
+npm run corpus:index -- --dir rge
+npm run corpus:run -- --dir rge --missing-for-current-sha --limit 500
+npm run corpus:report -- --dir rge
+```
+
+The store lives at `rge/.mail-canvas/corpus-store.json` by default, and each run
+is written under `rge/.mail-canvas/runs/`. It records template versions by
+HTML/assets hash, renderer git SHA, width/profile, result history, issue
+clusters, and previous-run regressions. A template can be rendered many times:
+
+```sh
+# New templates with no history.
+npm run corpus:run -- --dir rge --only-new --limit 500
+
+# Templates missing for the current renderer SHA + width/profile + content hash.
+npm run corpus:run -- --dir rge --missing-for-current-sha --limit 500
+
+# Recheck the worst currently known templates.
+npm run corpus:run -- --dir rge --top-diff 200
+```
+
+By default, image artifacts are kept only for the highest-diff, regressed, or
+failed templates; JSON summaries and CSV results are kept for the full run. Use
+`--artifact-top`, `--keep-debug-top`, or `--keep-all-artifacts` when manually
+debugging a smaller batch.
+
+The older one-shot local comparer is still available for ad hoc batches against
+the gitignored `corpus/reallygoodemails/` directory:
 
 ```sh
 npm run research:compare:local-rge-new -- \

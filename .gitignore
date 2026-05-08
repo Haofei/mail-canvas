@@ -6,6 +6,7 @@
 /.rge-auth/
 /.cache/
 /runs/
+/rge/
 corpus/reallygoodemails/
 corpus/reallygoodemails-download-report.json
 /.idea/
