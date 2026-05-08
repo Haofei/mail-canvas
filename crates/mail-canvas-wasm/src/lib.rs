@@ -439,7 +439,7 @@ impl ResourceProvider for WasmResourceProvider {
         bail!("resource is not registered in wasm asset cache")
     }
 
-    fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Vec<u8>> {
+    fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Arc<[u8]>> {
         if let Some(asset) = self.assets.get(src, self.base_url.as_ref()) {
             ensure_resource_size_with_limit(asset.bytes.len(), self.policy.max_resource_bytes)?;
             self.record_resource_usage(asset.bytes.len())?;
@@ -451,7 +451,7 @@ impl ResourceProvider for WasmResourceProvider {
                     .with_initiator(initiator)
                     .with_bytes(asset.bytes.len()),
             );
-            return Ok(asset.bytes.to_vec());
+            return Ok(Arc::clone(&asset.bytes));
         }
 
         if src.trim_start().starts_with("data:") {
@@ -468,7 +468,7 @@ impl ResourceProvider for WasmResourceProvider {
                     .with_initiator(initiator)
                     .with_bytes(bytes.len()),
             );
-            return Ok(bytes);
+            return Ok(Arc::from(bytes));
         }
 
         self.record_asset_report(blocked_asset_report(

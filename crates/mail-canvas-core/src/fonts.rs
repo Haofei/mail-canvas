@@ -484,7 +484,7 @@ fn load_stylesheet(url: &str, policy: &impl ResourceProvider) -> Result<String> 
     policy
         .load_bytes(url, AssetKind::Stylesheet, "stylesheet")
         .and_then(|bytes| {
-            String::from_utf8(bytes)
+            String::from_utf8(bytes.to_vec())
                 .inspect_err(|error| {
                     policy.record_asset_report(
                         AssetReport::new(

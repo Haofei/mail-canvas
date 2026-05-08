@@ -115,7 +115,7 @@ impl ResourceProvider for ResourcePolicy {
         load_image(src, self, initiator)
     }
 
-    fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Vec<u8>> {
+    fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Arc<[u8]>> {
         load_resource_bytes(src, self, kind, initiator)
     }
 
@@ -142,7 +142,7 @@ impl ResourceProviderFactory for NativeResourceProviderFactory {
 struct LoadedResourceBytes {
     resolved_url: Option<String>,
     source: AssetSource,
-    bytes: Vec<u8>,
+    bytes: Arc<[u8]>,
 }
 
 pub(crate) fn load_image(
@@ -229,7 +229,7 @@ pub(crate) fn load_resource_bytes(
     policy: &ResourcePolicy,
     kind: AssetKind,
     initiator: &'static str,
-) -> Result<Vec<u8>> {
+) -> Result<Arc<[u8]>> {
     let loaded = load_resource_bytes_inner(src, policy, kind, initiator, true)?;
     Ok(loaded.bytes)
 }
@@ -284,7 +284,7 @@ fn load_resource_bytes_inner(
         let loaded = LoadedResourceBytes {
             resolved_url: None,
             source: AssetSource::DataUrl,
-            bytes,
+            bytes: Arc::from(bytes),
         };
         if record_loaded {
             policy.push_asset_report(
@@ -340,7 +340,7 @@ fn load_resource_bytes_inner(
             return Ok(LoadedResourceBytes {
                 resolved_url,
                 source,
-                bytes: bytes.to_vec(),
+                bytes,
             });
         }
     }
@@ -348,6 +348,7 @@ fn load_resource_bytes_inner(
     match url.scheme() {
         "file" => match load_file_url(&url, policy) {
             Ok(bytes) => {
+                let bytes = Arc::<[u8]>::from(bytes);
                 cache_resource_bytes(&url, kind, policy, &bytes);
                 if record_loaded {
                     policy.push_asset_report(
@@ -377,6 +378,7 @@ fn load_resource_bytes_inner(
         },
         "https" | "http" => match load_remote_url(&url, policy) {
             Ok(bytes) => {
+                let bytes = Arc::<[u8]>::from(bytes);
                 cache_resource_bytes(&url, kind, policy, &bytes);
                 if record_loaded {
                     policy.push_asset_report(
@@ -417,7 +419,7 @@ fn load_resource_bytes_inner(
     }
 }
 
-fn cache_resource_bytes(url: &Url, kind: AssetKind, policy: &ResourcePolicy, bytes: &[u8]) {
+fn cache_resource_bytes(url: &Url, kind: AssetKind, policy: &ResourcePolicy, bytes: &Arc<[u8]>) {
     if kind == AssetKind::Image {
         return;
     }
@@ -425,7 +427,7 @@ fn cache_resource_bytes(url: &Url, kind: AssetKind, policy: &ResourcePolicy, byt
         .byte_cache
         .lock()
         .expect("byte cache mutex poisoned")
-        .insert(url.to_string(), Arc::<[u8]>::from(bytes));
+        .insert(url.to_string(), Arc::clone(bytes));
 }
 
 fn asset_source_for_url(url: &Url) -> AssetSource {
@@ -776,6 +778,7 @@ mod tests {
             .expect("second load");
 
         assert_eq!(first, second);
+        assert!(Arc::ptr_eq(&first, &second));
         assert_eq!(
             *policy.resource_count.lock().expect("resource count mutex"),
             1

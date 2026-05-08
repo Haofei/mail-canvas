@@ -49,7 +49,7 @@ pub fn repair_png_chunk_crcs(bytes: &[u8]) -> Option<Vec<u8>> {
 
 pub trait ResourceProvider: Clone {
     fn load_image(&self, src: &str, initiator: &'static str) -> Result<ImageData>;
-    fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Vec<u8>>;
+    fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Arc<[u8]>>;
     fn take_asset_reports(&self) -> Vec<AssetReport>;
     fn record_asset_report(&self, report: AssetReport);
 }
@@ -185,7 +185,7 @@ impl ResourceProvider for TestResourceProvider {
         })
     }
 
-    fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Vec<u8>> {
+    fn load_bytes(&self, src: &str, kind: AssetKind, initiator: &'static str) -> Result<Arc<[u8]>> {
         use anyhow::{anyhow, bail};
         use data_url::DataUrl;
 
@@ -202,7 +202,7 @@ impl ResourceProvider for TestResourceProvider {
                     .with_initiator(initiator)
                     .with_bytes(bytes.len()),
             );
-            return Ok(bytes);
+            return Ok(Arc::from(bytes));
         }
 
         if (src.starts_with("http://") || src.starts_with("https://"))
