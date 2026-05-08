@@ -51,6 +51,7 @@ export class MailCanvasBrowserRenderer {
     this.defaultEmojiFontRegistered = false;
     this.defaultEmojiFontPromise = null;
     this.assetCache = new Map();
+    this.assetCacheBytes = 0;
     this.cssDependencyCache = new Map();
     this.stylesheetRewriteCache = new Map();
     this.preparedHtmlCache = null;
@@ -115,10 +116,7 @@ export class MailCanvasBrowserRenderer {
   }
 
   async clearCache() {
-    this.assetCache.clear();
-    this.cssDependencyCache.clear();
-    this.stylesheetRewriteCache.clear();
-    this.preparedHtmlCache = null;
+    this.#clearLocalCaches();
     this.registeredAssetUrls.clear();
     if (!this.destroyed) {
       await this.client.call({ type: "clear" });
@@ -129,10 +127,7 @@ export class MailCanvasBrowserRenderer {
     if (this.destroyed) {
       return;
     }
-    this.assetCache.clear();
-    this.cssDependencyCache.clear();
-    this.stylesheetRewriteCache.clear();
-    this.preparedHtmlCache = null;
+    this.#clearLocalCaches();
     this.registeredAssetUrls.clear();
     this.client.destroy();
     this.destroyed = true;
@@ -231,7 +226,11 @@ export class MailCanvasBrowserRenderer {
       throw new Error(`failed to fetch ${url}: ${response.status} ${response.statusText}`);
     }
     const bytes = new Uint8Array(await response.arrayBuffer());
+    if (this.assetCacheBytes + bytes.byteLength > this.limits.maxTotalAssetBytes) {
+      this.#clearLocalCaches();
+    }
     this.assetCache.set(url, bytes);
+    this.assetCacheBytes += bytes.byteLength;
     return bytes;
   }
 
@@ -248,6 +247,14 @@ export class MailCanvasBrowserRenderer {
     if (this.destroyed) {
       throw new Error("renderer has been destroyed");
     }
+  }
+
+  #clearLocalCaches() {
+    this.assetCache.clear();
+    this.assetCacheBytes = 0;
+    this.cssDependencyCache.clear();
+    this.stylesheetRewriteCache.clear();
+    this.preparedHtmlCache = null;
   }
 
   async #ensureDefaultEmojiFont(html, baseUrl) {
