@@ -883,10 +883,15 @@ fn single_media_query_matches_fallback(query: &str, viewport_width: u32) -> bool
     let query = query.trim();
     if query.is_empty()
         || contains_ascii_case_insensitive(query, "not screen")
-        || contains_ascii_case_insensitive(query, "prefers-color-scheme")
         || (contains_ascii_case_insensitive(query, "print")
             && !contains_ascii_case_insensitive(query, "screen")
             && !contains_ascii_case_insensitive(query, "all"))
+    {
+        return false;
+    }
+    if contains_ascii_case_insensitive(query, "prefers-color-scheme")
+        && (contains_ascii_case_insensitive(query, "dark")
+            || !contains_ascii_case_insensitive(query, "light"))
     {
         return false;
     }
@@ -1001,6 +1006,9 @@ fn media_feature_plain_matches(
     match (standard_media_feature_id(name), value) {
         (Some(MediaFeatureId::Orientation), MediaFeatureValue::Ident(value)) => {
             value.0.eq_ignore_ascii_case(viewport_orientation(viewport))
+        }
+        (Some(MediaFeatureId::PrefersColorScheme), MediaFeatureValue::Ident(value)) => {
+            value.0.eq_ignore_ascii_case("light")
         }
         _ => false,
     }
@@ -1365,6 +1373,28 @@ mod tests {
         let inlined = inline_css(html, 800, 1200).unwrap();
 
         assert!(inlined.contains("padding: 8px"), "{inlined}");
+    }
+
+    #[test]
+    fn applies_light_color_scheme_media_rules_by_default() {
+        let html = r#"
+            <html><head><style>
+              body { background: #181818; color: #eeeeee; }
+              @media (prefers-color-scheme: light) {
+                body { background: #e9e9e9 !important; color: #2c2c2c !important; }
+              }
+              @media (prefers-color-scheme: dark) {
+                body { background: #000000 !important; }
+              }
+            </style></head>
+            <body>Color scheme</body></html>
+        "#;
+
+        let inlined = inline_css(html, 800, 1200).unwrap();
+
+        assert!(inlined.contains("#e9e9e9"), "{inlined}");
+        assert!(inlined.contains("#2c2c2c"), "{inlined}");
+        assert!(!inlined.contains("#000000"), "{inlined}");
     }
 
     #[test]
