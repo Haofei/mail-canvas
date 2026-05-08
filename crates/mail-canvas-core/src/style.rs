@@ -2128,7 +2128,7 @@ pub(crate) fn parse_position_keywords(value: &str) -> Option<BackgroundPosition>
     let mut y = None;
     let mut saw_keyword = false;
 
-    for keyword in background_position_keywords(value) {
+    for_each_position_keyword(value, |keyword| {
         saw_keyword = true;
         match keyword {
             PositionKeyword::Left => x = Some(PositionAxis::Start),
@@ -2143,7 +2143,7 @@ pub(crate) fn parse_position_keywords(value: &str) -> Option<BackgroundPosition>
                 }
             }
         }
-    }
+    });
 
     saw_keyword.then_some(BackgroundPosition {
         x: x.unwrap_or(PositionAxis::Center),
@@ -2160,48 +2160,59 @@ pub(crate) enum PositionKeyword {
     Center,
 }
 
-pub(crate) fn background_position_keywords(value: &str) -> Vec<PositionKeyword> {
-    css_ident_tokens_without_functions(value)
-        .into_iter()
-        .filter_map(|token| match token.as_str() {
-            "left" => Some(PositionKeyword::Left),
-            "right" => Some(PositionKeyword::Right),
-            "top" => Some(PositionKeyword::Top),
-            "bottom" => Some(PositionKeyword::Bottom),
-            "center" => Some(PositionKeyword::Center),
-            _ => None,
-        })
-        .collect()
-}
-
-pub(crate) fn css_ident_tokens_without_functions(value: &str) -> Vec<String> {
-    let mut scrubbed = String::with_capacity(value.len());
+fn for_each_position_keyword(value: &str, mut visit: impl FnMut(PositionKeyword)) {
     let mut paren_depth = 0usize;
-    for ch in strip_important(value).chars() {
+    let mut token_start = None;
+    let value = strip_important(value);
+
+    for (index, ch) in value.char_indices() {
         match ch {
             '(' => {
+                if paren_depth == 0 {
+                    if let Some(start) = token_start.take() {
+                        emit_position_keyword(&value[start..index], &mut visit);
+                    }
+                }
                 paren_depth += 1;
-                scrubbed.push(' ');
             }
             ')' => {
                 paren_depth = paren_depth.saturating_sub(1);
-                scrubbed.push(' ');
             }
-            _ if paren_depth > 0 => scrubbed.push(' '),
-            ',' | '/' => scrubbed.push(' '),
-            _ => scrubbed.push(ch),
+            _ if paren_depth > 0 => {}
+            ',' | '/' if paren_depth == 0 => {
+                if let Some(start) = token_start.take() {
+                    emit_position_keyword(&value[start..index], &mut visit);
+                }
+            }
+            _ if ch.is_whitespace() => {
+                if let Some(start) = token_start.take() {
+                    emit_position_keyword(&value[start..index], &mut visit);
+                }
+            }
+            _ => {
+                token_start.get_or_insert(index);
+            }
         }
     }
 
-    scrubbed
-        .split_whitespace()
-        .map(|token| {
-            token
-                .trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '-')
-                .to_ascii_lowercase()
-        })
-        .filter(|token| !token.is_empty())
-        .collect()
+    if let Some(start) = token_start {
+        emit_position_keyword(&value[start..], &mut visit);
+    }
+}
+
+fn emit_position_keyword(token: &str, visit: &mut impl FnMut(PositionKeyword)) {
+    let token = token.trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '-');
+    if token.eq_ignore_ascii_case("left") {
+        visit(PositionKeyword::Left);
+    } else if token.eq_ignore_ascii_case("right") {
+        visit(PositionKeyword::Right);
+    } else if token.eq_ignore_ascii_case("top") {
+        visit(PositionKeyword::Top);
+    } else if token.eq_ignore_ascii_case("bottom") {
+        visit(PositionKeyword::Bottom);
+    } else if token.eq_ignore_ascii_case("center") {
+        visit(PositionKeyword::Center);
+    }
 }
 
 pub(crate) fn parse_color_token(value: &str) -> Option<Rgba> {

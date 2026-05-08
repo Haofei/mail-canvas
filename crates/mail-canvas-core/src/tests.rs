@@ -1035,7 +1035,7 @@ fn parses_background_cover_position_and_repeat() {
     let mut style = Style::initial();
     style.apply_declaration(
         "background",
-        "#2a3448 url(hero.jpg) NO-REPEAT center top / COVER",
+        "#2a3448 url(hero.jpg) NO-REPEAT CENTER TOP / COVER",
     );
 
     assert_eq!(style.background, Some(Rgba::rgb(0x2a, 0x34, 0x48)));
@@ -1051,7 +1051,7 @@ fn parses_background_cover_position_and_repeat() {
     );
 
     style.apply_declaration("background-size", "contain");
-    style.apply_declaration("background-position", "right bottom");
+    style.apply_declaration("background-position", "RIGHT BOTTOM");
     assert_eq!(style.background_size, BackgroundSize::Contain);
     assert_eq!(
         style.background_position,
@@ -1066,7 +1066,7 @@ fn parses_background_cover_position_and_repeat() {
 fn parses_object_fit_cover() {
     let mut style = Style::initial();
     style.apply_declaration("object-fit", "COVER");
-    style.apply_declaration("object-position", "left top");
+    style.apply_declaration("object-position", "LEFT TOP");
 
     assert_eq!(style.object_fit, ObjectFit::Cover);
     assert_eq!(
