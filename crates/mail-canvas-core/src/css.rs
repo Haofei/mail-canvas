@@ -10,9 +10,18 @@ use lightningcss::rules::{CssRule, CssRuleList};
 use lightningcss::stylesheet::{ParserOptions, PrinterOptions, StyleSheet};
 use lightningcss::traits::ToCss;
 
+#[cfg(test)]
 pub(crate) fn inline_css(html: &str, viewport_width: u32, viewport_height: u32) -> Result<String> {
     let html = strip_hidden_conditional_comments(html);
-    let html = sanitize_html_for_css_inliner(&html);
+    inline_css_from_stripped_html(&html, viewport_width, viewport_height)
+}
+
+pub(crate) fn inline_css_from_stripped_html(
+    html: &str,
+    viewport_width: u32,
+    viewport_height: u32,
+) -> Result<String> {
+    let html = sanitize_html_for_css_inliner(html);
     let viewport = CssViewport {
         width: viewport_width as f32,
         height: viewport_height as f32,

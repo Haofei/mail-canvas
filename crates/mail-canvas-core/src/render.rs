@@ -4,7 +4,7 @@ use kuchiki::traits::TendrilSink as _;
 use tiny_skia::Pixmap;
 
 use crate::api::{RenderDiagnostics, RenderRequest};
-use crate::css::{inline_css, strip_hidden_conditional_comments};
+use crate::css::{inline_css_from_stripped_html, strip_hidden_conditional_comments};
 use crate::debug::RenderDebugSnapshot;
 use crate::dom::{document_base_url, ensure_dom_node_limit};
 use crate::fonts::{font_database_families, load_web_fonts_from_html};
@@ -116,7 +116,8 @@ impl RendererCore {
         );
 
         let available_font_families = font_database_families(self.font_system.db());
-        let html = inline_css(&render_html, request.width, request.viewport_height)?;
+        let html =
+            inline_css_from_stripped_html(&render_html, request.width, request.viewport_height)?;
         let document = kuchiki::parse_html().one(html);
         let mut engine = LayoutEngine::new(
             &mut self.font_system,
