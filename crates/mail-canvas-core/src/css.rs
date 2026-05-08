@@ -187,17 +187,15 @@ fn escape_style_attr(value: &str) -> String {
 }
 
 pub(crate) fn strip_hidden_conditional_comments(html: &str) -> String {
-    let lower = html.to_ascii_lowercase();
     let mut out = String::with_capacity(html.len());
     let mut offset = 0usize;
 
-    while let Some(start_rel) = lower[offset..].find("<!--[if") {
-        let start = offset + start_rel;
+    while let Some(start) = find_ascii_case_insensitive_from(html, "<!--[if", offset) {
         out.push_str(&html[offset..start]);
 
-        if let Some(content_start) = downlevel_revealed_content_start(&lower, start) {
+        if let Some(content_start) = downlevel_revealed_content_start(html, start) {
             let Some((content_end, close_end)) =
-                downlevel_revealed_content_end(&lower, content_start)
+                downlevel_revealed_content_end(html, content_start)
             else {
                 out.push_str(&html[start..]);
                 return out;
@@ -209,11 +207,10 @@ pub(crate) fn strip_hidden_conditional_comments(html: &str) -> String {
             continue;
         }
 
-        let Some(end_rel) = lower[start..].find("<![endif]-->") else {
+        let Some(end) = find_ascii_case_insensitive_from(html, "<![endif]-->", start) else {
             out.push_str(&html[start..]);
             return out;
         };
-        let end = start + end_rel;
         offset = end + "<![endif]-->".len();
     }
 
@@ -221,14 +218,12 @@ pub(crate) fn strip_hidden_conditional_comments(html: &str) -> String {
     out
 }
 
-fn downlevel_revealed_content_end(lower: &str, content_start: usize) -> Option<(usize, usize)> {
+fn downlevel_revealed_content_end(html: &str, content_start: usize) -> Option<(usize, usize)> {
     let mut offset = content_start;
     let mut depth = 0usize;
     let endif_start = loop {
-        let next_if = lower[offset..].find("<!--[if").map(|index| offset + index);
-        let next_endif = lower[offset..]
-            .find("<![endif]-->")
-            .map(|index| offset + index)?;
+        let next_if = find_ascii_case_insensitive_from(html, "<!--[if", offset);
+        let next_endif = find_ascii_case_insensitive_from(html, "<![endif]-->", offset)?;
         if let Some(next_if) = next_if {
             if next_if < next_endif {
                 depth += 1;
@@ -244,10 +239,10 @@ fn downlevel_revealed_content_end(lower: &str, content_start: usize) -> Option<(
         break next_endif;
     };
     let close_end = endif_start + "<![endif]-->".len();
-    let before_endif = &lower[content_start..endif_start];
+    let before_endif = &html[content_start..endif_start];
     let comment_start = before_endif.rfind("<!--")?;
     let candidate_end = content_start + comment_start;
-    let trailing = &lower[candidate_end + "<!--".len()..endif_start];
+    let trailing = &html[candidate_end + "<!--".len()..endif_start];
     if trailing.trim().is_empty() {
         Some((candidate_end, close_end))
     } else {
@@ -255,14 +250,14 @@ fn downlevel_revealed_content_end(lower: &str, content_start: usize) -> Option<(
     }
 }
 
-fn downlevel_revealed_content_start(lower: &str, start: usize) -> Option<usize> {
-    let condition_end = start + lower[start..].find("]>")? + "]>".len();
-    let marker_prefix_whitespace_len = lower[condition_end..]
+fn downlevel_revealed_content_start(html: &str, start: usize) -> Option<usize> {
+    let condition_end = start + html[start..].find("]>")? + "]>".len();
+    let marker_prefix_whitespace_len = html[condition_end..]
         .bytes()
         .take_while(u8::is_ascii_whitespace)
         .count();
     let marker_start = condition_end + marker_prefix_whitespace_len;
-    if let Some(marker) = lower[marker_start..].strip_prefix("<!--") {
+    if let Some(marker) = html[marker_start..].strip_prefix("<!--") {
         let whitespace_len = marker.bytes().take_while(u8::is_ascii_whitespace).count();
         let marker_after_whitespace = &marker[whitespace_len..];
         if marker_after_whitespace.starts_with("-->") {
@@ -272,7 +267,7 @@ fn downlevel_revealed_content_start(lower: &str, start: usize) -> Option<usize> 
             return Some(marker_start + "<!--".len() + whitespace_len + ">".len());
         }
     }
-    if let Some(marker) = lower[marker_start..].strip_prefix("<!") {
+    if let Some(marker) = html[marker_start..].strip_prefix("<!") {
         let whitespace_len = marker.bytes().take_while(u8::is_ascii_whitespace).count();
         if marker[whitespace_len..].starts_with("-->") {
             return Some(marker_start + "<!".len() + whitespace_len + "-->".len());
@@ -1082,14 +1077,16 @@ mod tests {
 
     #[test]
     fn keeps_downlevel_revealed_conditional_content_with_spaced_marker() {
-        let html = r#"<!--[if !mso]><!-- -->
+        let html = r#"<!--[IF !MSO]><!-- -->
             <link href="fonts.css" rel="stylesheet">
-            <!--<![endif]-->"#;
+            <!--<![ENDIF]-->"#;
 
         let stripped = strip_hidden_conditional_comments(html);
 
         assert!(!stripped.contains("[if"));
+        assert!(!stripped.contains("[IF"));
         assert!(!stripped.contains("[endif]"));
+        assert!(!stripped.contains("[ENDIF]"));
         assert!(stripped.contains(r#"<link href="fonts.css" rel="stylesheet">"#));
     }
 
