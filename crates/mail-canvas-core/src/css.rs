@@ -284,20 +284,18 @@ struct CssViewport {
 }
 
 fn expand_active_media_rules_in_style_blocks(html: &str, viewport: CssViewport) -> String {
-    let lower = html.to_ascii_lowercase();
     let mut out = String::with_capacity(html.len());
     let mut offset = 0;
 
-    while let Some(start_rel) = lower[offset..].find("<style") {
-        let start = offset + start_rel;
-        let Some(open_rel) = lower[start..].find('>') else {
+    while let Some(start) = find_ascii_case_insensitive_from(html, "<style", offset) {
+        let Some(open_rel) = html[start..].find('>') else {
             break;
         };
         let content_start = start + open_rel + 1;
-        let Some(end_rel) = lower[content_start..].find("</style>") else {
+        let Some(content_end) = find_ascii_case_insensitive_from(html, "</style>", content_start)
+        else {
             break;
         };
-        let content_end = content_start + end_rel;
 
         out.push_str(&html[offset..content_start]);
         let css = &html[content_start..content_end];
@@ -358,20 +356,18 @@ fn append_serialized_rule<R: ToCss>(rule: &CssRule<'_, R>, out: &mut String) -> 
 }
 
 pub(crate) fn style_blocks(html: &str) -> Vec<&str> {
-    let lower = html.to_ascii_lowercase();
     let mut blocks = Vec::new();
     let mut offset = 0;
 
-    while let Some(start_rel) = lower[offset..].find("<style") {
-        let start = offset + start_rel;
-        let Some(open_rel) = lower[start..].find('>') else {
+    while let Some(start) = find_ascii_case_insensitive_from(html, "<style", offset) {
+        let Some(open_rel) = html[start..].find('>') else {
             break;
         };
         let content_start = start + open_rel + 1;
-        let Some(end_rel) = lower[content_start..].find("</style>") else {
+        let Some(content_end) = find_ascii_case_insensitive_from(html, "</style>", content_start)
+        else {
             break;
         };
-        let content_end = content_start + end_rel;
         blocks.push(&html[content_start..content_end]);
         offset = content_end + "</style>".len();
     }
@@ -1135,6 +1131,22 @@ mod tests {
               .stack { width: 280px; }
               @media (max-width:720px) { .stack { width: 320px !important; } }
             </style></head>
+            <body><table class="stack"><tr><td>Stacked</td></tr></table></body></html>
+        "#;
+
+        let inlined = inline_css(html, 600, 800).unwrap();
+
+        assert!(inlined.contains("width: 320px"));
+        assert!(!inlined.contains("@media"));
+    }
+
+    #[test]
+    fn expands_media_rules_inside_uppercase_style_tags_without_lowercase_copy() {
+        let html = r#"
+            <html><head><STYLE>
+              .stack { width: 280px; }
+              @media (max-width:720px) { .stack { width: 320px !important; } }
+            </STYLE></head>
             <body><table class="stack"><tr><td>Stacked</td></tr></table></body></html>
         "#;
 
