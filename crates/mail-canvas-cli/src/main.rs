@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, ValueEnum};
 use mail_canvas_core::{
-    EmailRenderer, RenderDebugOptions, RenderDiagnosticsReport, RenderRequest, ResourcePolicy,
+    EmailRenderer, RenderDebugOptions, RenderRequest, RenderedImage, ResourcePolicy,
 };
 use mail_canvas_native::{MailCanvasRenderer, build_document_from_files, raster_pdf_from_png};
 
@@ -189,7 +189,7 @@ fn main() -> Result<()> {
         .with_context(|| format!("failed to write {}", args.output.display()))?;
 
     if let Some(path) = &args.warnings_json {
-        write_warnings_json(path, &image.diagnostics())?;
+        write_warnings_json(path, &image)?;
     }
     if let Some(path) = &args.layout_json {
         let debug = image
@@ -234,11 +234,23 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn write_warnings_json(path: &std::path::Path, report: &RenderDiagnosticsReport) -> Result<()> {
+fn write_warnings_json(path: &std::path::Path, image: &RenderedImage) -> Result<()> {
+    #[derive(serde::Serialize)]
+    struct BorrowedDiagnostics<'a> {
+        warnings: &'a [mail_canvas_core::RenderWarning],
+        assets: &'a [mail_canvas_core::AssetReport],
+        console_messages: &'a [mail_canvas_core::ConsoleMessage],
+    }
+
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
+    let report = BorrowedDiagnostics {
+        warnings: &image.warnings,
+        assets: &image.assets,
+        console_messages: &image.console_messages,
+    };
     let json = serde_json::to_vec_pretty(&report).context("failed to serialize warnings JSON")?;
     fs::write(path, json).with_context(|| format!("failed to write {}", path.display()))?;
     Ok(())
