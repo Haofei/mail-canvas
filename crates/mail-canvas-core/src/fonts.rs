@@ -290,6 +290,7 @@ pub(crate) fn load_web_fonts_from_html(
     diagnostics: &mut RenderDiagnostics,
 ) -> Vec<WebFontFace> {
     let mut css_blocks: Vec<FontCssBlock> = style_blocks(html)
+        .filter(|css| font_css_block_relevant(css))
         .map(|css| FontCssBlock {
             css: css.to_string(),
             source: FontCssSource::InlineOrImport,
@@ -312,11 +313,15 @@ pub(crate) fn load_web_fonts_from_html(
         }
         imported_urls.push(stylesheet_url.clone());
         match load_stylesheet(&stylesheet_url, policy) {
-            Ok(css) => css_blocks.push(FontCssBlock {
-                css,
-                source: FontCssSource::LinkedStylesheet,
-                base_url: Some(stylesheet_url.clone()),
-            }),
+            Ok(css) => {
+                if font_css_block_relevant(&css) {
+                    css_blocks.push(FontCssBlock {
+                        css,
+                        source: FontCssSource::LinkedStylesheet,
+                        base_url: Some(stylesheet_url.clone()),
+                    });
+                }
+            }
             Err(error) => diagnostics.push_warning(
                 RenderWarning::new(
                     RenderWarningCode::StylesheetLoadFailed,
@@ -342,11 +347,15 @@ pub(crate) fn load_web_fonts_from_html(
             }
             imported_urls.push(import_url.clone());
             match load_stylesheet(&import_url, policy) {
-                Ok(css) => css_blocks.push(FontCssBlock {
-                    css,
-                    source,
-                    base_url: Some(import_url.clone()),
-                }),
+                Ok(css) => {
+                    if font_css_block_relevant(&css) {
+                        css_blocks.push(FontCssBlock {
+                            css,
+                            source,
+                            base_url: Some(import_url.clone()),
+                        });
+                    }
+                }
                 Err(error) => diagnostics.push_warning(
                     RenderWarning::new(
                         RenderWarningCode::StylesheetLoadFailed,
@@ -504,6 +513,11 @@ pub(crate) fn load_web_fonts_from_html(
     }
 
     web_font_faces
+}
+
+fn font_css_block_relevant(css: &str) -> bool {
+    find_ascii_case_insensitive_from(css, "@font-face", 0).is_some()
+        || find_ascii_case_insensitive_from(css, "@import", 0).is_some()
 }
 
 fn load_stylesheet(url: &str, policy: &impl ResourceProvider) -> Result<String> {
