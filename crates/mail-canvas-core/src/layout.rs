@@ -28,7 +28,7 @@ use crate::text::{
     rich_text_style_spans, spans_text, text_content, text_spans_are_only_collapsible_whitespace,
     text_spans_match_style, wrap_width_adjustment,
 };
-use crate::{HARD_BREAK, ImageData};
+use crate::{HARD_BREAK_STR, ImageData};
 
 type CssTableCell = (NodeRef, Style);
 type CssTableRow = (NodeRef, Style, Vec<CssTableCell>);
@@ -210,7 +210,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 ) {
                     previous_margin_bottom = None;
                 }
-                append_text_span(&mut text, &HARD_BREAK.to_string(), style);
+                append_text_span(&mut text, HARD_BREAK_STR, style);
                 continue;
             }
 

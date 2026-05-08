@@ -10,12 +10,12 @@ use cosmic_text::{
 };
 use kuchiki::NodeRef;
 
-use crate::HARD_BREAK;
 use crate::dom::{attr, element_tag, is_metadata_tag};
 use crate::font_catalog::generic_font_family as generic_font_family_name;
 use crate::style::{
     Display, Style, TextRunStyle, TextSpan, TextTransform, parse_css_length, style_for_node,
 };
+use crate::{HARD_BREAK, HARD_BREAK_STR};
 
 const BLINK_WEB_STANDARD_ASCENT_ADJUSTMENT_FACTOR: f32 = 0.15;
 const BLINK_WEB_STANDARD_ASCENT_ADJUSTMENT_BIAS: f32 = 0.5;
@@ -359,7 +359,7 @@ pub(crate) fn text_content(node: &NodeRef) -> String {
         return String::new();
     }
     if tag == "br" {
-        return HARD_BREAK.to_string();
+        return HARD_BREAK_STR.to_string();
     }
     if tag == "img" {
         return String::new();
@@ -398,7 +398,7 @@ pub(crate) fn append_inline_spans(node: &NodeRef, style: &Style, out: &mut Vec<T
         return;
     }
     if tag == "br" {
-        append_text_span(out, &HARD_BREAK.to_string(), style);
+        append_text_span(out, HARD_BREAK_STR, style);
         return;
     }
     if tag == "img" {

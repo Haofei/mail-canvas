@@ -79,6 +79,7 @@ use text::{normalize_text, rich_text_baseline_leading_offset, spans_text};
 use tiny_skia::Pixmap;
 
 const HARD_BREAK: char = '\u{000B}';
+const HARD_BREAK_STR: &str = "\u{000B}";
 
 #[cfg(test)]
 mod tests;
