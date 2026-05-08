@@ -200,6 +200,14 @@ impl RenderedImage {
             console_messages: self.console_messages.clone(),
         }
     }
+
+    pub fn into_diagnostics(self) -> RenderDiagnosticsReport {
+        RenderDiagnosticsReport {
+            warnings: self.warnings,
+            assets: self.assets,
+            console_messages: self.console_messages,
+        }
+    }
 }
 
 impl RenderedRgba {
@@ -210,6 +218,14 @@ impl RenderedRgba {
             console_messages: self.console_messages.clone(),
         }
     }
+
+    pub fn into_diagnostics(self) -> RenderDiagnosticsReport {
+        RenderDiagnosticsReport {
+            warnings: self.warnings,
+            assets: self.assets,
+            console_messages: self.console_messages,
+        }
+    }
 }
 
 impl RenderedPdf {
@@ -218,6 +234,14 @@ impl RenderedPdf {
             warnings: self.warnings.clone(),
             assets: self.assets.clone(),
             console_messages: self.console_messages.clone(),
+        }
+    }
+
+    pub fn into_diagnostics(self) -> RenderDiagnosticsReport {
+        RenderDiagnosticsReport {
+            warnings: self.warnings,
+            assets: self.assets,
+            console_messages: self.console_messages,
         }
     }
 }
@@ -242,6 +266,31 @@ mod tests {
         assert!(request.debug.layout);
         assert!(request.debug.text_rects);
         assert!(request.debug.image_diagnostics);
+    }
+
+    #[test]
+    fn rendered_image_can_move_diagnostics_without_cloning_output() {
+        let rendered = RenderedImage {
+            png: vec![1, 2, 3],
+            css_width: 10,
+            css_height: 10,
+            pixel_width: 10,
+            pixel_height: 10,
+            scale: 1.0,
+            content_css_width: 10,
+            console_messages: vec![ConsoleMessage {
+                level: "warn",
+                message: "note".to_string(),
+            }],
+            warnings: Vec::new(),
+            assets: Vec::new(),
+            debug: None,
+        };
+
+        let report = rendered.into_diagnostics();
+
+        assert_eq!(report.console_messages.len(), 1);
+        assert_eq!(report.console_messages[0].message, "note");
     }
 }
 
