@@ -193,7 +193,8 @@ pub(crate) struct FontFamilyIndex {
 
 impl FontFamilyIndex {
     pub(crate) fn from_database(db: &fontdb::Database) -> Self {
-        let mut index = Self::default();
+        let capacity = db.faces().map(|face| face.families.len()).sum();
+        let mut index = Self::with_capacity(capacity);
         for family in db
             .faces()
             .flat_map(|face| face.families.iter().map(|(family, _)| family.as_str()))
@@ -205,7 +206,8 @@ impl FontFamilyIndex {
 
     #[cfg(test)]
     pub(crate) fn from_families(families: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
-        let mut index = Self::default();
+        let families = families.into_iter();
+        let mut index = Self::with_capacity(families.size_hint().0);
         for family in families {
             index.insert(family.as_ref());
         }
@@ -224,6 +226,12 @@ impl FontFamilyIndex {
     fn insert(&mut self, family: &str) {
         self.families
             .insert(normalize_font_family_key(family).into_owned());
+    }
+
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            families: HashSet::with_capacity(capacity),
+        }
     }
 }
 
