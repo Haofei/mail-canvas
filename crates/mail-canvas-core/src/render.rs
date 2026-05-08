@@ -98,7 +98,7 @@ impl RendererCore {
         validate_request(&request)?;
 
         let render_html = strip_hidden_conditional_comments(&request.html);
-        let source_document = kuchiki::parse_html().one(render_html.clone());
+        let source_document = kuchiki::parse_html().one(render_html.as_str());
         ensure_dom_node_limit(&source_document, request.max_dom_nodes)?;
         let document_base = request
             .base_url

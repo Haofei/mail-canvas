@@ -242,6 +242,14 @@ struct LoadedFontSource {
     actual_family: String,
 }
 
+struct SharedFontBytes(Arc<[u8]>);
+
+impl AsRef<[u8]> for SharedFontBytes {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FontCssSource {
     InlineOrImport,
@@ -395,7 +403,7 @@ pub(crate) fn load_web_fonts_from_html(
             match policy
                 .load_bytes(&candidate_url, AssetKind::WebFont, "@font-face")
                 .and_then(|bytes| {
-                    decode_font_resource(&bytes, &candidate).inspect_err(|error| {
+                    decode_font_resource(bytes, &candidate).inspect_err(|error| {
                         policy.record_asset_report(
                             AssetReport::new(
                                 AssetKind::WebFont,
@@ -408,7 +416,7 @@ pub(crate) fn load_web_fonts_from_html(
                     })
                 }) {
                 Ok(font_data) => {
-                    let ids = db.load_font_source(fontdb::Source::Binary(Arc::new(font_data)));
+                    let ids = db.load_font_source(fontdb::Source::Binary(font_data));
                     if !ids.is_empty() {
                         for id in ids {
                             if let Some(face) = db.face(id) {
@@ -675,23 +683,30 @@ fn font_source_supported(candidate: &FontSourceCandidate) -> bool {
     )
 }
 
-fn decode_font_resource(bytes: &[u8], candidate: &FontSourceCandidate) -> Result<Vec<u8>> {
+fn decode_font_resource(
+    bytes: Arc<[u8]>,
+    candidate: &FontSourceCandidate,
+) -> Result<Arc<dyn AsRef<[u8]> + Sync + Send>> {
     if bytes.starts_with(b"wOF2") {
-        return wuff::decompress_woff2(bytes)
+        return wuff::decompress_woff2(&bytes)
+            .map(|bytes| Arc::new(bytes) as Arc<dyn AsRef<[u8]> + Sync + Send>)
             .map_err(|error| anyhow!("failed to decode WOFF2 font: {error}"));
     }
     if bytes.starts_with(b"wOFF") {
-        return wuff::decompress_woff1(bytes)
+        return wuff::decompress_woff1(&bytes)
+            .map(|bytes| Arc::new(bytes) as Arc<dyn AsRef<[u8]> + Sync + Send>)
             .map_err(|error| anyhow!("failed to decode WOFF font: {error}"));
     }
-    if font_bytes_look_raw(bytes) {
-        return Ok(bytes.to_vec());
+    if font_bytes_look_raw(&bytes) {
+        return Ok(Arc::new(SharedFontBytes(bytes)));
     }
 
     match candidate.format.as_deref().map(str::to_ascii_lowercase) {
-        Some(format) if format.contains("woff2") => wuff::decompress_woff2(bytes)
+        Some(format) if format.contains("woff2") => wuff::decompress_woff2(&bytes)
+            .map(|bytes| Arc::new(bytes) as Arc<dyn AsRef<[u8]> + Sync + Send>)
             .map_err(|error| anyhow!("failed to decode WOFF2 font: {error}")),
-        Some(format) if format.contains("woff") => wuff::decompress_woff1(bytes)
+        Some(format) if format.contains("woff") => wuff::decompress_woff1(&bytes)
+            .map(|bytes| Arc::new(bytes) as Arc<dyn AsRef<[u8]> + Sync + Send>)
             .map_err(|error| anyhow!("failed to decode WOFF font: {error}")),
         _ => bail!("unsupported font data"),
     }
