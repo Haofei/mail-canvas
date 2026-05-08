@@ -73,6 +73,15 @@ pub(crate) fn build_table_grid(table: &NodeRef, max_table_cells: usize) -> Resul
     }
 
     let mut col_widths = collect_col_widths(table);
+    if col_widths.len() <= 1 && !grid_rows.iter().any(|row| row.cells.len() > 1) {
+        column_count = column_count.min(1);
+        for row in &mut grid_rows {
+            for cell in &mut row.cells {
+                cell.col = 0;
+                cell.colspan = 1;
+            }
+        }
+    }
     if col_widths.len() < column_count {
         col_widths.resize(column_count, None);
     }
@@ -225,5 +234,21 @@ mod tests {
         assert!(
             matches!(grid.col_widths[2], Some(Length::Percent(value)) if (value - 0.5).abs() < f32::EPSILON)
         );
+    }
+
+    #[test]
+    fn single_cell_colspan_spacers_do_not_create_narrow_footer_columns() {
+        let document = kuchiki::parse_html().one(
+            r#"<table width="91%">
+                <tr><td colspan="2" height="35">&nbsp;</td></tr>
+                <tr><td>Footer disclosure should use the table width.</td></tr>
+              </table>"#,
+        );
+        let table = find_first_tag(&document, "table").expect("table");
+        let grid = build_table_grid(&table, 100).expect("grid");
+
+        assert_eq!(grid.column_count, 1);
+        assert_eq!(grid.rows[0].cells[0].colspan, 1);
+        assert_eq!(grid.rows[1].cells[0].colspan, 1);
     }
 }

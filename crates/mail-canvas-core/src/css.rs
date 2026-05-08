@@ -104,14 +104,21 @@ fn downlevel_revealed_content_start(lower: &str, start: usize) -> Option<usize> 
         .take_while(u8::is_ascii_whitespace)
         .count();
     let marker_start = condition_end + marker_prefix_whitespace_len;
-    let marker = lower[marker_start..].strip_prefix("<!--")?;
-    let whitespace_len = marker.bytes().take_while(u8::is_ascii_whitespace).count();
-    let marker_after_whitespace = &marker[whitespace_len..];
-    if marker_after_whitespace.starts_with("-->") {
-        return Some(marker_start + "<!--".len() + whitespace_len + "-->".len());
+    if let Some(marker) = lower[marker_start..].strip_prefix("<!--") {
+        let whitespace_len = marker.bytes().take_while(u8::is_ascii_whitespace).count();
+        let marker_after_whitespace = &marker[whitespace_len..];
+        if marker_after_whitespace.starts_with("-->") {
+            return Some(marker_start + "<!--".len() + whitespace_len + "-->".len());
+        }
+        if marker_after_whitespace.starts_with('>') {
+            return Some(marker_start + "<!--".len() + whitespace_len + ">".len());
+        }
     }
-    if marker_after_whitespace.starts_with('>') {
-        return Some(marker_start + "<!--".len() + whitespace_len + ">".len());
+    if let Some(marker) = lower[marker_start..].strip_prefix("<!") {
+        let whitespace_len = marker.bytes().take_while(u8::is_ascii_whitespace).count();
+        if marker[whitespace_len..].starts_with("-->") {
+            return Some(marker_start + "<!".len() + whitespace_len + "-->".len());
+        }
     }
     None
 }
@@ -938,6 +945,17 @@ mod tests {
         let stripped = strip_hidden_conditional_comments(html);
 
         assert_eq!(style_blocks(&stripped), vec![".x { color: red; }"]);
+    }
+
+    #[test]
+    fn keeps_downlevel_revealed_conditional_content_with_bang_marker() {
+        let html = r#"<!--[if !true]><! --><div class="modern">Modern</div><!-- <![endif]-->"#;
+
+        let stripped = strip_hidden_conditional_comments(html);
+
+        assert!(!stripped.contains("[if"));
+        assert!(!stripped.contains("[endif]"));
+        assert_eq!(stripped.trim(), r#"<div class="modern">Modern</div>"#);
     }
 
     #[test]
