@@ -308,10 +308,22 @@ fn is_font_file(path: &std::path::Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .map(|extension| {
-            matches!(
-                extension.to_ascii_lowercase().as_str(),
-                "ttf" | "otf" | "ttc" | "otc"
-            )
+            ["ttf", "otf", "ttc", "otc"]
+                .iter()
+                .any(|candidate| extension.eq_ignore_ascii_case(candidate))
         })
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn font_file_extensions_are_case_insensitive_without_normalizing() {
+        assert!(is_font_file(Path::new("NotoSans.TTF")));
+        assert!(is_font_file(Path::new("NotoSans.otc")));
+        assert!(!is_font_file(Path::new("NotoSans.woff2")));
+    }
 }
