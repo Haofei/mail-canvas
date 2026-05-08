@@ -2771,12 +2771,30 @@ impl LayoutDebugMeta {
 }
 
 pub(crate) fn normalize_preview_text(text: &str) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .chars()
-        .take(120)
-        .collect()
+    let mut out = String::new();
+    let mut chars = 0usize;
+
+    for word in text.split_whitespace() {
+        if chars >= 120 {
+            break;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+            chars += 1;
+            if chars >= 120 {
+                break;
+            }
+        }
+        for ch in word.chars() {
+            if chars >= 120 {
+                break;
+            }
+            out.push(ch);
+            chars += 1;
+        }
+    }
+
+    out
 }
 
 fn translate_layout_children(layout: &mut LayoutBox, dx: f32, dy: f32) {

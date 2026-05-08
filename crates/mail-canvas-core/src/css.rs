@@ -131,12 +131,20 @@ fn is_attribute_name_boundary(html: &str, start: usize) -> bool {
 }
 
 fn sanitize_style_attribute_value(value: &str) -> String {
-    css_declarations(value)
-        .into_iter()
-        .filter(|(name, value)| !name.is_empty() && !value.is_empty())
-        .map(|(name, value)| format!("{name}: {value};"))
-        .collect::<Vec<_>>()
-        .join(" ")
+    let mut out = String::with_capacity(value.len());
+    for (name, value) in css_declarations(value) {
+        if name.is_empty() || value.is_empty() {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(&name);
+        out.push_str(": ");
+        out.push_str(&value);
+        out.push(';');
+    }
+    out
 }
 
 fn escape_style_attr(value: &str) -> String {
