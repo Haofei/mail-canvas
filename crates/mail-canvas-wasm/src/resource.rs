@@ -5,7 +5,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use data_url::DataUrl;
 use image::{DynamicImage, ImageDecoder, ImageReader, Limits};
 use mail_canvas_core::{
-    AssetKind, AssetReport, AssetSource, AssetStatus, RenderRequest, ResourcePolicy,
+    AssetKind, AssetReport, AssetSource, AssetStatus, ImageData, RenderRequest, ResourcePolicy,
     ResourceProvider, ResourceProviderFactory, repair_png_chunk_crcs,
 };
 use url::Url;
@@ -103,6 +103,10 @@ impl RegisteredAsset {
             asset_source_for_url,
         )
     }
+
+    fn cache_key(&self) -> &str {
+        self.resolved_url.as_deref().unwrap_or(&self.request_url)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +116,7 @@ pub(crate) struct WasmResourceProvider {
     policy: ResourcePolicy,
     usage: Arc<Mutex<ResourceUsage>>,
     asset_reports: Arc<Mutex<Vec<AssetReport>>>,
+    image_cache: Arc<Mutex<HashMap<String, ImageData>>>,
 }
 
 #[derive(Debug, Default)]
@@ -135,6 +140,7 @@ impl ResourceProviderFactory for WasmResourceProviderFactory {
             policy: request.resource_policy.clone(),
             usage: Arc::new(Mutex::new(ResourceUsage::default())),
             asset_reports: Arc::new(Mutex::new(Vec::new())),
+            image_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -146,6 +152,24 @@ impl ResourceProvider for WasmResourceProvider {
         initiator: &'static str,
     ) -> Result<mail_canvas_core::ImageData> {
         if let Some(asset) = self.assets.get(src, self.base_url.as_ref()) {
+            let cache_key = asset.cache_key().to_owned();
+            let source = asset.source();
+            if let Some(image) = self
+                .image_cache
+                .lock()
+                .expect("image cache mutex poisoned")
+                .get(cache_key.as_str())
+                .cloned()
+            {
+                self.record_asset_report(
+                    AssetReport::new(AssetKind::Image, AssetStatus::Loaded, asset.request_url)
+                        .with_optional_resolved_url(asset.resolved_url)
+                        .with_source(source)
+                        .with_initiator(initiator),
+                );
+                return Ok(image);
+            }
+
             ensure_resource_size_with_limit(asset.bytes.len(), self.policy.max_resource_bytes)?;
             self.record_resource_usage(asset.bytes.len())?;
             let image = decode_registered_image(
@@ -153,7 +177,10 @@ impl ResourceProvider for WasmResourceProvider {
                 self.policy.max_resource_bytes,
                 self.policy.max_decoded_pixels,
             )?;
-            let source = asset.source();
+            self.image_cache
+                .lock()
+                .expect("image cache mutex poisoned")
+                .insert(cache_key, image.clone());
             self.record_asset_report(
                 AssetReport::new(AssetKind::Image, AssetStatus::Loaded, asset.request_url)
                     .with_optional_resolved_url(asset.resolved_url)
@@ -406,6 +433,7 @@ fn ensure_resource_size_with_limit(bytes: usize, max_bytes: usize) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::{ColorType, ImageEncoder, codecs::png::PngEncoder};
 
     #[test]
     fn registry_resolves_relative_urls_against_base() {
@@ -466,5 +494,36 @@ mod tests {
             ),
             AssetSource::Remote
         );
+    }
+
+    #[test]
+    fn provider_reuses_decoded_registered_images_within_render() {
+        let registry = AssetRegistry::default();
+        let mut png = Vec::new();
+        PngEncoder::new(&mut png)
+            .write_image(&[255, 0, 0, 255], 1, 1, ColorType::Rgba8.into())
+            .expect("encode png");
+        registry
+            .register("https://cdn.example.com/logo.png", &png)
+            .expect("register image");
+
+        let provider = WasmResourceProvider {
+            assets: registry,
+            base_url: None,
+            policy: ResourcePolicy::default(),
+            usage: Arc::new(Mutex::new(ResourceUsage::default())),
+            asset_reports: Arc::new(Mutex::new(Vec::new())),
+            image_cache: Arc::new(Mutex::new(HashMap::new())),
+        };
+
+        let first = provider
+            .load_image("https://cdn.example.com/logo.png", "img")
+            .expect("first image");
+        let second = provider
+            .load_image("https://cdn.example.com/logo.png", "img")
+            .expect("second image");
+
+        assert!(Arc::ptr_eq(&first.rgba, &second.rgba));
+        assert_eq!(provider.usage.lock().expect("resource usage").count, 1);
     }
 }
