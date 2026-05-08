@@ -195,11 +195,11 @@ impl WasmRenderer {
             },
             &self.output,
         )?;
-        self.last_diagnostics_json = diagnostics_json(&DiagnosticsSnapshot {
-            warnings: rendered.warnings.clone(),
-            assets: rendered.assets.clone(),
-            console_messages: rendered.console_messages.clone(),
-        });
+        self.last_diagnostics_json = diagnostics_json_from_parts(
+            &rendered.warnings,
+            &rendered.assets,
+            &rendered.console_messages,
+        );
         Ok(rendered)
     }
 
@@ -213,11 +213,11 @@ impl WasmRenderer {
                 assets: self.assets.clone(),
             },
         )?;
-        self.last_diagnostics_json = diagnostics_json(&DiagnosticsSnapshot {
-            warnings: rendered.warnings.clone(),
-            assets: rendered.assets.clone(),
-            console_messages: rendered.console_messages.clone(),
-        });
+        self.last_diagnostics_json = diagnostics_json_from_parts(
+            &rendered.warnings,
+            &rendered.assets,
+            &rendered.console_messages,
+        );
         Ok(rendered)
     }
 }
@@ -667,9 +667,29 @@ struct DiagnosticsSnapshot {
     console_messages: Vec<ConsoleMessage>,
 }
 
+#[derive(Serialize)]
+struct DiagnosticsSnapshotRef<'a> {
+    warnings: &'a [RenderWarning],
+    assets: &'a [AssetReport],
+    console_messages: &'a [ConsoleMessage],
+}
+
 fn diagnostics_json(snapshot: &DiagnosticsSnapshot) -> String {
     serde_json::to_string(snapshot)
         .unwrap_or_else(|_| "{\"warnings\":[],\"assets\":[],\"console_messages\":[]}".to_string())
+}
+
+fn diagnostics_json_from_parts(
+    warnings: &[RenderWarning],
+    assets: &[AssetReport],
+    console_messages: &[ConsoleMessage],
+) -> String {
+    serde_json::to_string(&DiagnosticsSnapshotRef {
+        warnings,
+        assets,
+        console_messages,
+    })
+    .unwrap_or_else(|_| "{\"warnings\":[],\"assets\":[],\"console_messages\":[]}".to_string())
 }
 
 fn js_error(error: anyhow::Error) -> JsValue {
