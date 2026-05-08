@@ -11,6 +11,7 @@ mod fonts;
 mod image;
 mod output;
 mod pdf;
+mod remote;
 mod resource;
 
 pub use mail_canvas_core::{
