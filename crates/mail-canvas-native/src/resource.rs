@@ -8,7 +8,10 @@ use mail_canvas_core::{
 };
 use url::Url;
 
-use crate::bytes::{load_resource_bytes, load_resource_bytes_inner};
+use crate::bytes::{
+    load_resolved_resource_bytes_inner, load_resource_bytes, load_resource_bytes_inner,
+    resolve_resource_url,
+};
 use crate::image::decode_image_bytes;
 use crate::remote::resource_agent;
 
@@ -133,8 +136,19 @@ pub(crate) fn load_image(
     policy: &ResourcePolicy,
     initiator: &'static str,
 ) -> Result<ImageData> {
-    let cache_key = cacheable_image_key(src, policy);
-    if let Some(key) = cache_key.as_deref() {
+    let resolved = if src.trim_start().starts_with("data:") {
+        None
+    } else {
+        Some(resolve_resource_url(
+            src,
+            policy,
+            AssetKind::Image,
+            initiator,
+        )?)
+    };
+
+    if let Some(resolved) = resolved.as_ref().filter(|resolved| resolved.cacheable()) {
+        let key = resolved.resolved_url.as_str();
         if let Some(image) = policy
             .image_cache
             .lock()
@@ -144,23 +158,33 @@ pub(crate) fn load_image(
         {
             policy.push_asset_report(
                 asset_report(AssetKind::Image, AssetStatus::Loaded, src)
-                    .with_source(asset_source_for_cache_key(key))
+                    .with_source(resolved.source)
                     .with_initiator(initiator)
-                    .with_optional_resolved_url(Some(key.to_string())),
+                    .with_optional_resolved_url(Some(resolved.resolved_url.clone())),
             );
             return Ok(image);
         }
     }
 
-    let loaded = load_resource_bytes_inner(src, policy, AssetKind::Image, initiator, false)?;
+    let loaded = match resolved {
+        Some(resolved) => load_resolved_resource_bytes_inner(
+            src,
+            policy,
+            AssetKind::Image,
+            initiator,
+            false,
+            resolved,
+        )?,
+        None => load_resource_bytes_inner(src, policy, AssetKind::Image, initiator, false)?,
+    };
     match decode_image_bytes(&loaded.bytes, &policy.policy) {
         Ok(image) => {
-            if let Some(key) = cache_key {
+            if let Some(key) = loaded.resolved_url.as_ref().filter(|_| loaded.cacheable()) {
                 policy
                     .image_cache
                     .lock()
                     .expect("image cache mutex poisoned")
-                    .insert(key, image.clone());
+                    .insert(key.clone(), image.clone());
             }
             policy.push_asset_report(
                 asset_report(AssetKind::Image, AssetStatus::Loaded, src)
@@ -182,28 +206,6 @@ pub(crate) fn load_image(
             );
             Err(error)
         }
-    }
-}
-
-fn cacheable_image_key(src: &str, policy: &ResourcePolicy) -> Option<String> {
-    if src.trim_start().starts_with("data:") {
-        return None;
-    }
-    let url = Url::parse(src).or_else(|_| {
-        policy
-            .base_url
-            .as_ref()
-            .ok_or(url::ParseError::RelativeUrlWithoutBase)
-            .and_then(|base| base.join(src))
-    });
-    let url = url.ok()?;
-    matches!(url.scheme(), "file" | "https" | "http").then(|| url.as_str().to_owned())
-}
-
-fn asset_source_for_cache_key(key: &str) -> AssetSource {
-    match Url::parse(key).ok() {
-        Some(url) if url.scheme() == "file" => AssetSource::File,
-        _ => AssetSource::Remote,
     }
 }
 

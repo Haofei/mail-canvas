@@ -15,6 +15,24 @@ pub(crate) struct LoadedResourceBytes {
     pub(crate) bytes: Arc<[u8]>,
 }
 
+impl LoadedResourceBytes {
+    pub(crate) fn cacheable(&self) -> bool {
+        matches!(self.source, AssetSource::File | AssetSource::Remote)
+    }
+}
+
+pub(crate) struct ResolvedResourceUrl {
+    pub(crate) url: Url,
+    pub(crate) resolved_url: String,
+    pub(crate) source: AssetSource,
+}
+
+impl ResolvedResourceUrl {
+    pub(crate) fn cacheable(&self) -> bool {
+        matches!(self.url.scheme(), "file" | "https" | "http")
+    }
+}
+
 pub(crate) fn load_resource_bytes(
     src: &str,
     policy: &ResourcePolicy,
@@ -36,6 +54,16 @@ pub(crate) fn load_resource_bytes_inner(
         return load_data_url(src, policy, kind, initiator, record_loaded);
     }
 
+    let resolved = resolve_resource_url(src, policy, kind, initiator)?;
+    load_resolved_resource_bytes_inner(src, policy, kind, initiator, record_loaded, resolved)
+}
+
+pub(crate) fn resolve_resource_url(
+    src: &str,
+    policy: &ResourcePolicy,
+    kind: AssetKind,
+    initiator: &'static str,
+) -> Result<ResolvedResourceUrl> {
     let url = Url::parse(src)
         .or_else(|_| {
             policy
@@ -56,43 +84,57 @@ pub(crate) fn load_resource_bytes_inner(
             return Err(error);
         }
     };
-    let resolved_url = Some(url.as_str().to_owned());
+    let resolved_url = url.as_str().to_owned();
     let source = asset_source_for_url(&url);
+    Ok(ResolvedResourceUrl {
+        url,
+        resolved_url,
+        source,
+    })
+}
 
+pub(crate) fn load_resolved_resource_bytes_inner(
+    src: &str,
+    policy: &ResourcePolicy,
+    kind: AssetKind,
+    initiator: &'static str,
+    record_loaded: bool,
+    resolved: ResolvedResourceUrl,
+) -> Result<LoadedResourceBytes> {
     if kind != AssetKind::Image {
         if let Some(bytes) = policy
             .byte_cache
             .lock()
             .expect("byte cache mutex poisoned")
-            .get(url.as_str())
+            .get(resolved.resolved_url.as_str())
             .cloned()
         {
             if record_loaded {
                 policy.push_asset_report(
                     asset_report(kind, AssetStatus::Loaded, src)
-                        .with_source(source)
+                        .with_source(resolved.source)
                         .with_initiator(initiator)
                         .with_bytes(bytes.len())
-                        .with_optional_resolved_url(resolved_url.clone()),
+                        .with_optional_resolved_url(Some(resolved.resolved_url.clone())),
                 );
             }
             return Ok(LoadedResourceBytes {
-                resolved_url,
-                source,
+                resolved_url: Some(resolved.resolved_url),
+                source: resolved.source,
                 bytes,
             });
         }
     }
 
-    match url.scheme() {
-        "file" => match load_file_url(&url, policy) {
+    match resolved.url.scheme() {
+        "file" => match load_file_url(&resolved.url, policy) {
             Ok(bytes) => Ok(loaded_url_bytes(LoadedUrlBytes {
                 src,
                 kind,
                 initiator,
                 policy,
-                url: &url,
-                resolved_url,
+                url: &resolved.url,
+                resolved_url: Some(resolved.resolved_url),
                 source: AssetSource::File,
                 bytes,
                 record_loaded,
@@ -103,19 +145,19 @@ pub(crate) fn load_resource_bytes_inner(
                         .with_source(AssetSource::File)
                         .with_initiator(initiator)
                         .with_detail(error.to_string())
-                        .with_optional_resolved_url(resolved_url),
+                        .with_optional_resolved_url(Some(resolved.resolved_url)),
                 );
                 Err(error)
             }
         },
-        "https" | "http" => match load_remote_url(&url, policy) {
+        "https" | "http" => match load_remote_url(&resolved.url, policy) {
             Ok(bytes) => Ok(loaded_url_bytes(LoadedUrlBytes {
                 src,
                 kind,
                 initiator,
                 policy,
-                url: &url,
-                resolved_url,
+                url: &resolved.url,
+                resolved_url: Some(resolved.resolved_url),
                 source: AssetSource::Remote,
                 bytes,
                 record_loaded,
@@ -126,7 +168,7 @@ pub(crate) fn load_resource_bytes_inner(
                         .with_source(AssetSource::Remote)
                         .with_initiator(initiator)
                         .with_detail(error.to_string())
-                        .with_optional_resolved_url(resolved_url),
+                        .with_optional_resolved_url(Some(resolved.resolved_url)),
                 );
                 Err(error)
             }
@@ -137,7 +179,7 @@ pub(crate) fn load_resource_bytes_inner(
                 asset_report(kind, AssetStatus::Failed, src)
                     .with_initiator(initiator)
                     .with_detail(error.to_string())
-                    .with_optional_resolved_url(resolved_url),
+                    .with_optional_resolved_url(Some(resolved.resolved_url)),
             );
             Err(error)
         }
