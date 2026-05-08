@@ -51,6 +51,8 @@ export class MailCanvasBrowserRenderer {
     this.defaultEmojiFontRegistered = false;
     this.defaultEmojiFontPromise = null;
     this.assetCache = new Map();
+    this.cssDependencyCache = new Map();
+    this.stylesheetRewriteCache = new Map();
     this.registeredAssetUrls = new Set();
     this.destroyed = false;
   }
@@ -113,6 +115,8 @@ export class MailCanvasBrowserRenderer {
 
   async clearCache() {
     this.assetCache.clear();
+    this.cssDependencyCache.clear();
+    this.stylesheetRewriteCache.clear();
     this.registeredAssetUrls.clear();
     if (!this.destroyed) {
       await this.client.call({ type: "clear" });
@@ -124,6 +128,8 @@ export class MailCanvasBrowserRenderer {
       return;
     }
     this.assetCache.clear();
+    this.cssDependencyCache.clear();
+    this.stylesheetRewriteCache.clear();
     this.registeredAssetUrls.clear();
     this.client.destroy();
     this.destroyed = true;
@@ -162,8 +168,7 @@ export class MailCanvasBrowserRenderer {
       assets.push({ url, bytes });
 
       if (url.endsWith(".css") || isStylesheetBytes(bytes)) {
-        const cssText = TEXT_DECODER.decode(bytes);
-        for (const nested of extractCssUrls(cssText)) {
+        for (const nested of this.#cssDependencies(url, bytes)) {
           pending.push(absoluteUrl(nested, url));
         }
       }
@@ -185,7 +190,13 @@ export class MailCanvasBrowserRenderer {
         throw new Error(`stylesheet exceeds maxAssetBytes (${url})`);
       }
       stylesheetAssets.push({ url, bytes });
-      const cssText = rewriteCssUrls(TEXT_DECODER.decode(bytes), url);
+      let cssText;
+      if (this.stylesheetRewriteCache.has(url)) {
+        cssText = this.stylesheetRewriteCache.get(url);
+      } else {
+        cssText = rewriteCssUrls(TEXT_DECODER.decode(bytes), url);
+        this.stylesheetRewriteCache.set(url, cssText);
+      }
       const style = document.createElement("style");
       style.textContent = cssText;
       link.replaceWith(style);
@@ -209,6 +220,15 @@ export class MailCanvasBrowserRenderer {
     const bytes = new Uint8Array(await response.arrayBuffer());
     this.assetCache.set(url, bytes);
     return bytes;
+  }
+
+  #cssDependencies(url, bytes) {
+    let dependencies = this.cssDependencyCache.get(url);
+    if (!dependencies) {
+      dependencies = Array.from(extractCssUrls(TEXT_DECODER.decode(bytes)));
+      this.cssDependencyCache.set(url, dependencies);
+    }
+    return dependencies;
   }
 
   #assertAlive() {
