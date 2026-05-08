@@ -700,10 +700,10 @@ impl Style {
                 self.wrap = TextWrap::WordOrGlyph;
             }
             "overflow-wrap" | "word-wrap" => {
-                if matches!(
-                    value.trim().to_ascii_lowercase().as_str(),
-                    "break-word" | "anywhere"
-                ) {
+                let value = value.trim();
+                if value.eq_ignore_ascii_case("break-word")
+                    || value.eq_ignore_ascii_case("anywhere")
+                {
                     self.wrap = TextWrap::WordOrGlyph;
                 }
             }
@@ -936,18 +936,23 @@ impl Style {
 
 pub(crate) fn strip_important(value: &str) -> &str {
     let value = value.trim();
-    let lower = value.to_ascii_lowercase();
-    if let Some(stripped) = lower.strip_suffix("!important") {
-        return value[..stripped.len()].trim();
+    const IMPORTANT: &str = "!important";
+    if value.len() >= IMPORTANT.len() {
+        let suffix_start = value.len() - IMPORTANT.len();
+        if value[suffix_start..].eq_ignore_ascii_case(IMPORTANT) {
+            return value[..suffix_start].trim();
+        }
     }
     value
 }
 
 pub(crate) fn is_inherit_keyword(value: &str) -> bool {
-    matches!(
-        value.trim().to_ascii_lowercase().as_str(),
-        "inherit" | "unset"
-    )
+    let value = value.trim();
+    value.eq_ignore_ascii_case("inherit") || value.eq_ignore_ascii_case("unset")
+}
+
+fn is_css_wide_keyword(value: &str) -> bool {
+    is_inherit_keyword(value) || value.trim().eq_ignore_ascii_case("initial")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1721,7 +1726,7 @@ pub(crate) fn parse_length(value: &str) -> Option<Length> {
     if value.eq_ignore_ascii_case("auto") || value.is_empty() {
         return None;
     }
-    if matches!(value.to_ascii_lowercase().as_str(), "inherit" | "unset") {
+    if is_inherit_keyword(value) {
         return Some(Length::Inherit);
     }
     if let Some(percent) = value.strip_suffix('%') {
@@ -1878,7 +1883,7 @@ pub(crate) fn parse_box_length(
     if value.eq_ignore_ascii_case("auto") || value.is_empty() {
         return None;
     }
-    if matches!(value.to_ascii_lowercase().as_str(), "inherit" | "unset") {
+    if is_inherit_keyword(value) {
         return Some(Length::Inherit);
     }
     if let Some(percent) = value.strip_suffix('%') {
@@ -2589,12 +2594,7 @@ pub(crate) fn parse_font_family_candidates(value: &str) -> Vec<String> {
         .split(',')
         .filter_map(|candidate| {
             let family = candidate.trim().trim_matches('"').trim_matches('\'').trim();
-            if family.is_empty()
-                || matches!(
-                    family.to_ascii_lowercase().as_str(),
-                    "inherit" | "initial" | "unset"
-                )
-            {
+            if family.is_empty() || is_css_wide_keyword(family) {
                 None
             } else {
                 Some(family.to_string())

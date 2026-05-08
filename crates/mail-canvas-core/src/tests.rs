@@ -512,6 +512,7 @@ fn unavailable_safe_system_font_uses_declared_generic_fallback() {
 #[test]
 fn invalid_font_family_declaration_is_ignored() {
     assert!(parse_font_family(r#"" undefined: IowanOldStyle" undefined: , P052, serif"#).is_none());
+    assert!(parse_font_family("INITIAL").is_none());
     assert_eq!(
         parse_font_family(r#""Iowan Old Style", "Times New Roman", serif"#).as_deref(),
         Some("Times New Roman")
@@ -830,7 +831,7 @@ fn inline_style_uses_css_parser_for_function_values() {
 #[test]
 fn inline_style_important_declarations_win_after_parsing() {
     let document = kuchiki::parse_html()
-        .one(r##"<div style="color: #111111 !important; color: #222222">A</div>"##);
+        .one(r##"<div style="color: #111111 !IMPORTANT; color: #222222">A</div>"##);
     let div = find_first_tag(&document, "div").expect("div");
     let style = style_for_node(&div, &Style::initial());
 
