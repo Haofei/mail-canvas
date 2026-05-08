@@ -483,7 +483,7 @@ fn push_text_span_segment(out: &mut Vec<TextSpan>, text: String, style: &TextRun
     if text.is_empty() {
         return;
     }
-    let text = apply_text_transform(&text, style.text_transform);
+    let text = apply_text_transform(text, style.text_transform);
     if !text.is_empty() {
         if let Some(last) = out.last_mut() {
             if last.style == *style {
@@ -535,9 +535,9 @@ pub(crate) fn text_spans_match_style(spans: &[TextSpan], style: &Style) -> bool 
     let parent_style = TextRunStyle::from_style(style);
     spans.iter().all(|span| span.style == parent_style)
 }
-fn apply_text_transform(text: &str, transform: TextTransform) -> String {
+fn apply_text_transform(text: String, transform: TextTransform) -> String {
     match transform {
-        TextTransform::None => text.to_string(),
+        TextTransform::None => text,
         TextTransform::Uppercase => text.to_uppercase(),
         TextTransform::Lowercase => text.to_lowercase(),
         TextTransform::Capitalize => {
