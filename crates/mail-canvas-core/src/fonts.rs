@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
@@ -216,16 +217,22 @@ impl FontFamilyIndex {
     }
 
     pub(crate) fn contains(&self, family: &str) -> bool {
-        self.families.contains(&normalize_font_family_key(family))
+        self.families
+            .contains(normalize_font_family_key(family).as_ref())
     }
 
     fn insert(&mut self, family: &str) {
-        self.families.insert(normalize_font_family_key(family));
+        self.families
+            .insert(normalize_font_family_key(family).into_owned());
     }
 }
 
-fn normalize_font_family_key(family: &str) -> String {
-    family.to_ascii_lowercase()
+fn normalize_font_family_key(family: &str) -> Cow<'_, str> {
+    if family.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        Cow::Owned(family.to_ascii_lowercase())
+    } else {
+        Cow::Borrowed(family)
+    }
 }
 
 pub(crate) fn font_database_families(db: &fontdb::Database) -> FontFamilyIndex {
