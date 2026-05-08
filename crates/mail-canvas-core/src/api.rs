@@ -292,6 +292,27 @@ mod tests {
         assert_eq!(report.console_messages.len(), 1);
         assert_eq!(report.console_messages[0].message, "note");
     }
+
+    #[test]
+    fn asset_report_merge_keeps_existing_strings_without_replacement() {
+        let mut report = AssetReport::new(AssetKind::Image, AssetStatus::Failed, "image.png")
+            .with_detail("original failure")
+            .with_resolved_url("https://example.com/image.png");
+
+        report.merge_from(AssetReport::new(
+            AssetKind::Image,
+            AssetStatus::Loaded,
+            "image.png",
+        ));
+
+        assert_eq!(report.status, AssetStatus::Loaded);
+        assert_eq!(report.attempts, 2);
+        assert_eq!(report.detail.as_deref(), Some("original failure"));
+        assert_eq!(
+            report.resolved_url.as_deref(),
+            Some("https://example.com/image.png")
+        );
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -402,9 +423,13 @@ impl AssetReport {
         self.attempts = self.attempts.saturating_add(newer.attempts);
         self.status = newer.status;
         self.bytes = newer.bytes.or(self.bytes);
-        self.detail = newer.detail.or(self.detail.clone());
+        if newer.detail.is_some() {
+            self.detail = newer.detail;
+        }
         self.source = newer.source.or(self.source);
-        self.resolved_url = newer.resolved_url.or(self.resolved_url.clone());
+        if newer.resolved_url.is_some() {
+            self.resolved_url = newer.resolved_url;
+        }
     }
 }
 
