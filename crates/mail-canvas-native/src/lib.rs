@@ -8,6 +8,7 @@ use mail_canvas_core::{
 };
 
 mod fonts;
+mod image;
 mod output;
 mod pdf;
 mod resource;
