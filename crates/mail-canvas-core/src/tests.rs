@@ -837,10 +837,10 @@ fn inline_style_important_declarations_win_after_parsing() {
 #[test]
 fn parses_flex_container_style_model() {
     let mut style = Style::initial();
-    style.apply_declaration("display", "flex");
-    style.apply_declaration("flex-flow", "column wrap");
-    style.apply_declaration("justify-content", "space-between");
-    style.apply_declaration("align-items", "center");
+    style.apply_declaration("display", "FLEX");
+    style.apply_declaration("flex-flow", "COLUMN WRAP");
+    style.apply_declaration("justify-content", "SPACE-BETWEEN");
+    style.apply_declaration("align-items", "CENTER");
     style.apply_declaration("gap", "12px 24px");
 
     assert_eq!(style.display, Display::Flex);
@@ -856,7 +856,7 @@ fn parses_flex_container_style_model() {
 fn parses_flex_item_style_model() {
     let mut style = Style::initial();
     style.apply_declaration("flex", "2 0 40%");
-    style.apply_declaration("align-self", "flex-end");
+    style.apply_declaration("align-self", "FLEX-END");
 
     assert_eq!(style.flex_grow, 2.0);
     assert_eq!(style.flex_shrink, 0.0);
@@ -903,11 +903,11 @@ fn lays_out_flex_column_with_taffy_direction() {
 #[test]
 fn parses_float_and_clear_style_model() {
     let mut style = Style::initial();
-    style.apply_declaration("position", "absolute");
+    style.apply_declaration("position", "ABSOLUTE");
     style.apply_declaration("opacity", ".3");
     style.apply_declaration("top", "10px");
-    style.apply_declaration("float", "right");
-    style.apply_declaration("clear", "both");
+    style.apply_declaration("float", "RIGHT");
+    style.apply_declaration("clear", "BOTH");
 
     assert_eq!(style.position, Position::Absolute);
     assert!((style.opacity - 0.3).abs() < 0.01);

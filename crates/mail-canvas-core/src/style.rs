@@ -1481,60 +1481,98 @@ pub(crate) fn default_vertical_align(tag: &str, parent: VerticalAlign) -> Vertic
     }
 }
 
+fn eq_ignore_ascii_case_any(value: &str, candidates: &[&str]) -> bool {
+    candidates
+        .iter()
+        .any(|candidate| value.eq_ignore_ascii_case(candidate))
+}
+
 pub(crate) fn parse_display(value: &str) -> Option<Display> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "block" => Some(Display::Block),
-        "inline" => Some(Display::Inline),
-        "inline-block" => Some(Display::InlineBlock),
-        "inline-table" => Some(Display::InlineTable),
-        "flex" | "inline-flex" => Some(Display::Flex),
-        "table" => Some(Display::Table),
-        "table-row" => Some(Display::TableRow),
-        "table-cell" => Some(Display::TableCell),
-        "none" => Some(Display::None),
-        _ => None,
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("block") {
+        Some(Display::Block)
+    } else if value.eq_ignore_ascii_case("inline") {
+        Some(Display::Inline)
+    } else if value.eq_ignore_ascii_case("inline-block") {
+        Some(Display::InlineBlock)
+    } else if value.eq_ignore_ascii_case("inline-table") {
+        Some(Display::InlineTable)
+    } else if eq_ignore_ascii_case_any(value, &["flex", "inline-flex"]) {
+        Some(Display::Flex)
+    } else if value.eq_ignore_ascii_case("table") {
+        Some(Display::Table)
+    } else if value.eq_ignore_ascii_case("table-row") {
+        Some(Display::TableRow)
+    } else if value.eq_ignore_ascii_case("table-cell") {
+        Some(Display::TableCell)
+    } else if value.eq_ignore_ascii_case("none") {
+        Some(Display::None)
+    } else {
+        None
     }
 }
 
 pub(crate) fn parse_flex_direction(value: &str) -> Option<FlexDirection> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "row" => Some(FlexDirection::Row),
-        "row-reverse" => Some(FlexDirection::RowReverse),
-        "column" => Some(FlexDirection::Column),
-        "column-reverse" => Some(FlexDirection::ColumnReverse),
-        _ => None,
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("row") {
+        Some(FlexDirection::Row)
+    } else if value.eq_ignore_ascii_case("row-reverse") {
+        Some(FlexDirection::RowReverse)
+    } else if value.eq_ignore_ascii_case("column") {
+        Some(FlexDirection::Column)
+    } else if value.eq_ignore_ascii_case("column-reverse") {
+        Some(FlexDirection::ColumnReverse)
+    } else {
+        None
     }
 }
 
 pub(crate) fn parse_flex_wrap(value: &str) -> Option<FlexWrap> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "nowrap" => Some(FlexWrap::NoWrap),
-        "wrap" => Some(FlexWrap::Wrap),
-        "wrap-reverse" => Some(FlexWrap::WrapReverse),
-        _ => None,
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("nowrap") {
+        Some(FlexWrap::NoWrap)
+    } else if value.eq_ignore_ascii_case("wrap") {
+        Some(FlexWrap::Wrap)
+    } else if value.eq_ignore_ascii_case("wrap-reverse") {
+        Some(FlexWrap::WrapReverse)
+    } else {
+        None
     }
 }
 
 pub(crate) fn parse_justify_content(value: &str) -> Option<JustifyContent> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "start" | "flex-start" | "left" => Some(JustifyContent::FlexStart),
-        "end" | "flex-end" | "right" => Some(JustifyContent::FlexEnd),
-        "center" => Some(JustifyContent::Center),
-        "space-between" => Some(JustifyContent::SpaceBetween),
-        "space-around" => Some(JustifyContent::SpaceAround),
-        "space-evenly" => Some(JustifyContent::SpaceEvenly),
-        _ => None,
+    let value = value.trim();
+    if eq_ignore_ascii_case_any(value, &["start", "flex-start", "left"]) {
+        Some(JustifyContent::FlexStart)
+    } else if eq_ignore_ascii_case_any(value, &["end", "flex-end", "right"]) {
+        Some(JustifyContent::FlexEnd)
+    } else if value.eq_ignore_ascii_case("center") {
+        Some(JustifyContent::Center)
+    } else if value.eq_ignore_ascii_case("space-between") {
+        Some(JustifyContent::SpaceBetween)
+    } else if value.eq_ignore_ascii_case("space-around") {
+        Some(JustifyContent::SpaceAround)
+    } else if value.eq_ignore_ascii_case("space-evenly") {
+        Some(JustifyContent::SpaceEvenly)
+    } else {
+        None
     }
 }
 
 pub(crate) fn parse_align_items(value: &str) -> Option<AlignItems> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "start" | "flex-start" => Some(AlignItems::FlexStart),
-        "end" | "flex-end" => Some(AlignItems::FlexEnd),
-        "center" => Some(AlignItems::Center),
-        "baseline" => Some(AlignItems::Baseline),
-        "stretch" | "normal" => Some(AlignItems::Stretch),
-        _ => None,
+    let value = value.trim();
+    if eq_ignore_ascii_case_any(value, &["start", "flex-start"]) {
+        Some(AlignItems::FlexStart)
+    } else if eq_ignore_ascii_case_any(value, &["end", "flex-end"]) {
+        Some(AlignItems::FlexEnd)
+    } else if value.eq_ignore_ascii_case("center") {
+        Some(AlignItems::Center)
+    } else if value.eq_ignore_ascii_case("baseline") {
+        Some(AlignItems::Baseline)
+    } else if eq_ignore_ascii_case_any(value, &["stretch", "normal"]) {
+        Some(AlignItems::Stretch)
+    } else {
+        None
     }
 }
 
@@ -1612,51 +1650,64 @@ pub(crate) fn parse_flex_factor(value: &str) -> Option<f32> {
 }
 
 pub(crate) fn parse_position(value: &str) -> Option<Position> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "static" => Some(Position::Static),
-        "relative" => Some(Position::Relative),
-        "absolute" => Some(Position::Absolute),
-        "fixed" => Some(Position::Fixed),
-        _ => None,
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("static") {
+        Some(Position::Static)
+    } else if value.eq_ignore_ascii_case("relative") {
+        Some(Position::Relative)
+    } else if value.eq_ignore_ascii_case("absolute") {
+        Some(Position::Absolute)
+    } else if value.eq_ignore_ascii_case("fixed") {
+        Some(Position::Fixed)
+    } else {
+        None
     }
 }
 
 pub(crate) fn parse_list_style_type(value: &str) -> Option<ListStyleType> {
-    let lower = value.trim().to_ascii_lowercase();
-    if lower.split_whitespace().any(|token| token == "none") {
-        return Some(ListStyleType::None);
+    let mut has_decimal = false;
+    let mut has_disc = false;
+    for token in value.split_whitespace() {
+        if token.eq_ignore_ascii_case("none") {
+            return Some(ListStyleType::None);
+        }
+        has_decimal |= eq_ignore_ascii_case_any(token, &["decimal", "decimal-leading-zero"]);
+        has_disc |= eq_ignore_ascii_case_any(token, &["disc", "circle", "square"]);
     }
-    if lower
-        .split_whitespace()
-        .any(|token| matches!(token, "decimal" | "decimal-leading-zero"))
-    {
-        return Some(ListStyleType::Decimal);
+    if has_decimal {
+        Some(ListStyleType::Decimal)
+    } else if has_disc {
+        Some(ListStyleType::Disc)
+    } else {
+        None
     }
-    if lower
-        .split_whitespace()
-        .any(|token| matches!(token, "disc" | "circle" | "square"))
-    {
-        return Some(ListStyleType::Disc);
-    }
-    None
 }
 
 pub(crate) fn parse_float_side(value: &str) -> Option<FloatSide> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "none" => Some(FloatSide::None),
-        "left" => Some(FloatSide::Left),
-        "right" => Some(FloatSide::Right),
-        _ => None,
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        Some(FloatSide::None)
+    } else if value.eq_ignore_ascii_case("left") {
+        Some(FloatSide::Left)
+    } else if value.eq_ignore_ascii_case("right") {
+        Some(FloatSide::Right)
+    } else {
+        None
     }
 }
 
 pub(crate) fn parse_clear(value: &str) -> Option<Clear> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "none" => Some(Clear::None),
-        "left" => Some(Clear::Left),
-        "right" => Some(Clear::Right),
-        "both" => Some(Clear::Both),
-        _ => None,
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        Some(Clear::None)
+    } else if value.eq_ignore_ascii_case("left") {
+        Some(Clear::Left)
+    } else if value.eq_ignore_ascii_case("right") {
+        Some(Clear::Right)
+    } else if value.eq_ignore_ascii_case("both") {
+        Some(Clear::Both)
+    } else {
+        None
     }
 }
 
