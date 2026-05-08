@@ -17,6 +17,7 @@ const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const DEFAULT_MAX_DECODED_PIXELS = 50_000_000;
 const DEFAULT_MAX_TOTAL_RESOURCE_BYTES = 128 * 1024 * 1024;
+const DEFAULT_ISSUES_LOG = path.join(ROOT_DIR, 'corpus', 'issues.json');
 
 function parseArgs(argv) {
   const args = {
@@ -45,6 +46,8 @@ function parseArgs(argv) {
     registryPath: path.join(ROOT_DIR, 'corpus', 'registry.json'),
     updateRegistry: true,
     keepVendored: false,
+    issuesLogPath: DEFAULT_ISSUES_LOG,
+    updateIssues: true,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -135,6 +138,12 @@ function parseArgs(argv) {
         break;
       case '--keep-vendored':
         args.keepVendored = true;
+        break;
+      case '--issues-log':
+        args.issuesLogPath = path.resolve(next());
+        break;
+      case '--no-issues-log':
+        args.updateIssues = false;
         break;
       default:
         throw new Error(`unknown argument: ${arg}`);
@@ -248,6 +257,10 @@ async function main() {
   const pipelineJson = path.join(args.workDir, 'pipeline.json');
   await writeJson(pipelineJson, summary);
   await writeManifest(args, targets);
+  let issuesLog = null;
+  if (compare && args.updateIssues) {
+    issuesLog = await updateIssueLog(steps, args, triage, targets);
+  }
   if (args.updateRegistry) {
     await runStep(steps, 'registry', 'node', [
       'scripts/corpus_registry.mjs',
@@ -272,6 +285,7 @@ async function main() {
   await writeJson(pipelineJson, {
     ...summary,
     steps,
+    issuesLog,
   });
 
   console.log(`pipeline: ${pipelineJson}`);
@@ -573,6 +587,152 @@ async function cleanupVendoredTemplates(steps, names) {
   });
 }
 
+async function updateIssueLog(steps, args, triage, targets) {
+  const startedAt = new Date().toISOString();
+  const runAt = new Date().toISOString();
+  const commit = await currentGitCommit();
+  const workDir = relativePath(args.workDir);
+  const targetNames = new Set(targets);
+  const existing = await readJson(args.issuesLogPath).catch(() => ({
+    schemaVersion: 1,
+    updatedAt: null,
+    issues: [],
+  }));
+  const byKey = new Map((existing.issues ?? []).map((issue) => [issue.key, issue]));
+  const currentPendingKeys = new Set();
+  const currentRunIssues = [];
+
+  for (const item of triage) {
+    if (!isPendingPriority(item.priority)) {
+      continue;
+    }
+    const type = issueTypeForReason(item.reason);
+    const key = `${item.name}:${type}`;
+    currentPendingKeys.add(key);
+    const previous = byKey.get(key);
+    const issue = normalizeIssue({
+      ...previous,
+      key,
+      name: item.name,
+      type,
+      status: 'pending',
+      firstSeenAt: previous?.firstSeenAt ?? runAt,
+      lastSeenAt: runAt,
+      fixedAt: null,
+      fixCommit: null,
+      fixedInRun: null,
+      occurrences: (previous?.occurrences ?? 0) + 1,
+      latest: issueSnapshot(item, { runAt, commit, workDir }),
+    });
+    byKey.set(key, issue);
+    currentRunIssues.push(issue);
+  }
+
+  for (const issue of byKey.values()) {
+    if (
+      issue.status === 'pending' &&
+      targetNames.has(issue.name) &&
+      !currentPendingKeys.has(issue.key)
+    ) {
+      issue.status = 'fixed';
+      issue.fixedAt = runAt;
+      issue.fixCommit = commit;
+      issue.fixedInRun = workDir;
+    }
+  }
+
+  const issues = [...byKey.values()].map(normalizeIssue).sort(compareIssues);
+  const log = {
+    schemaVersion: existing.schemaVersion ?? 1,
+    updatedAt: runAt,
+    issues,
+  };
+  await writeJson(args.issuesLogPath, log);
+  const runSummary = {
+    issuesLogPath: args.issuesLogPath,
+    pendingCount: issues.filter((issue) => issue.status === 'pending').length,
+    fixedCount: issues.filter((issue) => issue.status === 'fixed').length,
+    currentRunPendingCount: currentRunIssues.length,
+    currentRunIssues: currentRunIssues.map((issue) => issue.key),
+  };
+  await writeJson(path.join(args.workDir, 'issues.json'), runSummary);
+  steps.push({
+    name: 'issues-log',
+    command: ['internal', 'issues-log', args.issuesLogPath],
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    exitCode: 0,
+  });
+  return runSummary;
+}
+
+function isPendingPriority(priority) {
+  return priority === 'P0' || priority === 'P1' || priority === 'P2';
+}
+
+function issueTypeForReason(reason = '') {
+  if (reason.includes('renderer failed')) return 'render_failed';
+  if (reason.includes('image asset failed')) return 'image_asset_failed';
+  if (reason.includes('web font failed')) return 'web_font_failed';
+  if (reason.includes('non-image asset failed')) return 'non_image_asset_failed';
+  if (reason.includes('large height delta')) return 'large_height_delta';
+  if (reason.includes('layout/background structural diff')) return 'structural_diff';
+  if (reason.includes('media rectangle mismatch')) return 'media_rect_mismatch';
+  if (reason.includes('media pixel mismatch')) return 'media_pixel_mismatch';
+  if (reason.includes('text coverage mismatch')) return 'text_coverage_mismatch';
+  if (reason.includes('text position/wrap mismatch')) return 'text_position_wrap_mismatch';
+  if (reason.includes('corpus issue')) return 'corpus_issue';
+  return reason
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'unknown';
+}
+
+function issueSnapshot(item, context) {
+  return {
+    runAt: context.runAt,
+    commit: context.commit,
+    workDir: context.workDir,
+    priority: item.priority,
+    reason: item.reason,
+    diffPercent: item.diffPercent,
+    heightDelta: item.heightDelta,
+    firstBadRegion: item.firstBadRegion ?? null,
+    nonMediaNonTextPercent: item.nonMediaNonTextPercent,
+    mediaPercent: item.mediaPercent,
+    mediaRectDeltaPercent: item.mediaRectDeltaPercent,
+    textCoverageDeltaPercent: item.textCoverageDeltaPercent,
+    textRectDeltaPercent: item.textRectDeltaPercent,
+    warnings: item.warnings,
+    assets: item.assets,
+  };
+}
+
+function normalizeIssue(issue) {
+  return {
+    key: issue.key,
+    name: issue.name,
+    type: issue.type,
+    status: issue.status ?? 'pending',
+    firstSeenAt: issue.firstSeenAt ?? null,
+    lastSeenAt: issue.lastSeenAt ?? null,
+    fixedAt: issue.fixedAt ?? null,
+    fixCommit: issue.fixCommit ?? null,
+    fixedInRun: issue.fixedInRun ?? null,
+    occurrences: issue.occurrences ?? 0,
+    latest: issue.latest ?? null,
+  };
+}
+
+function compareIssues(left, right) {
+  const statusRank = { pending: 0, fixed: 1 };
+  return (
+    (statusRank[left.status] ?? 9) - (statusRank[right.status] ?? 9) ||
+    left.name.localeCompare(right.name) ||
+    left.type.localeCompare(right.type)
+  );
+}
+
 function selectTargets(args, vendoredNames) {
   if (args.only.length > 0) {
     return [...new Set(args.only)];
@@ -684,6 +844,17 @@ function safeArgs(args) {
     login: Boolean(args.login),
     headful: Boolean(args.headful),
   };
+}
+
+async function currentGitCommit() {
+  const result = await runCommand('git', ['rev-parse', '--short', 'HEAD'], {
+    captureStdout: true,
+  });
+  return result.stdout.trim();
+}
+
+function relativePath(filePath) {
+  return path.relative(ROOT_DIR, filePath).replaceAll(path.sep, '/');
 }
 
 main().catch((error) => {

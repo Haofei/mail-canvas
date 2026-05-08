@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-08T02:30:39.020Z",
+  "updatedAt": "2026-05-08T02:39:48.577Z",
   "templates": [
     {
       "name": "beefree-confirm-and-you-are-official",
@@ -1375,6 +1375,28 @@
       "lastRun": null
     },
     {
+      "name": "reallygoodemails-counter-print-latest-books-designers-republic",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/counter-print-latest-books-designers-republic",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-counter-print-latest-books-designers-republic.html",
+      "htmlMd5": "c1e25b8d73849fbe4fe68fb4da35a89a",
+      "htmlBytes": 129453,
+      "assetCount": 14,
+      "assetBytes": 1257124,
+      "assetManifestMd5": "7a1fe6912460a811dcd440fb170f7bfc",
+      "contentMd5": "bb5fbaacf75c02fb32728a259fc5a414",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T02:39:48.393Z",
+        "commit": "d503cb7",
+        "workDir": "runs/pipeline-three-new-20260507-193833",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "7.40%",
+        "heightDelta": 3
+      }
+    },
+    {
       "name": "reallygoodemails-dear-october-14th-me-did-you-go",
       "provider": "reallygoodemails",
       "url": "https://reallygoodemails.com/emails/dear-october-14th-me-did-you-go",
@@ -1717,6 +1739,50 @@
       "contentMd5": "345b955e21e8946645a6223f8d4e744f",
       "retainedInRepo": false,
       "lastRun": null
+    },
+    {
+      "name": "reallygoodemails-new-our-latest-rumpl-blanket-is-here",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/new-our-latest-rumpl-blanket-is-here",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-new-our-latest-rumpl-blanket-is-here.html",
+      "htmlMd5": "5b2bdbac7ca0e1fc72fb408e604a50e0",
+      "htmlBytes": 71633,
+      "assetCount": 25,
+      "assetBytes": 2347580,
+      "assetManifestMd5": "7058d71643e78fb6e34e2dc21eb29a35",
+      "contentMd5": "6c579b208eb7ea0606184403aac68c58",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T02:39:48.393Z",
+        "commit": "d503cb7",
+        "workDir": "runs/pipeline-three-new-20260507-193833",
+        "priority": "P2",
+        "reason": "text position/wrap mismatch",
+        "diffPercent": "5.08%",
+        "heightDelta": 3
+      }
+    },
+    {
+      "name": "reallygoodemails-our-latest-snack-fave-whats-new-in-our-store",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/our-latest-snack-fave-whats-new-in-our-store",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-our-latest-snack-fave-whats-new-in-our-store.html",
+      "htmlMd5": "73a07b5e316e326b7842d8b25926803c",
+      "htmlBytes": 64174,
+      "assetCount": 21,
+      "assetBytes": 6367277,
+      "assetManifestMd5": "2120ff9ed5f9d7d1602564c48ddf4164",
+      "contentMd5": "8293a82f601b61649d8ab6d3531ee56e",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T02:39:48.393Z",
+        "commit": "d503cb7",
+        "workDir": "runs/pipeline-three-new-20260507-193833",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "7.72%",
+        "heightDelta": 2
+      }
     },
     {
       "name": "reallygoodemails-pucker-up-whoville-the-grinch",

@@ -7,7 +7,9 @@ browser/artifact cache, or an external artifact store, not in git.
 `catalog.json` is the committed golden set. `registry.json` is the lightweight
 history of templates we have seen or tested. It records HTML and asset manifest
 MD5s, aggregate asset size, whether the template is still retained in the repo,
-and the latest pipeline result when available.
+and the latest pipeline result when available. `issues.json` records P0/P1/P2
+rendering problems found by corpus runs; unresolved entries stay `pending`,
+and rerunning a template after the issue disappears marks that entry `fixed`.
 
 ## Tiers
 
@@ -58,6 +60,9 @@ By default the pipeline removes newly vendored research HTML/assets from
 `corpus/` after the run and leaves only the registry record. Pass
 `--keep-vendored` when intentionally promoting or inspecting the downloaded
 files before cleanup.
+
+Each pipeline run also writes `issues.json` in the run directory and updates the
+committed `corpus/issues.json` unless `--no-issues-log` is passed.
 
 If a research template should become a permanent regression fixture, copy only
 that HTML and its `.assets/` directory into `corpus/`, add a single

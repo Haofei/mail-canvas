@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-05-08T02:39:48.395Z",
+  "issues": [
+    {
+      "key": "reallygoodemails-counter-print-latest-books-designers-republic:text_coverage_mismatch",
+      "name": "reallygoodemails-counter-print-latest-books-designers-republic",
+      "type": "text_coverage_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T02:39:48.395Z",
+      "lastSeenAt": "2026-05-08T02:39:48.395Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T02:39:48.395Z",
+        "commit": "d503cb7",
+        "workDir": "runs/pipeline-three-new-20260507-193833",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "7.40%",
+        "heightDelta": 3,
+        "firstBadRegion": {
+          "y0": 1400,
+          "y1": 1500,
+          "diffPixels": 14112,
+          "diffRatio": 0.1764
+        },
+        "nonMediaNonTextPercent": "0.98%",
+        "mediaPercent": "11.96%",
+        "mediaRectDeltaPercent": "2.00%",
+        "textCoverageDeltaPercent": "13.20%",
+        "textRectDeltaPercent": "4.03%",
+        "warnings": 0,
+        "assets": {
+          "total": 14,
+          "loaded": 14,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-new-our-latest-rumpl-blanket-is-here:text_position_wrap_mismatch",
+      "name": "reallygoodemails-new-our-latest-rumpl-blanket-is-here",
+      "type": "text_position_wrap_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T02:39:48.395Z",
+      "lastSeenAt": "2026-05-08T02:39:48.395Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T02:39:48.395Z",
+        "commit": "d503cb7",
+        "workDir": "runs/pipeline-three-new-20260507-193833",
+        "priority": "P2",
+        "reason": "text position/wrap mismatch",
+        "diffPercent": "5.08%",
+        "heightDelta": 3,
+        "firstBadRegion": {
+          "y0": 2800,
+          "y1": 2900,
+          "diffPixels": 11187,
+          "diffRatio": 0.1398375
+        },
+        "nonMediaNonTextPercent": "0.31%",
+        "mediaPercent": "6.64%",
+        "mediaRectDeltaPercent": "0.48%",
+        "textCoverageDeltaPercent": "1.54%",
+        "textRectDeltaPercent": "159.39%",
+        "warnings": 0,
+        "assets": {
+          "total": 19,
+          "loaded": 19,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-our-latest-snack-fave-whats-new-in-our-store:text_coverage_mismatch",
+      "name": "reallygoodemails-our-latest-snack-fave-whats-new-in-our-store",
+      "type": "text_coverage_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T02:39:48.395Z",
+      "lastSeenAt": "2026-05-08T02:39:48.395Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T02:39:48.395Z",
+        "commit": "d503cb7",
+        "workDir": "runs/pipeline-three-new-20260507-193833",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "7.72%",
+        "heightDelta": 2,
+        "firstBadRegion": {
+          "y0": 500,
+          "y1": 600,
+          "diffPixels": 8258,
+          "diffRatio": 0.103225
+        },
+        "nonMediaNonTextPercent": "0.24%",
+        "mediaPercent": "13.43%",
+        "mediaRectDeltaPercent": "1.20%",
+        "textCoverageDeltaPercent": "8.06%",
+        "textRectDeltaPercent": "10.91%",
+        "warnings": 0,
+        "assets": {
+          "total": 21,
+          "loaded": 21,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    }
+  ]
+}
