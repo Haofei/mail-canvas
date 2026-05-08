@@ -1792,63 +1792,75 @@ pub(crate) fn parse_edges(value: &str) -> Option<Edges> {
 }
 
 pub(crate) fn parse_margin_edges(value: &str, font_size: f32) -> Option<(Edges, bool, bool)> {
-    let values: Vec<(&str, f32, bool)> = value
-        .split_whitespace()
-        .filter_map(|token| {
-            let is_auto = token.eq_ignore_ascii_case("auto");
-            parse_css_length(token, font_size, true)
-                .or(Some(0.0).filter(|_| is_auto))
-                .map(|length| (token, length, is_auto))
-        })
-        .collect();
+    let mut values = [(0.0_f32, false); 4];
+    let mut count = 0usize;
+    for token in value.split_whitespace() {
+        let is_auto = token.eq_ignore_ascii_case("auto");
+        let Some(length) =
+            parse_css_length(token, font_size, true).or(Some(0.0).filter(|_| is_auto))
+        else {
+            continue;
+        };
+        if count < values.len() {
+            values[count] = (length, is_auto);
+        }
+        count += 1;
+    }
 
-    let expanded = match values.as_slice() {
-        [all] => [all, all, all, all],
-        [vertical, horizontal] => [vertical, horizontal, vertical, horizontal],
-        [top, horizontal, bottom] => [top, horizontal, bottom, horizontal],
-        [top, right, bottom, left, ..] => [top, right, bottom, left],
+    let expanded = match count {
+        1 => [values[0], values[0], values[0], values[0]],
+        2 => [values[0], values[1], values[0], values[1]],
+        3 => [values[0], values[1], values[2], values[1]],
+        4.. => [values[0], values[1], values[2], values[3]],
         _ => return None,
     };
 
     Some((
         Edges {
-            top: expanded[0].1,
-            right: expanded[1].1,
-            bottom: expanded[2].1,
-            left: expanded[3].1,
+            top: expanded[0].0,
+            right: expanded[1].0,
+            bottom: expanded[2].0,
+            left: expanded[3].0,
         },
-        expanded[3].2,
-        expanded[1].2,
+        expanded[3].1,
+        expanded[1].1,
     ))
 }
 
 pub(crate) fn parse_edges_with_font(value: &str, font_size: f32) -> Option<Edges> {
-    let values: Vec<f32> = value
-        .split_whitespace()
-        .filter_map(|token| {
+    let mut values = [0.0_f32; 4];
+    let mut count = 0usize;
+    for token in value.split_whitespace() {
+        let Some(length) =
             parse_css_length(token, font_size, true).or(Some(0.0).filter(|_| token == "auto"))
-        })
-        .collect();
+        else {
+            continue;
+        };
+        if count < values.len() {
+            values[count] = length;
+        }
+        count += 1;
+    }
 
-    match values.as_slice() {
-        [all] => Some(Edges::all(*all)),
-        [vertical, horizontal] => Some(Edges {
-            top: *vertical,
-            right: *horizontal,
-            bottom: *vertical,
-            left: *horizontal,
+    match count {
+        1 => Some(Edges::all(values[0])),
+        2 => Some(Edges {
+            top: values[0],
+            right: values[1],
+            bottom: values[0],
+            left: values[1],
         }),
-        [top, horizontal, bottom] => Some(Edges {
-            top: *top,
-            right: *horizontal,
-            bottom: *bottom,
-            left: *horizontal,
+        3 => Some(Edges {
+            top: values[0],
+            right: values[1],
+            bottom: values[2],
+            left: values[1],
         }),
-        [top, right, bottom, left, ..] => Some(Edges {
-            top: *top,
-            right: *right,
-            bottom: *bottom,
-            left: *left,
+        4.. => Some(Edges {
+            top: values[0],
+            right: values[1],
+            bottom: values[2],
+            left: values[3],
         }),
         _ => None,
     }
@@ -1859,16 +1871,23 @@ pub(crate) fn parse_edge_lengths_with_font(
     font_size: f32,
     allow_unitless: bool,
 ) -> Option<ResolvedEdgeLengths> {
-    let values: Vec<Length> = value
-        .split_whitespace()
-        .filter_map(|token| parse_box_length(token, font_size, allow_unitless))
-        .collect();
+    let mut values = [Length::Px(0.0); 4];
+    let mut count = 0usize;
+    for token in value.split_whitespace() {
+        let Some(length) = parse_box_length(token, font_size, allow_unitless) else {
+            continue;
+        };
+        if count < values.len() {
+            values[count] = length;
+        }
+        count += 1;
+    }
 
-    let expanded = match values.as_slice() {
-        [all] => [*all, *all, *all, *all],
-        [vertical, horizontal] => [*vertical, *horizontal, *vertical, *horizontal],
-        [top, horizontal, bottom] => [*top, *horizontal, *bottom, *horizontal],
-        [top, right, bottom, left, ..] => [*top, *right, *bottom, *left],
+    let expanded = match count {
+        1 => [values[0], values[0], values[0], values[0]],
+        2 => [values[0], values[1], values[0], values[1]],
+        3 => [values[0], values[1], values[2], values[1]],
+        4.. => [values[0], values[1], values[2], values[3]],
         _ => return None,
     };
 
