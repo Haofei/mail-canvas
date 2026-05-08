@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use data_url::DataUrl;
@@ -20,7 +20,7 @@ const MAX_ASSET_REPORTS: usize = 512;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct AssetRegistry {
-    inner: Arc<Mutex<AssetRegistryInner>>,
+    inner: Rc<RefCell<AssetRegistryInner>>,
 }
 
 #[derive(Debug, Default)]
@@ -33,7 +33,7 @@ impl AssetRegistry {
     pub(crate) fn register(&self, url: &str, bytes: &[u8]) -> Result<()> {
         ensure_resource_size_with_limit(bytes.len(), DEFAULT_MAX_RESOURCE_BYTES)?;
         let key = normalize_registry_key(url)?;
-        let mut inner = self.inner.lock().expect("asset registry mutex poisoned");
+        let mut inner = self.inner.borrow_mut();
         let existing_len = inner.entries.get(&key).map_or(0, |bytes| bytes.len());
         if existing_len == 0 && inner.entries.len() >= DEFAULT_MAX_RESOURCE_COUNT {
             bail!(
@@ -59,22 +59,18 @@ impl AssetRegistry {
     }
 
     pub(crate) fn clear(&self) {
-        let mut inner = self.inner.lock().expect("asset registry mutex poisoned");
+        let mut inner = self.inner.borrow_mut();
         inner.entries.clear();
         inner.total_bytes = 0;
     }
 
     pub(crate) fn len(&self) -> usize {
-        self.inner
-            .lock()
-            .expect("asset registry mutex poisoned")
-            .entries
-            .len()
+        self.inner.borrow().entries.len()
     }
 
     fn get(&self, src: &str, base_url: Option<&Url>) -> Option<RegisteredAsset> {
         {
-            let inner = self.inner.lock().expect("asset registry mutex poisoned");
+            let inner = self.inner.borrow();
             if let Some(bytes) = inner.entries.get(src) {
                 return Some(RegisteredAsset {
                     request_url: src.to_string(),
@@ -85,8 +81,10 @@ impl AssetRegistry {
         }
 
         let resolved = resolve_asset_url(src, base_url)?;
-        let inner = self.inner.lock().expect("asset registry mutex poisoned");
-        let bytes = Arc::clone(inner.entries.get(resolved.as_str())?);
+        let bytes = {
+            let inner = self.inner.borrow();
+            Arc::clone(inner.entries.get(resolved.as_str())?)
+        };
         Some(RegisteredAsset {
             request_url: src.to_string(),
             resolved_url: Some(resolved.as_str().to_owned()),
