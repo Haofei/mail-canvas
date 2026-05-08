@@ -83,7 +83,7 @@ impl AssetRegistry {
         let bytes = Arc::clone(inner.entries.get(resolved.as_str())?);
         Some(RegisteredAsset {
             request_url: src.to_string(),
-            resolved_url: Some(resolved.to_string()),
+            resolved_url: Some(resolved.as_str().to_owned()),
             bytes,
         })
     }
@@ -374,7 +374,7 @@ fn normalize_registry_key(url: &str) -> Result<String> {
         bail!("asset URL must not be empty");
     }
     if let Ok(parsed) = Url::parse(url) {
-        return Ok(parsed.to_string());
+        return Ok(parsed.as_str().to_owned());
     }
     Ok(url.to_string())
 }

@@ -204,7 +204,7 @@ fn cacheable_image_key(src: &str, policy: &ResourcePolicy) -> Option<String> {
             .and_then(|base| base.join(src))
     });
     let url = url.ok()?;
-    matches!(url.scheme(), "file" | "https" | "http").then(|| url.to_string())
+    matches!(url.scheme(), "file" | "https" | "http").then(|| url.as_str().to_owned())
 }
 
 fn asset_source_for_cache_key(key: &str) -> AssetSource {
@@ -307,7 +307,7 @@ fn load_resource_bytes_inner(
             return Err(error);
         }
     };
-    let resolved_url = Some(url.to_string());
+    let resolved_url = Some(url.as_str().to_owned());
     let source = asset_source_for_url(&url);
 
     if kind != AssetKind::Image {
@@ -417,7 +417,7 @@ fn cache_resource_bytes(url: &Url, kind: AssetKind, policy: &ResourcePolicy, byt
         .byte_cache
         .lock()
         .expect("byte cache mutex poisoned")
-        .insert(url.to_string(), Arc::clone(bytes));
+        .insert(url.as_str().to_owned(), Arc::clone(bytes));
 }
 
 fn asset_source_for_url(url: &Url) -> AssetSource {
