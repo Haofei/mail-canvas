@@ -320,7 +320,6 @@ function buildBrowserDocument(sourceHtml, baseUrl, width) {
     `body { width: ${width}px; min-width: ${width}px; overflow: visible; background: #fff; }`,
     '#email-render-root { width: 100%; }',
     'table { border-collapse: separate; border-spacing: 0; }',
-    'img { display: block; }',
     '</style>',
   ].join('\n');
   const lower = sourceHtml.toLowerCase();

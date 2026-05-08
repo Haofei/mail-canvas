@@ -1069,6 +1069,41 @@ fn nested_float_affects_following_sibling_text_in_same_formatting_context() {
 }
 
 #[test]
+fn inline_image_after_text_respects_active_float_line_offset() {
+    let layout = layout_for_test(
+        r#"<div style="width:300px;font-size:16px;line-height:24px">
+            <img style="float:left;width:80px;height:80px;margin:0 20px 20px 0">
+            <span style="font-size:20px">Title</span><img width="12" height="16">
+            <br><span style="font-size:12px">SOURCE</span>
+        </div>"#,
+        300,
+    );
+
+    let images: Vec<&LayoutBox> =
+        collect_layouts(&layout, &|child| matches!(child.kind, LayoutKind::Image(_)));
+    let text_runs: Vec<&LayoutBox> = collect_layouts(&layout, &|child| {
+        matches!(child.kind, LayoutKind::Text(_) | LayoutKind::RichText(_))
+    });
+    let title = find_text_layout(&layout).expect("title");
+
+    assert_eq!(images.len(), 2);
+    assert!(text_runs.len() >= 2);
+    assert!(title.rect.x >= images[0].rect.x + images[0].rect.width - 0.1);
+    assert!(
+        images[1].rect.x >= title.rect.x + title.rect.width - 0.1,
+        "inline icon should follow text in the float-adjusted line box: icon x {}, title x {}, title width {}",
+        images[1].rect.x,
+        title.rect.x,
+        title.rect.width
+    );
+    assert!(
+        text_runs[1].rect.height <= 24.1,
+        "br after a flushed inline row should not create an extra blank line, got height {}",
+        text_runs[1].rect.height
+    );
+}
+
+#[test]
 fn clear_left_moves_block_below_float() {
     let layout = layout_for_test(
         r#"<div style="width:100px">

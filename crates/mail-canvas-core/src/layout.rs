@@ -179,7 +179,8 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             .resolve_width(viewport_width)
             .unwrap_or(viewport_width)
             .max(1.0);
-        let content = self.layout_children(&root_node, &root_style, 0.0, 0.0, layout_width, 0)?;
+        let content =
+            self.layout_children(&root_node, &root_style, 0.0, 0.0, layout_width, 0, &[])?;
 
         Ok(LayoutBox {
             kind: LayoutKind::Block,
@@ -190,6 +191,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn layout_children(
         &mut self,
         node: &NodeRef,
@@ -198,6 +200,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         y: f32,
         width: f32,
         depth: usize,
+        inherited_floats: &[PlacedFloat],
     ) -> Result<LayoutChildren> {
         if depth > self.limits.max_layout_depth {
             self.push_warning(RenderWarning::new(
@@ -218,7 +221,8 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         let mut inline_row_height = 0.0;
         let mut last_inline_block_fallback = false;
         let parent_line_height = resolved_line_height_from_db(self.font_system.db(), style);
-        let mut floats = Vec::new();
+        let inherited_float_count = inherited_floats.len();
+        let mut floats = inherited_floats.to_vec();
 
         for child in node.children() {
             if let Some(text_node) = child.as_text() {
@@ -250,7 +254,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     continue;
                 }
                 last_inline_block_fallback = false;
-                if flush_inline_row(
+                let row_was_flushed = flush_inline_row(
                     &mut inline_row,
                     &mut inline_row_width,
                     &mut inline_row_height,
@@ -258,8 +262,12 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     width,
                     &mut cursor_y,
                     &mut children,
-                ) {
+                );
+                if row_was_flushed {
                     previous_margin_bottom = None;
+                }
+                if row_was_flushed && text.is_empty() {
+                    continue;
                 }
                 append_text_span(&mut text, HARD_BREAK_STR, style);
                 continue;
@@ -342,7 +350,12 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             {
                 previous_margin_bottom = None;
             }
-            if child_float_side == FloatSide::None && !child_is_inline_flow {
+            let child_should_avoid_floats = child_style.resolve_width(width).is_some()
+                && !block_establishes_float_container(&child_style);
+            if child_float_side == FloatSide::None
+                && !child_is_inline_flow
+                && child_should_avoid_floats
+            {
                 let placed_y = block_flow_placement_y(&child_style, x, width, cursor_y, &floats);
                 if placed_y > cursor_y {
                     cursor_y = placed_y;
@@ -371,6 +384,14 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 None
             };
             let flow_start_y = cursor_y;
+            let child_inherited_floats = if child_float_side == FloatSide::None
+                && !child_is_inline_flow
+                && !block_establishes_float_container(&child_style)
+            {
+                floats.as_slice()
+            } else {
+                &[]
+            };
             let flow = if let Some(marker) = list_marker {
                 self.layout_list_item(
                     &child,
@@ -380,7 +401,15 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     depth + 1,
                 )?
             } else {
-                self.layout_element_with_style(&child, child_style, x, cursor_y, width, depth + 1)?
+                self.layout_element_with_style_and_floats(
+                    &child,
+                    child_style,
+                    x,
+                    cursor_y,
+                    width,
+                    depth + 1,
+                    child_inherited_floats,
+                )?
             };
             if let Some(flow) = flow {
                 let mut flow = flow;
@@ -413,6 +442,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     continue;
                 }
                 if child_is_inline_flow {
+                    let (mut line_x, line_width) = float_adjusted_line(x, width, cursor_y, &floats);
                     let replaced_padding = if matches!(flow.node.kind, LayoutKind::Image(_)) {
                         flow.node.style.padding.horizontal() + flow.node.style.border.horizontal()
                     } else {
@@ -423,26 +453,29 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                         + flow.node.style.margin.horizontal())
                     .max(1.0);
                     if inline_row_width > 0.0
-                        && inline_row_width + inline_flow_width > width + f32::EPSILON
+                        && inline_row_width + inline_flow_width > line_width + f32::EPSILON
                     {
                         flush_inline_row(
                             &mut inline_row,
                             &mut inline_row_width,
                             &mut inline_row_height,
                             style,
-                            width,
+                            line_width,
                             &mut cursor_y,
                             &mut children,
                         );
+                        let (next_line_x, _) = float_adjusted_line(x, width, cursor_y, &floats);
+                        line_x = next_line_x;
                     }
                     if (cursor_y - flow_start_y).abs() > f32::EPSILON {
                         let dy = cursor_y - flow_start_y;
                         translate_layout(&mut flow.node, 0.0, dy);
                         translate_placed_floats(&mut flow.escaped_floats, 0.0, dy);
                     }
-                    if inline_row_width > 0.0 {
-                        translate_layout(&mut flow.node, inline_row_width, 0.0);
-                        translate_placed_floats(&mut flow.escaped_floats, inline_row_width, 0.0);
+                    let inline_dx = line_x - x + inline_row_width;
+                    if inline_dx.abs() > f32::EPSILON {
+                        translate_layout(&mut flow.node, inline_dx, 0.0);
+                        translate_placed_floats(&mut flow.escaped_floats, inline_dx, 0.0);
                     }
                     inline_row_width += inline_flow_width;
                     let baseline_descent = if flow.node.style.vertical_align
@@ -532,15 +565,15 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         ) {
             previous_margin_bottom = None;
         }
-        let float_bottom = floats
+        let local_float_bottom = floats[inherited_float_count..]
             .iter()
             .map(|float| float.rect.y + float.rect.height)
             .fold(cursor_y, f32::max);
         Ok(LayoutChildren {
             children,
-            advance: float_bottom - y,
+            advance: local_float_bottom - y,
             in_flow_advance: cursor_y - y,
-            floats,
+            floats: floats.into_iter().skip(inherited_float_count).collect(),
             trailing_collapsible_margin: previous_margin_bottom.unwrap_or(0.0),
         })
     }
@@ -674,6 +707,20 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         containing_width: f32,
         depth: usize,
     ) -> Result<Option<FlowBox>> {
+        self.layout_element_with_style_and_floats(node, style, x, y, containing_width, depth, &[])
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn layout_element_with_style_and_floats(
+        &mut self,
+        node: &NodeRef,
+        style: Style,
+        x: f32,
+        y: f32,
+        containing_width: f32,
+        depth: usize,
+        inherited_floats: &[PlacedFloat],
+    ) -> Result<Option<FlowBox>> {
         let Some(tag) = element_tag(node) else {
             return Ok(None);
         };
@@ -701,13 +748,21 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     inline_style.width = None;
                     inline_style.min_width = None;
                     inline_style.max_width = None;
-                    self.layout_block(node, inline_style, x, y, containing_width, depth)
+                    self.layout_block(
+                        node,
+                        inline_style,
+                        x,
+                        y,
+                        containing_width,
+                        depth,
+                        inherited_floats,
+                    )
                 }
             }
             Display::InlineBlock => {
                 self.layout_inline_block(node, style, x, y, containing_width, depth)
             }
-            _ => self.layout_block(node, style, x, y, containing_width, depth),
+            _ => self.layout_block(node, style, x, y, containing_width, depth, inherited_floats),
         }
     }
 
@@ -754,7 +809,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         let inner_x = rect_x + style.border.left + style.padding.left;
         let inner_y = rect_y + style.border.top + style.padding.top;
         let mut content =
-            self.layout_children(node, &style, inner_x, inner_y, inner_width, depth)?;
+            self.layout_children(node, &style, inner_x, inner_y, inner_width, depth, &[])?;
         let explicit_height = style.resolve_height(0.0).unwrap_or(0.0);
         let rect_height = (content.advance + style.padding.vertical() + style.border.vertical())
             .max(explicit_height)
@@ -782,6 +837,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         }))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn layout_block(
         &mut self,
         node: &NodeRef,
@@ -790,6 +846,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         y: f32,
         containing_width: f32,
         depth: usize,
+        inherited_floats: &[PlacedFloat],
     ) -> Result<Option<FlowBox>> {
         if let Some(flow) =
             self.layout_css_table_cells(node, style.clone(), x, y, containing_width, depth)?
@@ -810,8 +867,15 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         let inner_y = rect_y + style.border.top + style.padding.top;
         let inner_width = style.inner_width_for_outer(outer_width);
 
-        let mut content =
-            self.layout_children(node, &style, inner_x, inner_y, inner_width, depth)?;
+        let mut content = self.layout_children(
+            node,
+            &style,
+            inner_x,
+            inner_y,
+            inner_width,
+            depth,
+            inherited_floats,
+        )?;
         let min_height = style.resolve_height(0.0).unwrap_or(0.0);
         let collapsed_trailing_margin = if block_allows_trailing_margin_collapse(&style) {
             content.trailing_collapsible_margin.min(content.advance)
@@ -1040,7 +1104,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             {
                 return Ok(Some(flow));
             }
-            return self.layout_block(node, style, x, y, containing_width, depth);
+            return self.layout_block(node, style, x, y, containing_width, depth, &[]);
         }
 
         let max_table_width = (containing_width - style.margin.horizontal()).max(1.0);
@@ -1211,6 +1275,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     cell_inner_y,
                     cell_inner_width,
                     depth + 1,
+                    &[],
                 )?;
                 let explicit_height = cell_style.resolve_height(0.0).unwrap_or(0.0);
                 let natural_cell_height =
@@ -1373,6 +1438,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     cell_inner_y,
                     cell_inner_width,
                     depth + 1,
+                    &[],
                 )?;
                 let explicit_height = cell_style.resolve_height(0.0).unwrap_or(0.0);
                 let natural_cell_height =
@@ -1570,6 +1636,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 cell_inner_y,
                 cell_inner_width,
                 depth + 1,
+                &[],
             )?;
             let explicit_height = cell_style.resolve_height(0.0).unwrap_or(0.0);
             let natural_cell_height =
@@ -2074,7 +2141,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         let content_width = inner_width;
 
         let content =
-            self.layout_children(node, &style, content_x, inner_y, content_width, depth)?;
+            self.layout_children(node, &style, content_x, inner_y, content_width, depth, &[])?;
         let mut marker_style = style.clone();
         marker_style.text_align = TextAlign::Right;
         let mut children = content.children;
