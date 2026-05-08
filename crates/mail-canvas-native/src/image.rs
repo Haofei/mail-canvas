@@ -9,6 +9,9 @@ pub(crate) fn decode_image_bytes(
     policy: &mail_canvas_core::ResourcePolicy,
 ) -> Result<ImageData> {
     ensure_resource_size(bytes.len(), policy.max_resource_bytes)?;
+    if looks_like_svg(bytes) {
+        return decode_svg_bytes(bytes, policy);
+    }
     match decode_image_bytes_strict(bytes, policy) {
         Ok(image) => Ok(image),
         Err(error) => {
@@ -57,6 +60,54 @@ fn decode_image_bytes_strict(
         height,
         rgba: rgba.into_raw().into(),
     })
+}
+
+fn decode_svg_bytes(bytes: &[u8], policy: &mail_canvas_core::ResourcePolicy) -> Result<ImageData> {
+    let tree = resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default())
+        .context("failed to parse SVG")?;
+    let size = tree.size().to_int_size();
+    let pixels = u64::from(size.width()).saturating_mul(u64::from(size.height()));
+    if pixels > policy.max_decoded_pixels {
+        bail!(
+            "decoded SVG is too large: {pixels} pixels > {} pixels",
+            policy.max_decoded_pixels
+        );
+    }
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(size.width(), size.height())
+        .context("failed to allocate SVG pixmap")?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::identity(),
+        &mut pixmap.as_mut(),
+    );
+    let mut rgba = pixmap.take();
+    unpremultiply_rgba(&mut rgba);
+    Ok(ImageData {
+        width: size.width(),
+        height: size.height(),
+        rgba: rgba.into(),
+    })
+}
+
+fn looks_like_svg(bytes: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(&bytes[..bytes.len().min(512)]);
+    let trimmed = text.trim_start_matches('\u{feff}').trim_start();
+    trimmed.starts_with("<svg") || (trimmed.starts_with("<?xml") && trimmed.contains("<svg"))
+}
+
+fn unpremultiply_rgba(rgba: &mut [u8]) {
+    for pixel in rgba.chunks_exact_mut(4) {
+        let alpha = u16::from(pixel[3]);
+        if alpha == 0 {
+            pixel[0] = 0;
+            pixel[1] = 0;
+            pixel[2] = 0;
+        } else if alpha < 255 {
+            pixel[0] = ((u16::from(pixel[0]) * 255 + alpha / 2) / alpha).min(255) as u8;
+            pixel[1] = ((u16::from(pixel[1]) * 255 + alpha / 2) / alpha).min(255) as u8;
+            pixel[2] = ((u16::from(pixel[2]) * 255 + alpha / 2) / alpha).min(255) as u8;
+        }
+    }
 }
 
 fn ensure_resource_size(len: usize, max_len: usize) -> Result<()> {
@@ -114,6 +165,16 @@ mod tests {
 
         assert_eq!((image.width, image.height), (1, 1));
         assert_eq!(image.rgba.as_ref(), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn decode_rasterizes_svg_images() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="2" height="1"><rect width="2" height="1" fill="#ff0000"/></svg>"##;
+
+        let image = decode_image_bytes(svg, &test_policy()).expect("decode svg");
+
+        assert_eq!((image.width, image.height), (2, 1));
+        assert_eq!(&image.rgba.as_ref()[0..4], &[255, 0, 0, 255]);
     }
 
     fn jpeg_with_exif_orientation(jpeg: Vec<u8>, orientation: u16) -> Vec<u8> {

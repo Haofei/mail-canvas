@@ -185,6 +185,7 @@ pub(crate) struct Style {
     pub(crate) border: Edges,
     pub(crate) border_radius: f32,
     pub(crate) border_color: Rgba,
+    pub(crate) border_visible: EdgeFlags,
     pub(crate) border_style: BorderLineStyle,
     pub(crate) border_collapse: BorderCollapse,
     pub(crate) table_layout_fixed: bool,
@@ -261,6 +262,7 @@ impl Style {
             border: Edges::ZERO,
             border_radius: 0.0,
             border_color: Rgba::BLACK,
+            border_visible: EdgeFlags::ALL,
             border_style: BorderLineStyle::None,
             border_collapse: BorderCollapse::Separate,
             table_layout_fixed: false,
@@ -349,6 +351,7 @@ impl Style {
             border: Edges::ZERO,
             border_radius: 0.0,
             border_color: parent.border_color,
+            border_visible: EdgeFlags::ALL,
             border_style: BorderLineStyle::None,
             border_collapse: BorderCollapse::Separate,
             table_layout_fixed: false,
@@ -444,6 +447,17 @@ impl Style {
     pub(crate) fn finalize_border(&mut self) {
         if self.border_style == BorderLineStyle::None {
             self.border = Edges::ZERO;
+        }
+    }
+
+    pub(crate) fn painted_border(&self) -> Edges {
+        self.border.visible_edges(self.border_visible)
+    }
+
+    pub(crate) fn set_border_color(&mut self, edges: EdgeFlags, color: Rgba) {
+        self.border_visible.set_edges(edges, color.a > 0);
+        if color.a > 0 {
+            self.border_color = color;
         }
     }
 
@@ -810,7 +824,27 @@ impl Style {
             }
             "border-color" => {
                 if let Some(color) = parse_color(value) {
-                    self.border_color = color;
+                    self.set_border_color(EdgeFlags::ALL, color);
+                }
+            }
+            "border-top-color" => {
+                if let Some(color) = parse_color(value) {
+                    self.set_border_color(EdgeFlags::TOP, color);
+                }
+            }
+            "border-right-color" => {
+                if let Some(color) = parse_color(value) {
+                    self.set_border_color(EdgeFlags::RIGHT, color);
+                }
+            }
+            "border-bottom-color" => {
+                if let Some(color) = parse_color(value) {
+                    self.set_border_color(EdgeFlags::BOTTOM, color);
+                }
+            }
+            "border-left-color" => {
+                if let Some(color) = parse_color(value) {
+                    self.set_border_color(EdgeFlags::LEFT, color);
                 }
             }
             "border-top-style"
@@ -1106,6 +1140,15 @@ impl Edges {
     pub(crate) fn is_zero(self) -> bool {
         self.top == 0.0 && self.right == 0.0 && self.bottom == 0.0 && self.left == 0.0
     }
+
+    pub(crate) fn visible_edges(self, visible: EdgeFlags) -> Self {
+        Self {
+            top: if visible.top { self.top } else { 0.0 },
+            right: if visible.right { self.right } else { 0.0 },
+            bottom: if visible.bottom { self.bottom } else { 0.0 },
+            left: if visible.left { self.left } else { 0.0 },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -1149,12 +1192,55 @@ impl EdgeFlags {
         left: false,
     };
 
+    pub(crate) const TOP: Self = Self {
+        top: true,
+        right: false,
+        bottom: false,
+        left: false,
+    };
+
+    pub(crate) const RIGHT: Self = Self {
+        top: false,
+        right: true,
+        bottom: false,
+        left: false,
+    };
+
+    pub(crate) const BOTTOM: Self = Self {
+        top: false,
+        right: false,
+        bottom: true,
+        left: false,
+    };
+
+    pub(crate) const LEFT: Self = Self {
+        top: false,
+        right: false,
+        bottom: false,
+        left: true,
+    };
+
     pub(crate) const ALL: Self = Self {
         top: true,
         right: true,
         bottom: true,
         left: true,
     };
+
+    pub(crate) fn set_edges(&mut self, edges: Self, visible: bool) {
+        if edges.top {
+            self.top = visible;
+        }
+        if edges.right {
+            self.right = visible;
+        }
+        if edges.bottom {
+            self.bottom = visible;
+        }
+        if edges.left {
+            self.left = visible;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2816,6 +2902,7 @@ pub(crate) fn parse_font_style(value: &str) -> FontStyle {
 pub(crate) fn apply_border(style: &mut Style, value: &str) {
     if value.contains("none") {
         style.border = Edges::ZERO;
+        style.border_visible = EdgeFlags::NONE;
         style.border_style = BorderLineStyle::None;
         return;
     }
@@ -2830,7 +2917,7 @@ pub(crate) fn apply_border(style: &mut Style, value: &str) {
             saw_width = true;
         }
         if let Some(color) = parse_color(token) {
-            style.border_color = color;
+            style.set_border_color(EdgeFlags::ALL, color);
         }
     }
 
@@ -2850,6 +2937,7 @@ pub(crate) enum BorderSide {
 pub(crate) fn apply_border_side(style: &mut Style, side: BorderSide, value: &str) {
     if value.contains("none") {
         set_border_side(&mut style.border, side, 0.0);
+        set_border_visible_side(&mut style.border_visible, side, false);
         style.border_style = BorderLineStyle::None;
         return;
     }
@@ -2868,7 +2956,7 @@ pub(crate) fn apply_border_side(style: &mut Style, side: BorderSide, value: &str
             saw_width = true;
         }
         if let Some(color) = parse_color(token) {
-            style.border_color = color;
+            set_border_color_side(style, side, color);
         }
     }
 
@@ -2901,5 +2989,21 @@ pub(crate) fn set_border_side(border: &mut Edges, side: BorderSide, width: f32) 
         BorderSide::Right => border.right = width,
         BorderSide::Bottom => border.bottom = width,
         BorderSide::Left => border.left = width,
+    }
+}
+
+pub(crate) fn set_border_color_side(style: &mut Style, side: BorderSide, color: Rgba) {
+    set_border_visible_side(&mut style.border_visible, side, color.a > 0);
+    if color.a > 0 {
+        style.border_color = color;
+    }
+}
+
+pub(crate) fn set_border_visible_side(visible: &mut EdgeFlags, side: BorderSide, value: bool) {
+    match side {
+        BorderSide::Top => visible.top = value,
+        BorderSide::Right => visible.right = value,
+        BorderSide::Bottom => visible.bottom = value,
+        BorderSide::Left => visible.left = value,
     }
 }

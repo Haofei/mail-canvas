@@ -28,6 +28,7 @@ js-sys = "=0.3.81"
 kuchiki = "0.8.1"
 lightningcss = { version = "1.0.0-alpha.71", default-features = false }
 pdf-writer = "0.14.0"
+resvg = { version = "0.45.1", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 taffy = { version = "0.10.1", default-features = false, features = ["std", "taffy_tree", "flexbox"] }

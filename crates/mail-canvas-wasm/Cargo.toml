@@ -19,6 +19,7 @@ getrandom.workspace = true
 image.workspace = true
 js-sys.workspace = true
 mail-canvas-core = { path = "../mail-canvas-core" }
+resvg.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tiny-skia.workspace = true

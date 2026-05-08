@@ -15,6 +15,7 @@ fontdb.workspace = true
 image.workspace = true
 mail-canvas-core = { path = "../mail-canvas-core" }
 pdf-writer.workspace = true
+resvg.workspace = true
 tiny-skia.workspace = true
 ureq.workspace = true
 url.workspace = true

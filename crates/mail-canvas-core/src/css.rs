@@ -158,7 +158,7 @@ fn is_attribute_name_boundary(html: &str, start: usize) -> bool {
 fn sanitize_style_attribute_value(value: &str) -> String {
     let decoded = decode_html_attribute_entities(value);
     let mut out = String::with_capacity(value.len());
-    for (name, value) in css_declarations(&decoded) {
+    for (name, value) in css_declarations_preserving_important(&decoded) {
         if name.is_empty() || value.is_empty() {
             continue;
         }
@@ -481,11 +481,19 @@ impl<'a> Iterator for StyleBlocks<'a> {
 }
 
 pub(crate) fn css_declarations(block: &str) -> Vec<(String, String)> {
-    if let Some(declarations) = lightningcss_declarations(block) {
+    if let Some(declarations) = lightningcss_declarations(block, false) {
         return declarations;
     }
 
-    fallback_css_declarations(block)
+    fallback_css_declarations(block, false)
+}
+
+fn css_declarations_preserving_important(block: &str) -> Vec<(String, String)> {
+    if let Some(declarations) = lightningcss_declarations(block, true) {
+        return declarations;
+    }
+
+    fallback_css_declarations(block, true)
 }
 
 pub(crate) fn font_face_declarations(css: &str) -> Vec<Vec<(String, String)>> {
@@ -512,7 +520,10 @@ pub(crate) fn font_face_declarations(css: &str) -> Vec<Vec<(String, String)>> {
         .collect()
 }
 
-fn lightningcss_declarations(block: &str) -> Option<Vec<(String, String)>> {
+fn lightningcss_declarations(
+    block: &str,
+    preserve_important: bool,
+) -> Option<Vec<(String, String)>> {
     let options = ParserOptions {
         error_recovery: true,
         ..Default::default()
@@ -523,7 +534,7 @@ fn lightningcss_declarations(block: &str) -> Option<Vec<(String, String)>> {
         push_lightningcss_declaration(&mut declarations, declaration, false);
     }
     for declaration in &block.important_declarations {
-        push_lightningcss_declaration(&mut declarations, declaration, false);
+        push_lightningcss_declaration(&mut declarations, declaration, preserve_important);
     }
     Some(declarations)
 }
@@ -541,7 +552,11 @@ fn push_lightningcss_declaration(
     };
     declarations.push((
         name.trim().to_ascii_lowercase(),
-        strip_css_important(value.trim()).trim().to_string(),
+        if important {
+            value.trim().to_string()
+        } else {
+            strip_css_important(value.trim()).trim().to_string()
+        },
     ));
 }
 
@@ -582,7 +597,7 @@ fn font_face_property_to_declaration(property: &FontFaceProperty<'_>) -> Option<
     ))
 }
 
-fn fallback_css_declarations(block: &str) -> Vec<(String, String)> {
+fn fallback_css_declarations(block: &str, preserve_important: bool) -> Vec<(String, String)> {
     let declarations = split_css_top_level(block, ';');
     let mut out = Vec::with_capacity(declarations.len());
     for declaration in declarations {
@@ -591,7 +606,11 @@ fn fallback_css_declarations(block: &str) -> Vec<(String, String)> {
         };
         out.push((
             name.trim().to_ascii_lowercase(),
-            strip_css_important(value.trim()).trim().to_string(),
+            if preserve_important {
+                value.trim().to_string()
+            } else {
+                strip_css_important(value.trim()).trim().to_string()
+            },
         ));
     }
     out
@@ -1480,6 +1499,23 @@ mod tests {
         let inlined = inline_css(html, 800, 800).unwrap();
 
         assert!(inlined.contains("display: none"));
+    }
+
+    #[test]
+    fn inline_important_display_beats_active_media_important_display() {
+        let html = r#"
+            <html><head><style>
+              @media only screen and (min-width: 480px) {
+                .hide-section { display: table !important; }
+              }
+            </style></head>
+            <body><div class="hide-section" style="display: none !important; margin: 0 auto;">Hidden</div></body></html>
+        "#;
+
+        let inlined = inline_css(html, 800, 800).unwrap();
+
+        assert!(inlined.contains("display: none"));
+        assert!(!inlined.contains("display: table"));
     }
 
     #[test]

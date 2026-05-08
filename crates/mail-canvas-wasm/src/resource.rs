@@ -330,6 +330,9 @@ fn decode_registered_image(
     max_decoded_pixels: u64,
 ) -> Result<mail_canvas_core::ImageData> {
     ensure_resource_size_with_limit(bytes.len(), max_resource_bytes)?;
+    if looks_like_svg(bytes) {
+        return decode_svg_bytes(bytes, max_decoded_pixels);
+    }
     match decode_registered_image_strict(bytes, max_decoded_pixels) {
         Ok(image) => Ok(image),
         Err(error) => {
@@ -338,6 +341,51 @@ fn decode_registered_image(
             };
             decode_registered_image_strict(&repaired, max_decoded_pixels)
                 .with_context(|| format!("failed to decode image after PNG CRC repair: {error}"))
+        }
+    }
+}
+
+fn decode_svg_bytes(bytes: &[u8], max_decoded_pixels: u64) -> Result<mail_canvas_core::ImageData> {
+    let tree = resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default())
+        .context("failed to parse SVG")?;
+    let size = tree.size().to_int_size();
+    let pixels = u64::from(size.width()).saturating_mul(u64::from(size.height()));
+    if pixels > max_decoded_pixels {
+        bail!("decoded SVG exceeds max-decoded-pixels");
+    }
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(size.width(), size.height())
+        .context("failed to allocate SVG pixmap")?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::identity(),
+        &mut pixmap.as_mut(),
+    );
+    let mut rgba = pixmap.take();
+    unpremultiply_rgba(&mut rgba);
+    Ok(mail_canvas_core::ImageData {
+        width: size.width(),
+        height: size.height(),
+        rgba: rgba.into(),
+    })
+}
+
+fn looks_like_svg(bytes: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(&bytes[..bytes.len().min(512)]);
+    let trimmed = text.trim_start_matches('\u{feff}').trim_start();
+    trimmed.starts_with("<svg") || (trimmed.starts_with("<?xml") && trimmed.contains("<svg"))
+}
+
+fn unpremultiply_rgba(rgba: &mut [u8]) {
+    for pixel in rgba.chunks_exact_mut(4) {
+        let alpha = u16::from(pixel[3]);
+        if alpha == 0 {
+            pixel[0] = 0;
+            pixel[1] = 0;
+            pixel[2] = 0;
+        } else if alpha < 255 {
+            pixel[0] = ((u16::from(pixel[0]) * 255 + alpha / 2) / alpha).min(255) as u8;
+            pixel[1] = ((u16::from(pixel[1]) * 255 + alpha / 2) / alpha).min(255) as u8;
+            pixel[2] = ((u16::from(pixel[2]) * 255 + alpha / 2) / alpha).min(255) as u8;
         }
     }
 }

@@ -63,14 +63,15 @@ impl LayoutPainter<'_> {
             if let Some(background_image) = &layout.style.background_image {
                 self.paint_background_image(layout.rect, &layout.style, background_image, opacity);
             }
-            if layout.style.border.max_width() > 0.0
+            let painted_border = layout.style.painted_border();
+            if painted_border.max_width() > 0.0
                 && layout.style.border_style != BorderLineStyle::None
             {
                 stroke_style_border(
                     self.pixmap,
                     self.scale,
                     layout.rect,
-                    layout.style.border,
+                    painted_border,
                     with_opacity(layout.style.border_color, opacity),
                     layout.style.border_style,
                     layout.style.border_radius,
@@ -1474,6 +1475,38 @@ mod tests {
 
         assert_eq!(alpha_at(&pixmap, 35, 35), 0);
         assert!(alpha_at(&pixmap, 35, 52) > 0);
+    }
+
+    #[test]
+    fn transparent_side_borders_keep_layout_width_without_painting() {
+        let mut style = Style::initial();
+        style.apply_declaration("border-left-color", "transparent");
+        style.apply_declaration("border-left-style", "solid");
+        style.apply_declaration("border-left-width", "10px");
+        style.apply_declaration("border-right-color", "transparent");
+        style.apply_declaration("border-right-style", "solid");
+        style.apply_declaration("border-right-width", "10px");
+        style.apply_declaration("border-top", "2px solid red");
+
+        assert_eq!(style.border.left, 10.0);
+        assert_eq!(style.border.right, 10.0);
+        assert_eq!(style.painted_border().left, 0.0);
+        assert_eq!(style.painted_border().right, 0.0);
+
+        let mut pixmap = Pixmap::new(80, 40).expect("pixmap");
+        stroke_style_border(
+            &mut pixmap,
+            1.0,
+            Rect::new(0.0, 0.0, 60.0, 30.0),
+            style.painted_border(),
+            style.border_color,
+            style.border_style,
+            style.border_radius,
+        );
+
+        assert_eq!(alpha_at(&pixmap, 5, 20), 0);
+        assert_eq!(alpha_at(&pixmap, 55, 20), 0);
+        assert!(alpha_at(&pixmap, 30, 1) > 0);
     }
 }
 
