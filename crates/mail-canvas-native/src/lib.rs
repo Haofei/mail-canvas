@@ -141,6 +141,7 @@ fn system_font_database() -> Database {
     db.load_system_fonts();
     #[cfg(target_os = "macos")]
     db.load_fonts_dir("/System/Library/Fonts/Supplemental");
+    load_default_emoji_font_if_missing(&mut db);
     set_generic_font_families(&mut db);
     db
 }
@@ -156,8 +157,34 @@ fn font_database_from_paths(paths: &[PathBuf]) -> Result<Database> {
     if db.is_empty() {
         bail!("no valid font faces found in supplied font files");
     }
+    load_default_emoji_font_if_missing(&mut db);
     set_generic_font_families(&mut db);
     Ok(db)
+}
+
+fn load_default_emoji_font_if_missing(db: &mut Database) {
+    if emoji_font_available(db) {
+        return;
+    }
+    let path = default_emoji_font_path();
+    if path.is_file() {
+        db.load_font_source(fontdb::Source::File(path));
+    }
+}
+
+fn default_emoji_font_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("fixtures")
+        .join("fonts")
+        .join("NotoColorEmoji.ttf")
+}
+
+fn emoji_font_available(db: &Database) -> bool {
+    ["Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji"]
+        .iter()
+        .any(|family| font_family_available(db, family))
 }
 
 fn set_generic_font_families(db: &mut Database) {
@@ -263,6 +290,22 @@ fn scaled_dimension(value: u32, scale: f32, label: &str) -> Result<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_font_database_adds_default_emoji_fixture() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("fixtures")
+            .join("fonts");
+        let db = font_database_from_paths(&[
+            root.join("NotoSans-Regular.ttf"),
+            root.join("NotoSans-Bold.ttf"),
+        ])
+        .expect("font database");
+
+        assert!(font_family_available(&db, "Noto Color Emoji"));
+    }
 
     #[test]
     fn bare_html_filename_uses_current_directory_as_base_url() {
