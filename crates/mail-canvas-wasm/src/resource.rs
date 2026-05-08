@@ -376,7 +376,7 @@ fn normalize_registry_key(url: &str) -> Result<String> {
     if let Ok(parsed) = Url::parse(url) {
         return Ok(parsed.as_str().to_owned());
     }
-    Ok(url.to_string())
+    Ok(url.to_owned())
 }
 
 fn asset_source_for_url(src: &str) -> AssetSource {

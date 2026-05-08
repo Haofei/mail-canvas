@@ -1,6 +1,8 @@
 use mail_canvas_core::{AssetReport, ConsoleMessage, RenderWarning};
 use serde::Serialize;
 
+const EMPTY_DIAGNOSTICS_JSON: &str = "{\"warnings\":[],\"assets\":[],\"console_messages\":[]}";
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub(crate) struct DiagnosticsSnapshot {
     warnings: Vec<RenderWarning>,
@@ -16,8 +18,7 @@ struct DiagnosticsSnapshotRef<'a> {
 }
 
 pub(crate) fn diagnostics_json(snapshot: &DiagnosticsSnapshot) -> String {
-    serde_json::to_string(snapshot)
-        .unwrap_or_else(|_| "{\"warnings\":[],\"assets\":[],\"console_messages\":[]}".to_string())
+    serde_json::to_string(snapshot).unwrap_or_else(|_| EMPTY_DIAGNOSTICS_JSON.to_owned())
 }
 
 pub(crate) fn diagnostics_json_from_parts(
@@ -30,7 +31,7 @@ pub(crate) fn diagnostics_json_from_parts(
         assets,
         console_messages,
     })
-    .unwrap_or_else(|_| "{\"warnings\":[],\"assets\":[],\"console_messages\":[]}".to_string())
+    .unwrap_or_else(|_| EMPTY_DIAGNOSTICS_JSON.to_owned())
 }
 
 #[cfg(test)]
