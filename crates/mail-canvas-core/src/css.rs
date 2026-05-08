@@ -355,24 +355,34 @@ fn append_serialized_rule<R: ToCss>(rule: &CssRule<'_, R>, out: &mut String) -> 
     Some(())
 }
 
-pub(crate) fn style_blocks(html: &str) -> Vec<&str> {
-    let mut blocks = Vec::new();
-    let mut offset = 0;
+pub(crate) fn style_blocks(html: &str) -> impl Iterator<Item = &str> + '_ {
+    StyleBlocks { html, offset: 0 }
+}
 
-    while let Some(start) = find_ascii_case_insensitive_from(html, "<style", offset) {
-        let Some(open_rel) = html[start..].find('>') else {
-            break;
+struct StyleBlocks<'a> {
+    html: &'a str,
+    offset: usize,
+}
+
+impl<'a> Iterator for StyleBlocks<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let start = find_ascii_case_insensitive_from(self.html, "<style", self.offset)?;
+        let Some(open_rel) = self.html[start..].find('>') else {
+            self.offset = self.html.len();
+            return None;
         };
         let content_start = start + open_rel + 1;
-        let Some(content_end) = find_ascii_case_insensitive_from(html, "</style>", content_start)
+        let Some(content_end) =
+            find_ascii_case_insensitive_from(self.html, "</style>", content_start)
         else {
-            break;
+            self.offset = self.html.len();
+            return None;
         };
-        blocks.push(&html[content_start..content_end]);
-        offset = content_end + "</style>".len();
+        self.offset = content_end + "</style>".len();
+        Some(&self.html[content_start..content_end])
     }
-
-    blocks
 }
 
 pub(crate) fn css_declarations(block: &str) -> Vec<(String, String)> {
@@ -1094,7 +1104,10 @@ mod tests {
 
         let stripped = strip_hidden_conditional_comments(html);
 
-        assert_eq!(style_blocks(&stripped), vec![".x { color: red; }"]);
+        assert_eq!(
+            style_blocks(&stripped).collect::<Vec<_>>(),
+            vec![".x { color: red; }"]
+        );
     }
 
     #[test]

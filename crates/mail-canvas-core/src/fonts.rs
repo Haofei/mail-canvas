@@ -271,7 +271,6 @@ pub(crate) fn load_web_fonts_from_html(
     diagnostics: &mut RenderDiagnostics,
 ) -> Vec<WebFontFace> {
     let mut css_blocks: Vec<FontCssBlock> = style_blocks(html)
-        .into_iter()
         .map(|css| FontCssBlock {
             css: css.to_string(),
             source: FontCssSource::InlineOrImport,
