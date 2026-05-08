@@ -1995,11 +1995,11 @@ pub(crate) fn parse_box_shadow(
                 inset = true;
                 continue;
             }
-            if let Some(parsed_color) = parse_color(&token) {
+            if let Some(parsed_color) = parse_color(token) {
                 color = Some(parsed_color);
                 continue;
             }
-            if let Some(length) = parse_css_length(&token, font_size, true) {
+            if let Some(length) = parse_css_length(token, font_size, true) {
                 lengths.push(length);
             }
         }
@@ -2034,11 +2034,11 @@ pub(crate) fn parse_text_shadow(
         let mut lengths = Vec::new();
         let mut color = None;
         for token in css_top_level_whitespace_tokens(shadow) {
-            if let Some(parsed_color) = parse_color(&token) {
+            if let Some(parsed_color) = parse_color(token) {
                 color = Some(parsed_color);
                 continue;
             }
-            if let Some(length) = parse_css_length(&token, font_size, true) {
+            if let Some(length) = parse_css_length(token, font_size, true) {
                 lengths.push(length);
             }
         }
@@ -2088,7 +2088,7 @@ pub(crate) fn split_css_top_level_list(value: &str, separator: char) -> Vec<&str
     parts.into_iter().filter(|part| !part.is_empty()).collect()
 }
 
-pub(crate) fn css_top_level_whitespace_tokens(value: &str) -> Vec<String> {
+pub(crate) fn css_top_level_whitespace_tokens(value: &str) -> Vec<&str> {
     let mut tokens = Vec::new();
     let mut start = None;
     let mut quote = None;
@@ -2112,7 +2112,10 @@ pub(crate) fn css_top_level_whitespace_tokens(value: &str) -> Vec<String> {
             ')' => paren_depth = paren_depth.saturating_sub(1),
             _ if ch.is_whitespace() && paren_depth == 0 => {
                 if let Some(token_start) = start.take() {
-                    tokens.push(value[token_start..index].trim().to_string());
+                    let token = value[token_start..index].trim();
+                    if !token.is_empty() {
+                        tokens.push(token);
+                    }
                 }
             }
             _ => {}
@@ -2120,12 +2123,12 @@ pub(crate) fn css_top_level_whitespace_tokens(value: &str) -> Vec<String> {
     }
 
     if let Some(token_start) = start {
-        tokens.push(value[token_start..].trim().to_string());
+        let token = value[token_start..].trim();
+        if !token.is_empty() {
+            tokens.push(token);
+        }
     }
     tokens
-        .into_iter()
-        .filter(|token| !token.is_empty())
-        .collect()
 }
 
 pub(crate) fn parse_background_image(value: &str) -> Option<String> {
