@@ -1428,6 +1428,32 @@ fn colspan_spacer_does_not_freeze_auto_table_columns() {
 }
 
 #[test]
+fn single_cell_spacer_row_does_not_freeze_later_multicolumn_content() {
+    let layout = layout_for_test(
+        r#"<table width="360" cellpadding="0" cellspacing="0">
+            <tr><td height="40">&nbsp;</td></tr>
+            <tr>
+              <td style="font-size:22px;line-height:28px;text-align:center">
+                Customer engagement is not a one-time action
+              </td>
+              <td height="32">&nbsp;</td>
+            </tr>
+          </table>"#,
+        390,
+    );
+    let table =
+        find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+    let cells = &table.children[1].children;
+
+    assert!(
+        cells[0].rect.width > 300.0,
+        "content column should not be squeezed by a prior spacer row, got {}",
+        cells[0].rect.width
+    );
+    assert!(cells[1].rect.width < 20.0);
+}
+
+#[test]
 fn auto_width_tables_shrink_to_contents() {
     let layout = layout_for_test(
         r##"<table><tr><td bgcolor="#cc7953"><a style="display:inline-block;padding:16px 36px;font-size:16px">Do Something</a></td></tr></table>"##,

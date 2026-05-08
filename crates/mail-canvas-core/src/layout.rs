@@ -1765,6 +1765,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             if row_style.display == Display::None {
                 continue;
             }
+            let single_cell_spacer_row = row.cells.len() == 1 && count > 1;
             for cell in &row.cells {
                 let mut style = self.style_for_node(&cell.node, &row_style);
                 if style.display == Display::None {
@@ -1786,7 +1787,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 let spacer_cell = table_cell_is_spacer(&cell.node);
                 let uses_intrinsic_fixed_width =
                     style.width.as_ref().is_some_and(length_is_intrinsic_fixed)
-                        || (spacer_cell && cell.colspan == 1)
+                        || (spacer_cell && cell.colspan == 1 && !single_cell_spacer_row)
                         || style.wrap == TextWrap::None
                         || cell_contains_only_intrinsic_fixed_replaced_content(&cell.node, &style);
                 if uses_intrinsic_fixed_width {
@@ -1800,7 +1801,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     if col < preferreds.len() {
                         preferreds[col] = preferreds[col].max(per_col);
                     }
-                    if spacer_cell && col < minimums.len() {
+                    if spacer_cell && !single_cell_spacer_row && col < minimums.len() {
                         minimums[col] = minimums[col].max(per_col);
                     }
                 }
