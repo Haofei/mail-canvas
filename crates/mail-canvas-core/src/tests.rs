@@ -426,9 +426,13 @@ fn font_smoothing_antialiased_disables_hinting() {
 
 #[test]
 fn parses_em_spacing_against_current_font_size() {
-    let edges = parse_edges_with_font(".4em 0 1.1875em", 16.0).unwrap();
+    let edges = parse_edges_with_font(".4EM 0 1.1875em", 16.0).unwrap();
     assert!((edges.top - 6.4).abs() < 0.1);
     assert!((edges.bottom - 19.0).abs() < 0.1);
+
+    let mut style = Style::initial();
+    style.apply_declaration("width", "120PX");
+    assert_eq!(style.width, Some(Length::Px(120.0)));
 }
 
 #[test]

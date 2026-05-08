@@ -936,12 +936,8 @@ impl Style {
 
 pub(crate) fn strip_important(value: &str) -> &str {
     let value = value.trim();
-    const IMPORTANT: &str = "!important";
-    if value.len() >= IMPORTANT.len() {
-        let suffix_start = value.len() - IMPORTANT.len();
-        if value[suffix_start..].eq_ignore_ascii_case(IMPORTANT) {
-            return value[..suffix_start].trim();
-        }
+    if let Some(stripped) = strip_ascii_case_insensitive_suffix(value, "!important") {
+        return stripped.trim();
     }
     value
 }
@@ -1748,20 +1744,20 @@ pub(crate) fn parse_css_length(value: &str, font_size: f32, allow_unitless: bool
     if value.eq_ignore_ascii_case("auto") || value.is_empty() {
         return None;
     }
-    let lower = value.to_ascii_lowercase();
-    let (number, multiplier) = if let Some(number) = lower.strip_suffix("rem") {
-        (number, 16.0)
-    } else if let Some(number) = lower.strip_suffix("em") {
-        (number, font_size.max(1.0))
-    } else if let Some(number) = lower.strip_suffix("px") {
-        (number, 1.0)
-    } else if let Some(number) = lower.strip_suffix("pt") {
-        (number, 96.0 / 72.0)
-    } else if allow_unitless {
-        (lower.as_str(), 1.0)
-    } else {
-        return None;
-    };
+    let (number, multiplier) =
+        if let Some(number) = strip_ascii_case_insensitive_suffix(value, "rem") {
+            (number, 16.0)
+        } else if let Some(number) = strip_ascii_case_insensitive_suffix(value, "em") {
+            (number, font_size.max(1.0))
+        } else if let Some(number) = strip_ascii_case_insensitive_suffix(value, "px") {
+            (number, 1.0)
+        } else if let Some(number) = strip_ascii_case_insensitive_suffix(value, "pt") {
+            (number, 96.0 / 72.0)
+        } else if allow_unitless {
+            (value, 1.0)
+        } else {
+            return None;
+        };
 
     number
         .trim()
@@ -1769,6 +1765,16 @@ pub(crate) fn parse_css_length(value: &str, font_size: f32, allow_unitless: bool
         .ok()
         .filter(|value| value.is_finite())
         .map(|value| value * multiplier)
+}
+
+fn strip_ascii_case_insensitive_suffix<'a>(value: &'a str, suffix: &str) -> Option<&'a str> {
+    if value.len() < suffix.len() {
+        return None;
+    }
+    let suffix_start = value.len() - suffix.len();
+    value[suffix_start..]
+        .eq_ignore_ascii_case(suffix)
+        .then_some(&value[..suffix_start])
 }
 
 pub(crate) fn parse_font_size(value: &str, parent_font_size: f32) -> Option<f32> {
