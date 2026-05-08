@@ -501,12 +501,10 @@ fn fallback_css_declarations(block: &str) -> Vec<(String, String)> {
 }
 
 fn font_face_blocks(css: &str) -> Vec<&str> {
-    let lower = css.to_ascii_lowercase();
     let mut faces = Vec::new();
     let mut offset = 0usize;
 
-    while let Some(face_rel) = lower[offset..].find("@font-face") {
-        let face_start = offset + face_rel;
+    while let Some(face_start) = find_ascii_case_insensitive_from(css, "@font-face", offset) {
         let Some(open_rel) = css[face_start..].find('{') else {
             break;
         };
@@ -522,8 +520,7 @@ fn font_face_blocks(css: &str) -> Vec<&str> {
 }
 
 pub(crate) fn css_format_hint(segment: &str) -> Option<String> {
-    let lower = segment.to_ascii_lowercase();
-    let format_start = lower.find("format(")?;
+    let format_start = find_ascii_case_insensitive_from(segment, "format(", 0)?;
     css_function_value(segment, format_start).map(|(value, _)| unquote_css_value(&value))
 }
 
@@ -675,12 +672,21 @@ pub(crate) fn next_css_segment_end(source: &str, start: usize) -> usize {
 
 fn strip_css_important(value: &str) -> &str {
     let trimmed = value.trim_end();
-    let lower = trimmed.to_ascii_lowercase();
-    if lower.ends_with("!important") {
-        trimmed[..trimmed.len() - "!important".len()].trim_end()
+    if let Some(stripped) = strip_ascii_case_insensitive_suffix(trimmed, "!important") {
+        stripped.trim_end()
     } else {
         value
     }
+}
+
+fn strip_ascii_case_insensitive_suffix<'a>(value: &'a str, suffix: &str) -> Option<&'a str> {
+    if value.len() < suffix.len() {
+        return None;
+    }
+    let suffix_start = value.len() - suffix.len();
+    value[suffix_start..]
+        .eq_ignore_ascii_case(suffix)
+        .then_some(&value[..suffix_start])
 }
 
 pub(crate) fn unquote_css_value(value: &str) -> String {
@@ -693,12 +699,10 @@ pub(crate) fn unquote_css_value(value: &str) -> String {
 }
 
 fn strip_media_rules_fallback(css: &str) -> String {
-    let lower = css.to_ascii_lowercase();
     let mut out = String::with_capacity(css.len());
     let mut offset = 0;
 
-    while let Some(media_rel) = lower[offset..].find("@media") {
-        let media_start = offset + media_rel;
+    while let Some(media_start) = find_ascii_case_insensitive_from(css, "@media", offset) {
         let condition_start = media_start + "@media".len();
         let Some(open_rel) = css[condition_start..].find('{') else {
             break;
@@ -717,11 +721,9 @@ fn strip_media_rules_fallback(css: &str) -> String {
 }
 
 fn append_active_media_css_fallback(css: &str, viewport_width: u32, out: &mut String) {
-    let lower = css.to_ascii_lowercase();
     let mut offset = 0;
 
-    while let Some(media_rel) = lower[offset..].find("@media") {
-        let media_start = offset + media_rel;
+    while let Some(media_start) = find_ascii_case_insensitive_from(css, "@media", offset) {
         let condition_start = media_start + "@media".len();
         let Some(open_rel) = css[condition_start..].find('{') else {
             break;
