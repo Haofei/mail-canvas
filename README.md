@@ -332,11 +332,11 @@ The committed bundle intentionally stays small: email-safe aliases are mapped to
 Arimo/Tinos, Noto covers generic fallback/math symbols/default emoji, and common
 Google Fonts such as Roboto, Open Sans, Lato, Montserrat, Poppins, Inter, Source
 Sans 3, Merriweather, and Nunito Sans are vendored as latin subsets. The
-native renderer automatically adds the default Noto Color Emoji fixture when the
-active font database does not already provide an emoji family. The comparison
-and benchmark scripts still avoid passing the emoji fixture unless the source
-HTML actually contains emoji. Avoid adding template-specific font workarounds to
-the fixture catalog.
+native renderer automatically adds the default Noto Color Emoji fixture on
+emoji-containing documents when the active font database does not already
+provide an emoji family. The comparison and benchmark scripts also avoid passing
+the emoji fixture unless the source HTML actually contains emoji. Avoid adding
+template-specific font workarounds to the fixture catalog.
 
 Compare one local HTML file:
 
