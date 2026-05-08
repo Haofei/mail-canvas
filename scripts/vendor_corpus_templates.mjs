@@ -118,8 +118,9 @@ function shouldPreserveLocalFixture(template) {
   return template.provider === 'beefree' && Boolean(template.sourcePath);
 }
 
-export async function mirrorHtml(html, baseUrl, assetDir) {
+export async function mirrorHtml(html, baseUrl, assetDir, options = {}) {
   const cache = new Map();
+  const strictAssets = Boolean(options.requireCompleteAssets ?? options.strictAssets);
   let rewritten = html;
 
   rewritten = await replaceAsync(
@@ -128,7 +129,10 @@ export async function mirrorHtml(html, baseUrl, assetDir) {
     async (match, cssText) =>
       match.replace(
         cssText,
-        await mirrorCssText(cssText, baseUrl, assetDir, cache, { relativeMode: 'html' }),
+        await mirrorCssText(cssText, baseUrl, assetDir, cache, {
+          relativeMode: 'html',
+          strictAssets,
+        }),
       ),
   );
 
@@ -140,7 +144,10 @@ export async function mirrorHtml(html, baseUrl, assetDir) {
       if (!/\brel=(["'])?stylesheet\1?/i.test(whole)) {
         return match;
       }
-      const local = await mirrorUrlAsset(href, baseUrl, assetDir, cache, { css: true });
+      const local = await mirrorUrlAsset(href, baseUrl, assetDir, cache, {
+        css: true,
+        strictAssets,
+      });
       return match.replace(href, local.htmlPath);
     },
   );
@@ -150,7 +157,7 @@ export async function mirrorHtml(html, baseUrl, assetDir) {
     /\b(src|background|poster)=((["'])(.*?)\3|([^\s>]+))/gi,
     async (match, attr, _value, _quote, quotedValue, bareValue) => {
       const value = quotedValue ?? bareValue;
-      const local = await mirrorUrlAsset(value, baseUrl, assetDir, cache);
+      const local = await mirrorUrlAsset(value, baseUrl, assetDir, cache, { strictAssets });
       return local ? match.replace(value, local.htmlPath) : match;
     },
   );
@@ -166,7 +173,7 @@ export async function mirrorHtml(html, baseUrl, assetDir) {
       const rewrittenCandidates = [];
       for (const candidate of candidates) {
         const [urlPart, descriptor] = candidate.split(/\s+/, 2);
-        const local = await mirrorUrlAsset(urlPart, baseUrl, assetDir, cache);
+        const local = await mirrorUrlAsset(urlPart, baseUrl, assetDir, cache, { strictAssets });
         rewrittenCandidates.push(local ? `${local.htmlPath}${descriptor ? ` ${descriptor}` : ''}` : candidate);
       }
       return `srcset=${quote}${rewrittenCandidates.join(', ')}${quote}`;
@@ -181,6 +188,7 @@ export async function mirrorHtml(html, baseUrl, assetDir) {
         declarationsOnly: true,
         relativeMode: 'html',
         cssUrlQuote: quote === '"' ? "'" : '"',
+        strictAssets,
       });
       return `style=${quote}${next}${quote}`;
     },
@@ -198,7 +206,10 @@ async function mirrorCssText(cssText, sourceUrl, assetDir, cache, options = {}) 
       rewritten,
       /@import\s+(?:url\(\s*)?(["']?)([^"'()\s;]+)\1\s*\)?([^;]*);/gi,
       async (match, _quote, importUrl, trailer) => {
-        const local = await mirrorUrlAsset(importUrl, sourceUrl, assetDir, cache, { css: true });
+        const local = await mirrorUrlAsset(importUrl, sourceUrl, assetDir, cache, {
+          css: true,
+          strictAssets: options.strictAssets,
+        });
         return local ? `@import "${local[pathKey]}"${trailer};` : match;
       },
     );
@@ -208,7 +219,9 @@ async function mirrorCssText(cssText, sourceUrl, assetDir, cache, options = {}) 
     rewritten,
     /url\(\s*(["']?)(.*?)\1\s*\)/gi,
     async (match, _quote, rawUrl) => {
-      const local = await mirrorUrlAsset(rawUrl, sourceUrl, assetDir, cache);
+      const local = await mirrorUrlAsset(rawUrl, sourceUrl, assetDir, cache, {
+        strictAssets: options.strictAssets,
+      });
       const quote = options.cssUrlQuote ?? '"';
       return local ? `url(${quote}${local[pathKey]}${quote})` : match;
     },
@@ -244,14 +257,20 @@ async function mirrorUrlAsset(rawUrl, sourceUrl, assetDir, cache, options = {}) 
       const localPath = fileURLToPath(resolved);
       if (options.css || ext === '.css') {
         const cssText = await readFile(localPath, 'utf8');
-        await writeMirroredCssAsset(assetPath, cssText, resolved, assetDir, cache);
+        await writeMirroredCssAsset(assetPath, cssText, resolved, assetDir, cache, {
+          strictAssets: options.strictAssets,
+        });
       } else {
         const bytes = await readFile(localPath);
         await writeFile(assetPath, bytes);
       }
       return entry;
     } catch (error) {
-      console.warn(`warning: ${resolved}: ${error.message}`);
+      const message = `${resolved}: ${error.message}`;
+      if (options.strictAssets) {
+        throw new Error(message);
+      }
+      console.warn(`warning: ${message}`);
       await writePlaceholderAsset(assetPath, ext, options);
       return entry;
     }
@@ -261,13 +280,21 @@ async function mirrorUrlAsset(rawUrl, sourceUrl, assetDir, cache, options = {}) 
   try {
     response = await fetch(resolved);
   } catch (error) {
-    console.warn(`warning: ${resolved}: ${error.message}`);
+    const message = `${resolved}: ${error.message}`;
+    if (options.strictAssets) {
+      throw new Error(message);
+    }
+    console.warn(`warning: ${message}`);
     await writePlaceholderAsset(assetPath, ext, options);
     return entry;
   }
 
   if (!response.ok) {
-    console.warn(`warning: ${resolved}: ${response.status} ${response.statusText}`);
+    const message = `${resolved}: ${response.status} ${response.statusText}`;
+    if (options.strictAssets) {
+      throw new Error(message);
+    }
+    console.warn(`warning: ${message}`);
     await writePlaceholderAsset(assetPath, ext, options);
     return entry;
   }
@@ -276,7 +303,9 @@ async function mirrorUrlAsset(rawUrl, sourceUrl, assetDir, cache, options = {}) 
 
   if (options.css || contentType.includes('text/css')) {
     const cssText = await response.text();
-    await writeMirroredCssAsset(assetPath, cssText, resolved, assetDir, cache);
+    await writeMirroredCssAsset(assetPath, cssText, resolved, assetDir, cache, {
+      strictAssets: options.strictAssets,
+    });
   } else {
     const bytes = Buffer.from(await response.arrayBuffer());
     await writeFile(assetPath, bytes);
@@ -285,12 +314,14 @@ async function mirrorUrlAsset(rawUrl, sourceUrl, assetDir, cache, options = {}) 
   return entry;
 }
 
-async function writeMirroredCssAsset(assetPath, cssText, sourceUrl, assetDir, cache) {
+async function writeMirroredCssAsset(assetPath, cssText, sourceUrl, assetDir, cache, options = {}) {
   if (cssText.trim().length === 0) {
     await writeFile(assetPath, unavailableStylesheetPlaceholder(), 'utf8');
     return;
   }
-  const rewrittenCss = await mirrorCssText(cssText, sourceUrl, assetDir, cache);
+  const rewrittenCss = await mirrorCssText(cssText, sourceUrl, assetDir, cache, {
+    strictAssets: options.strictAssets,
+  });
   await writeFile(
     assetPath,
     rewrittenCss.trim().length === 0 ? unavailableStylesheetPlaceholder() : rewrittenCss,

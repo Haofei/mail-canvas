@@ -46,6 +46,7 @@ function parseArgs(argv) {
     registryPath: path.join(ROOT_DIR, 'corpus', 'registry.json'),
     updateRegistry: true,
     keepVendored: false,
+    allowIncompleteAssets: false,
     issuesLogPath: DEFAULT_ISSUES_LOG,
     updateIssues: true,
   };
@@ -139,6 +140,9 @@ function parseArgs(argv) {
       case '--keep-vendored':
         args.keepVendored = true;
         break;
+      case '--allow-incomplete-assets':
+        args.allowIncompleteAssets = true;
+        break;
       case '--issues-log':
         args.issuesLogPath = path.resolve(next());
         break;
@@ -187,6 +191,7 @@ async function main() {
     if (args.excludeSeen) vendorArgs.push('--exclude-seen', '--registry', args.registryPath);
     if (args.login) vendorArgs.push('--login');
     if (args.headful) vendorArgs.push('--headful');
+    if (args.allowIncompleteAssets) vendorArgs.push('--allow-incomplete-assets');
 
     const collect = await runStep(steps, 'collect', 'node', vendorArgs, {
       captureStdout: true,

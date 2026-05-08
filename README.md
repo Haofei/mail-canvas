@@ -338,6 +338,12 @@ count and total occurrences.
   `P3` by likely fix value.
 - `pipeline.json` — commands, targets, timings, and output paths for the run.
 
+Really Good Emails collection uses complete-asset mode by default. Templates
+with unavailable mirrored images, fonts, stylesheets, or nested CSS assets are
+skipped instead of being kept with placeholder files. Pass
+`--allow-incomplete-assets` only for manual research when incomplete upstream
+resources are acceptable.
+
 Use `--skip-vendor --only TEMPLATE_NAME` to rerun an existing fixture. Browser
 screenshots are cached by prepared HTML and width via `--browser-cache-dir` so
 unchanged templates avoid repeated Chromium screenshot work across pipeline

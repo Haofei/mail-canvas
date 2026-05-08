@@ -33,6 +33,7 @@ function parseArgs(argv) {
     excludeExisting: false,
     excludeSeen: false,
     registryPath: REGISTRY_PATH,
+    requireCompleteAssets: true,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -84,6 +85,9 @@ function parseArgs(argv) {
         break;
       case '--registry':
         args.registryPath = path.resolve(next());
+        break;
+      case '--allow-incomplete-assets':
+        args.requireCompleteAssets = false;
         break;
       default:
         throw new Error(`unknown argument: ${arg}`);
@@ -258,17 +262,20 @@ function shuffle(values) {
 async function vendorSlug(context, slug, args) {
   const page = await context.newPage();
   const detailUrl = `${RGE_ORIGIN}/emails/${slug}`;
+  const name = `${PROVIDER}-${slugToTemplateName(slug)}`;
+  const providerDir = args.outDir;
+  const htmlPath = path.join(providerDir, `${name}.html`);
+  const assetDir = path.join(providerDir, `${name}.assets`);
   try {
     await page.goto(detailUrl, { waitUntil: 'domcontentloaded', timeout: args.timeoutMs });
     await page.waitForTimeout(1000);
     const html = await extractEmailHtml(page);
-    const name = `${PROVIDER}-${slugToTemplateName(slug)}`;
-    const providerDir = args.outDir;
-    const htmlPath = path.join(providerDir, `${name}.html`);
-    const assetDir = path.join(providerDir, `${name}.assets`);
+    await rm(htmlPath, { force: true });
     await rm(assetDir, { recursive: true, force: true });
     await mkdir(assetDir, { recursive: true });
-    const rewritten = await mirrorHtml(html, detailUrl, assetDir);
+    const rewritten = await mirrorHtml(html, detailUrl, assetDir, {
+      requireCompleteAssets: args.requireCompleteAssets,
+    });
     await writeFile(htmlPath, rewritten, 'utf8');
     return {
       name,
@@ -276,6 +283,12 @@ async function vendorSlug(context, slug, args) {
       sourcePath: path.relative(ROOT_DIR, htmlPath).replaceAll(path.sep, '/'),
       preserveLocal: true,
     };
+  } catch (error) {
+    if (args.requireCompleteAssets) {
+      await rm(htmlPath, { force: true });
+      await rm(assetDir, { recursive: true, force: true });
+    }
+    throw error;
   } finally {
     await page.close();
   }

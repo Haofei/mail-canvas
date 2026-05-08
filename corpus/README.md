@@ -63,6 +63,12 @@ By default the pipeline removes newly vendored research HTML/assets from
 `--keep-vendored` when intentionally promoting or inspecting the downloaded
 files before cleanup.
 
+Really Good Emails intake also defaults to complete-asset mode: if any mirrored
+image, stylesheet, font, or nested CSS asset returns 403/404 or cannot be
+fetched, that template is skipped and any partial files are removed. Use
+`--allow-incomplete-assets` only for manual research runs where placeholder
+assets are acceptable.
+
 Each pipeline run also writes `issues.json` in the run directory and updates the
 committed `corpus/issues.json` unless `--no-issues-log` is passed.
 
