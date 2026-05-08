@@ -360,6 +360,13 @@ npm run research:compare:local-rge-new -- \
 It records a local `run-registry.json` with content MD5s for each template and
 its mirrored assets, then skips unchanged templates on later runs. The local
 corpus can keep growing without committing the downloaded HTML/assets.
+If you already have a full local `comparison.json`, seed the local registry
+without rerendering:
+
+```sh
+node scripts/compare_local_rge_corpus.mjs \
+  --import-report /tmp/mail-canvas-rge-full/comparison.json
+```
 
 Refresh deterministic font fixtures when the supported open-source font bundle
 changes:

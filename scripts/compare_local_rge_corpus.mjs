@@ -23,6 +23,7 @@ function parseArgs(argv) {
     updateSeenRegistry: false,
     clearSeenRegistry: false,
     dryRun: false,
+    importReport: null,
     limit: null,
     noRemote: true,
     fixtureFonts: true,
@@ -74,6 +75,10 @@ function parseArgs(argv) {
         break;
       case '--dry-run':
         args.dryRun = true;
+        break;
+      case '--import-report':
+        args.importReport = next();
+        args.updateSeenRegistry = true;
         break;
       case '--allow-remote':
         args.noRemote = false;
@@ -129,6 +134,7 @@ Options:
   --update-seen-registry        Record selected template content MD5s and latest compare status
   --clear-seen-registry         Delete the local run registry before scanning
   --dry-run                     Print scan/skip counts without rendering
+  --import-report <json>        Mark matching local templates as seen from an existing comparison.json
   --allow-remote                Allow remote resources during compare
   --no-fixture-fonts            Do not force fixture fonts
   --stop-on-error               Stop the batch on first compare error
@@ -360,6 +366,27 @@ function updateSeenRegistry(registryPath, dir, templates, merged, workDir) {
   return next;
 }
 
+function importReportIntoSeenRegistry(registryPath, dir, templates, reportPath) {
+  const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+  const reportedNames = new Set([
+    ...(report.results || []).map((result) => result.name).filter(Boolean),
+    ...(report.failures || []).map((failure) => failure.name).filter(Boolean),
+  ]);
+  const matchingTemplates = templates.filter((template) => reportedNames.has(template.name));
+  const imported = updateSeenRegistry(
+    registryPath,
+    dir,
+    matchingTemplates,
+    {
+      generatedAt: report.generatedAt || new Date().toISOString(),
+      results: report.results || [],
+      failures: report.failures || [],
+    },
+    path.dirname(reportPath),
+  );
+  return { imported, count: matchingTemplates.length, reported: reportedNames.size };
+}
+
 function printTop(results, count = 25) {
   const rows = [...results].sort((a, b) => (b.diffRatio || 0) - (a.diffRatio || 0));
   for (const result of rows.slice(0, count)) {
@@ -391,6 +418,18 @@ async function main() {
       (stats.skippedCompleted ? `, skipped ${stats.skippedCompleted} completed name(s)` : '') +
       (stats.skippedSeen ? `, skipped ${stats.skippedSeen} unchanged seen template(s)` : ''),
   );
+  if (options.importReport) {
+    const { imported, count, reported } = importReportIntoSeenRegistry(
+      options.seenRegistry,
+      options.dir,
+      templates,
+      options.importReport,
+    );
+    console.error(
+      `imported ${count} local template record(s) from ${reported} reported name(s) into ${options.seenRegistry}; registry now has ${imported.templates.length}`,
+    );
+    return;
+  }
   if (templates.length === 0) return;
   if (options.dryRun) return;
 

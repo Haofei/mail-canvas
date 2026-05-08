@@ -73,6 +73,14 @@ manifest, so a template with the same name is rerun when its bytes change. Use
 `--clear-seen-registry` when intentionally starting the local RGE run history
 from scratch.
 
+If a full comparison report already exists, seed the local run registry without
+rerendering the whole directory:
+
+```bash
+node scripts/compare_local_rge_corpus.mjs \
+  --import-report /tmp/mail-canvas-rge-full/comparison.json
+```
+
 By default the pipeline removes newly vendored research HTML/assets from
 `corpus/` after the run and leaves only the registry record. Pass
 `--keep-vendored` when intentionally promoting or inspecting the downloaded
