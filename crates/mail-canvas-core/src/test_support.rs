@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::{Context as _, Result};
+use anyhow::Result;
 use cosmic_text::FontSystem;
 use kuchiki::traits::TendrilSink as _;
 use tiny_skia::Pixmap;
@@ -9,7 +9,7 @@ use crate::MailCanvasFontFallback;
 use crate::api::{
     DEFAULT_MAX_DECODED_PIXELS, DEFAULT_MAX_DOM_NODES, DEFAULT_MAX_IMAGE_BYTES,
     DEFAULT_MAX_LAYOUT_DEPTH, DEFAULT_MAX_TABLE_CELLS, EmailRenderer, RenderDebugOptions,
-    RenderRequest, RenderedImage, RenderedPdf, ResourcePolicy,
+    RenderRequest, RenderedImage, RenderedPdf, RenderedRgba, ResourcePolicy,
 };
 use crate::css::inline_css;
 use crate::document::build_document;
@@ -75,14 +75,15 @@ impl OutputBackend for TestOutputBackend {
         pixmap.encode_png().map_err(Into::into)
     }
 
-    fn encode_pdf(&self, rendered: &RenderedImage) -> Result<Vec<u8>> {
+    fn encode_pdf(&self, rendered: &RenderedRgba) -> Result<Vec<u8>> {
         use pdf_writer::{Content, Name, Pdf, Rect as PdfRect, Ref};
 
         let width = rendered.pixel_width.max(1);
         let height = rendered.pixel_height.max(1);
-        let rgb = image::load_from_memory(&rendered.png)
-            .context("failed to decode rendered PNG for PDF output")?
-            .to_rgb8();
+        let mut rgb = Vec::with_capacity(rendered.rgba.len() / 4 * 3);
+        for pixel in rendered.rgba.chunks_exact(4) {
+            rgb.extend_from_slice(&pixel[..3]);
+        }
         let mut pdf = Pdf::new();
         let catalog_id = Ref::new(1);
         let page_tree_id = Ref::new(2);
@@ -102,7 +103,7 @@ impl OutputBackend for TestOutputBackend {
         }
 
         {
-            let mut image = pdf.image_xobject(image_id, rgb.as_raw());
+            let mut image = pdf.image_xobject(image_id, &rgb);
             image.width(width as i32);
             image.height(height as i32);
             image.color_space().device_rgb();

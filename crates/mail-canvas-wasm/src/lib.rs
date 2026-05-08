@@ -263,7 +263,7 @@ impl RenderOutputBackend for WasmOutputBackend {
         pixmap.encode_png().map_err(Into::into)
     }
 
-    fn encode_pdf(&self, _rendered: &RenderedImage) -> Result<Vec<u8>> {
+    fn encode_pdf(&self, _rendered: &mail_canvas_core::RenderedRgba) -> Result<Vec<u8>> {
         bail!("PDF is not supported in wasm")
     }
 }

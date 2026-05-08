@@ -6,7 +6,7 @@ use cosmic_text::FontSystem;
 use fontdb::Database;
 use mail_canvas_core::{
     EmailRenderer, MailCanvasFontFallback, RenderOutputBackend, RenderRequest, RenderedImage,
-    RenderedPdf, RendererCore,
+    RenderedPdf, RenderedRgba, RendererCore,
 };
 use tiny_skia::Pixmap;
 
@@ -17,7 +17,7 @@ pub use mail_canvas_core::{
     AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, PreparedDocument,
     RenderWarning, RenderWarningCode, build_document,
 };
-pub use pdf::raster_pdf_from_png;
+pub use pdf::{raster_pdf_from_png, raster_pdf_from_rgba};
 pub use resource::NativeResourceProviderFactory;
 
 pub struct MailCanvasRenderer {
@@ -131,8 +131,8 @@ impl RenderOutputBackend for NativeOutputBackend {
         pixmap.encode_png().map_err(Into::into)
     }
 
-    fn encode_pdf(&self, rendered: &RenderedImage) -> Result<Vec<u8>> {
-        pdf::raster_pdf_from_png(rendered)
+    fn encode_pdf(&self, rendered: &RenderedRgba) -> Result<Vec<u8>> {
+        Ok(pdf::raster_pdf_from_rgba(rendered))
     }
 }
 

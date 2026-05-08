@@ -252,7 +252,7 @@ impl RendererCore {
         resource_factory: &F,
         output: &O,
     ) -> Result<RenderedPdf> {
-        let rendered = self.render_png_with(request, resource_factory, output)?;
+        let rendered = self.render_rgba_with(request, resource_factory)?;
         let pdf = output.encode_pdf(&rendered)?;
         Ok(RenderedPdf {
             pdf,
