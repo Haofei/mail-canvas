@@ -4,12 +4,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result, anyhow, bail};
 use cosmic_text::FontSystem;
 use mail_canvas_core::{
-    EmailRenderer, MailCanvasFontFallback, RenderOutputBackend, RenderRequest, RenderedImage,
-    RenderedPdf, RenderedRgba, RendererCore,
+    EmailRenderer, MailCanvasFontFallback, RenderRequest, RenderedImage, RenderedPdf, RendererCore,
 };
-use tiny_skia::Pixmap;
 
 mod fonts;
+mod output;
 mod pdf;
 mod resource;
 
@@ -24,6 +23,7 @@ use fonts::{
     font_database_from_paths, html_needs_emoji_font, load_default_emoji_font_if_missing,
     system_font_database,
 };
+use output::NativeOutputBackend;
 
 pub struct MailCanvasRenderer {
     inner: RendererCore,
@@ -136,19 +136,6 @@ impl MailCanvasRenderer {
             return;
         }
         load_default_emoji_font_if_missing(self.inner.font_system_mut().db_mut());
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-struct NativeOutputBackend;
-
-impl RenderOutputBackend for NativeOutputBackend {
-    fn encode_png(&self, pixmap: &Pixmap) -> Result<Vec<u8>> {
-        pixmap.encode_png().map_err(Into::into)
-    }
-
-    fn encode_pdf(&self, rendered: &RenderedRgba) -> Result<Vec<u8>> {
-        Ok(pdf::raster_pdf_from_rgba(rendered))
     }
 }
 
