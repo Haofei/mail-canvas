@@ -483,16 +483,18 @@ fn font_face_property_to_declaration(property: &FontFaceProperty<'_>) -> Option<
 }
 
 fn fallback_css_declarations(block: &str) -> Vec<(String, String)> {
-    split_css_top_level(block, ';')
-        .into_iter()
-        .filter_map(|declaration| {
-            let (name, value) = declaration.split_once(':')?;
-            Some((
-                name.trim().to_ascii_lowercase(),
-                strip_css_important(value.trim()).trim().to_string(),
-            ))
-        })
-        .collect()
+    let declarations = split_css_top_level(block, ';');
+    let mut out = Vec::with_capacity(declarations.len());
+    for declaration in declarations {
+        let Some((name, value)) = declaration.split_once(':') else {
+            continue;
+        };
+        out.push((
+            name.trim().to_ascii_lowercase(),
+            strip_css_important(value.trim()).trim().to_string(),
+        ));
+    }
+    out
 }
 
 fn font_face_blocks(css: &str) -> Vec<&str> {
@@ -619,7 +621,10 @@ fn split_css_top_level(source: &str, separator: char) -> Vec<&str> {
             b'(' => paren_depth += 1,
             b')' => paren_depth = paren_depth.saturating_sub(1),
             byte if byte == separator && paren_depth == 0 => {
-                parts.push(source[start..index].trim());
+                let part = source[start..index].trim();
+                if !part.is_empty() {
+                    parts.push(part);
+                }
                 start = index + 1;
             }
             _ => {}
@@ -628,7 +633,10 @@ fn split_css_top_level(source: &str, separator: char) -> Vec<&str> {
     }
 
     if start <= source.len() {
-        parts.push(source[start..].trim());
+        let part = source[start..].trim();
+        if !part.is_empty() {
+            parts.push(part);
+        }
     }
     parts
 }
