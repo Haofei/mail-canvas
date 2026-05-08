@@ -215,8 +215,8 @@ fn cacheable_image_key(src: &str, policy: &ResourcePolicy) -> Option<String> {
 }
 
 fn asset_source_for_cache_key(key: &str) -> AssetSource {
-    match Url::parse(key).ok().map(|url| url.scheme().to_string()) {
-        Some(scheme) if scheme == "file" => AssetSource::File,
+    match Url::parse(key).ok() {
+        Some(url) if url.scheme() == "file" => AssetSource::File,
         _ => AssetSource::Remote,
     }
 }
