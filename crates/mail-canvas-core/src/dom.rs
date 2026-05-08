@@ -39,8 +39,7 @@ pub(crate) fn find_first_tag(node: &NodeRef, tag: &str) -> Option<NodeRef> {
         if element_tag(&current).as_deref() == Some(tag) {
             return Some(current);
         }
-        let children: Vec<_> = current.children().collect();
-        stack.extend(children.into_iter().rev());
+        stack.extend(current.children().rev());
     }
     None
 }
