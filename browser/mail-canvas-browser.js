@@ -53,7 +53,7 @@ export class MailCanvasBrowserRenderer {
     const baseUrl = resolveBaseUrl(options.baseUrl ?? this.defaultBaseUrl);
     const started = performance.now();
     const prepared = await this.#inlineStylesheetLinks(html, baseUrl);
-    const assets = await this.#fetchAssetGraph(prepared.html, baseUrl, prepared.assets);
+    const assets = await this.#fetchAssetGraph(prepared.assetUrls, baseUrl, prepared.assets);
     const fetchedAt = performance.now();
     const assetPayload = assets.map((asset) => ({
       url: asset.url,
@@ -106,10 +106,10 @@ export class MailCanvasBrowserRenderer {
     this.destroyed = true;
   }
 
-  async #fetchAssetGraph(html, baseUrl, initialAssets = []) {
+  async #fetchAssetGraph(assetUrls, baseUrl, initialAssets = []) {
     const visited = new Set(initialAssets.map((asset) => asset.url));
     const assets = [...initialAssets];
-    const pending = [...collectHtmlAssetUrls(html)].map((url) => absoluteUrl(url, baseUrl));
+    const pending = [...assetUrls].map((url) => absoluteUrl(url, baseUrl));
     let totalBytes = initialAssets.reduce((sum, asset) => sum + asset.bytes.byteLength, 0);
     if (assets.length > this.limits.maxAssetCount) {
       throw new Error(`asset count exceeds maxAssetCount (${this.limits.maxAssetCount})`);
@@ -170,6 +170,7 @@ export class MailCanvasBrowserRenderer {
     return {
       html: `<!doctype html>\n${document.documentElement.outerHTML}`,
       assets: stylesheetAssets,
+      assetUrls: collectDocumentAssetUrls(document),
     };
   }
 
@@ -231,8 +232,7 @@ class WorkerClient {
   }
 }
 
-function collectHtmlAssetUrls(html) {
-  const document = new DOMParser().parseFromString(html, "text/html");
+function collectDocumentAssetUrls(document) {
   const urls = new Set();
 
   for (const image of document.querySelectorAll("[src]")) {
