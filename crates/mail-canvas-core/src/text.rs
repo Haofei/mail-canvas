@@ -533,7 +533,12 @@ pub(crate) fn is_collapsible_whitespace(ch: char) -> bool {
     ch != '\u{00a0}' && ch.is_whitespace()
 }
 pub(crate) fn spans_text(spans: &[TextSpan]) -> String {
-    spans.iter().map(|span| span.text.as_str()).collect()
+    let total_len = spans.iter().map(|span| span.text.len()).sum();
+    let mut out = String::with_capacity(total_len);
+    for span in spans {
+        out.push_str(&span.text);
+    }
+    out
 }
 pub(crate) fn text_spans_match_style(spans: &[TextSpan], style: &Style) -> bool {
     let parent_style = TextRunStyle::from_style(style);
