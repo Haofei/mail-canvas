@@ -117,6 +117,7 @@ fn fixture_font_database() -> Result<fontdb::Database> {
     let noto_regular = root.join("NotoSans-Regular.ttf");
     let noto_bold = root.join("NotoSans-Bold.ttf");
     let noto_math_regular = root.join("NotoSansMath-Regular.ttf");
+    let noto_color_emoji = root.join("NotoColorEmoji.ttf");
     if !arimo_regular.is_file()
         || !arimo_bold.is_file()
         || !tinos_regular.is_file()
@@ -124,6 +125,7 @@ fn fixture_font_database() -> Result<fontdb::Database> {
         || !noto_regular.is_file()
         || !noto_bold.is_file()
         || !noto_math_regular.is_file()
+        || !noto_color_emoji.is_file()
     {
         bail!("fixture fonts missing: {}", root.display());
     }
@@ -135,6 +137,7 @@ fn fixture_font_database() -> Result<fontdb::Database> {
         noto_regular,
         noto_bold,
         noto_math_regular,
+        noto_color_emoji,
     ])
 }
 
