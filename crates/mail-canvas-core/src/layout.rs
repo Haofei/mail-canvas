@@ -936,6 +936,11 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         let grid = build_table_grid(node, self.limits.max_table_cells)?;
         if grid.rows.is_empty() {
             if let Some(flow) =
+                self.layout_css_table_rows(node, style.clone(), x, y, containing_width, depth)?
+            {
+                return Ok(Some(flow));
+            }
+            if let Some(flow) =
                 self.layout_css_table_cells(node, style.clone(), x, y, containing_width, depth)?
             {
                 return Ok(Some(flow));
@@ -1129,6 +1134,211 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 children: row_boxes,
             },
         }))
+    }
+
+    fn layout_css_table_rows(
+        &mut self,
+        node: &NodeRef,
+        style: Style,
+        x: f32,
+        y: f32,
+        containing_width: f32,
+        depth: usize,
+    ) -> Result<Option<FlowBox>> {
+        let mut rows = Vec::new();
+        for child in node.children() {
+            if let Some(text_node) = child.as_text() {
+                if text_node
+                    .borrow()
+                    .chars()
+                    .any(|ch| !is_collapsible_whitespace(ch))
+                {
+                    return Ok(None);
+                }
+                continue;
+            }
+
+            let Some(tag) = element_tag(&child) else {
+                continue;
+            };
+            if is_metadata_tag(&tag) {
+                continue;
+            }
+            let row_style = self.style_for_node(&child, &style);
+            if row_style.display == Display::None {
+                continue;
+            }
+            if matches!(row_style.position, Position::Absolute | Position::Fixed) {
+                continue;
+            }
+            if row_style.display != Display::TableRow {
+                return Ok(None);
+            }
+            let Some(cells) = self.css_table_row_cells(&child, &row_style) else {
+                return Ok(None);
+            };
+            if !cells.is_empty() {
+                rows.push((child, row_style, cells));
+            }
+        }
+
+        if rows.is_empty() {
+            return Ok(None);
+        }
+
+        let max_table_width = (containing_width - style.margin.horizontal()).max(1.0);
+        let table_width = style
+            .resolve_width(containing_width)
+            .map(|width| style.outer_width_for_declared(width))
+            .unwrap_or(max_table_width);
+        let table_width = style
+            .constrain_outer_width(table_width, containing_width)
+            .max(1.0);
+        let rect_x = x + style.horizontal_offset(containing_width, table_width);
+        let rect_y = y + style.margin.top;
+        let content_x = rect_x + style.border.left + style.padding.left;
+        let content_y = rect_y + style.border.top + style.padding.top;
+        let content_width = style.inner_width_for_outer(table_width).max(1.0);
+        let column_widths = css_table_row_column_widths(&rows, content_width);
+
+        let mut row_boxes = Vec::with_capacity(rows.len());
+        let mut row_y = content_y;
+        for (row_node, row_style, cells) in rows {
+            let mut cell_boxes = Vec::with_capacity(cells.len());
+            let mut row_height: f32 = 0.0;
+            let mut cursor_x = content_x;
+
+            for (idx, (cell_node, cell_style)) in cells.iter().enumerate() {
+                let cell_width = column_widths.get(idx).copied().unwrap_or(1.0).max(1.0);
+                let cell_padding = cell_style.resolved_padding(cell_width);
+                let cell_inner_x = cursor_x + cell_style.border.left + cell_padding.left;
+                let cell_inner_y = row_y + cell_style.border.top + cell_padding.top;
+                let cell_inner_width =
+                    (cell_width - cell_padding.horizontal() - cell_style.border.horizontal())
+                        .max(1.0);
+                let content = self.layout_children(
+                    cell_node,
+                    cell_style,
+                    cell_inner_x,
+                    cell_inner_y,
+                    cell_inner_width,
+                    depth + 1,
+                )?;
+                let explicit_height = cell_style.resolve_height(0.0).unwrap_or(0.0);
+                let natural_cell_height =
+                    (content.advance + cell_padding.vertical() + cell_style.border.vertical())
+                        .max(1.0);
+                let cell_height = natural_cell_height.max(explicit_height).max(1.0);
+                row_height = row_height.max(cell_height);
+                cell_boxes.push((
+                    cell_node.clone(),
+                    LayoutBox {
+                        kind: LayoutKind::Cell,
+                        rect: Rect::new(cursor_x, row_y, cell_width, cell_height),
+                        style: cell_style.clone(),
+                        debug: LayoutDebugMeta::for_node(cell_node, "td"),
+                        children: content.children,
+                    },
+                    natural_cell_height,
+                ));
+                cursor_x += cell_width;
+            }
+
+            if cell_boxes.is_empty() {
+                continue;
+            }
+
+            for (cell_node, cell, natural_cell_height) in &mut cell_boxes {
+                let delta = (row_height - *natural_cell_height).max(0.0);
+                let offset_y = match cell.style.vertical_align {
+                    VerticalAlign::Baseline | VerticalAlign::Top => 0.0,
+                    VerticalAlign::Middle => delta / 2.0,
+                    VerticalAlign::Bottom => delta,
+                };
+                if offset_y > 0.0 {
+                    translate_layout_children(cell, 0.0, offset_y);
+                }
+                cell.rect.height = row_height;
+                self.append_absolute_children(
+                    cell_node,
+                    &cell.style,
+                    cell.rect,
+                    &mut cell.children,
+                    depth + 1,
+                )?;
+            }
+
+            row_boxes.push(LayoutBox {
+                kind: LayoutKind::Row,
+                rect: Rect::new(content_x, row_y, content_width, row_height),
+                style: row_style,
+                debug: LayoutDebugMeta::for_node(&row_node, "tr"),
+                children: cell_boxes.into_iter().map(|(_, cell, _)| cell).collect(),
+            });
+            row_y += row_height;
+        }
+
+        if row_boxes.is_empty() {
+            return Ok(None);
+        }
+
+        let content_height = (row_y - content_y).max(0.0);
+        let explicit_height = style.resolve_height(0.0).unwrap_or(0.0);
+        let table_height = (content_height + style.padding.vertical() + style.border.vertical())
+            .max(explicit_height)
+            .max(1.0);
+        let collapsible_margin_bottom = style.margin.bottom;
+
+        Ok(Some(FlowBox {
+            advance: style.margin.top + table_height + collapsible_margin_bottom,
+            collapsible_margin_bottom,
+            node: LayoutBox {
+                kind: LayoutKind::Table,
+                rect: Rect::new(rect_x, rect_y, table_width, table_height),
+                style,
+                debug: LayoutDebugMeta::for_node(node, "table"),
+                children: row_boxes,
+            },
+        }))
+    }
+
+    fn css_table_row_cells(
+        &mut self,
+        row_node: &NodeRef,
+        row_style: &Style,
+    ) -> Option<Vec<(NodeRef, Style)>> {
+        let mut cells = Vec::new();
+        for child in row_node.children() {
+            if let Some(text_node) = child.as_text() {
+                if text_node
+                    .borrow()
+                    .chars()
+                    .any(|ch| !is_collapsible_whitespace(ch))
+                {
+                    return None;
+                }
+                continue;
+            }
+
+            let Some(tag) = element_tag(&child) else {
+                continue;
+            };
+            if is_metadata_tag(&tag) {
+                continue;
+            }
+            let child_style = self.style_for_node(&child, row_style);
+            if child_style.display == Display::None {
+                continue;
+            }
+            if matches!(child_style.position, Position::Absolute | Position::Fixed) {
+                continue;
+            }
+            if child_style.display != Display::TableCell {
+                return None;
+            }
+            cells.push((child, child_style));
+        }
+        Some(cells)
     }
 
     fn layout_css_table_cells(
@@ -2411,6 +2621,56 @@ fn css_table_cell_widths(cells: &[(NodeRef, Style)], content_width: f32) -> Vec<
     widths
         .into_iter()
         .map(|width| width.unwrap_or(content_width / count as f32))
+        .collect()
+}
+
+fn css_table_row_column_widths(
+    rows: &[(NodeRef, Style, Vec<(NodeRef, Style)>)],
+    content_width: f32,
+) -> Vec<f32> {
+    let count = rows
+        .iter()
+        .map(|(_, _, cells)| cells.len())
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    let mut widths = vec![None; count];
+    let mut fixed_total = 0.0_f32;
+
+    for (_, _, cells) in rows {
+        for (idx, (_, style)) in cells.iter().enumerate() {
+            let Some(width) = style.width.and_then(|width| width.resolve(content_width)) else {
+                continue;
+            };
+            let outer_width = style.outer_width_for_declared(width).max(1.0);
+            let previous = widths[idx].unwrap_or(0.0_f32);
+            if outer_width > previous {
+                fixed_total += outer_width - previous;
+                widths[idx] = Some(outer_width);
+            }
+        }
+    }
+
+    if fixed_total > content_width + f32::EPSILON {
+        let scale = content_width / fixed_total;
+        return widths
+            .into_iter()
+            .map(|width| width.unwrap_or(0.0) * scale)
+            .collect();
+    }
+
+    let auto_count = widths.iter().filter(|width| width.is_none()).count();
+    if auto_count > 0 {
+        let auto_width = ((content_width - fixed_total).max(0.0) / auto_count as f32).max(1.0);
+        return widths
+            .into_iter()
+            .map(|width| width.unwrap_or(auto_width))
+            .collect();
+    }
+
+    widths
+        .into_iter()
+        .map(|width| width.unwrap_or(1.0))
         .collect()
 }
 

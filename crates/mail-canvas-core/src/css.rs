@@ -12,6 +12,7 @@ use lightningcss::traits::ToCss;
 
 pub(crate) fn inline_css(html: &str, viewport_width: u32, viewport_height: u32) -> Result<String> {
     let html = strip_hidden_conditional_comments(html);
+    let html = sanitize_html_for_css_inliner(&html);
     let viewport = CssViewport {
         width: viewport_width as f32,
         height: viewport_height as f32,
@@ -26,6 +27,124 @@ pub(crate) fn inline_css(html: &str, viewport_width: u32, viewport_height: u32) 
         .build()
         .inline(&html)
         .context("failed to inline CSS")
+}
+
+fn sanitize_html_for_css_inliner(html: &str) -> String {
+    let html = strip_mso_declaration_attributes(html);
+    sanitize_style_attributes(&html)
+}
+
+fn strip_mso_declaration_attributes(html: &str) -> String {
+    let bytes = html.as_bytes();
+    let mut out = String::with_capacity(html.len());
+    let mut index = 0usize;
+    let mut last = 0usize;
+
+    while index < html.len() {
+        if bytes[index].is_ascii_whitespace()
+            && html[index + 1..]
+                .get(..4)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("mso-"))
+        {
+            let mut cursor = index + 1;
+            while cursor < html.len()
+                && !bytes[cursor].is_ascii_whitespace()
+                && bytes[cursor] != b'>'
+            {
+                cursor += 1;
+            }
+            let candidate = &html[index + 1..cursor];
+            if candidate.contains(':') && candidate.ends_with(';') {
+                out.push_str(&html[last..index]);
+                index = cursor;
+                last = index;
+                continue;
+            }
+            index = cursor;
+            continue;
+        }
+
+        index += 1;
+    }
+
+    out.push_str(&html[last..]);
+    out
+}
+
+fn sanitize_style_attributes(html: &str) -> String {
+    let lower = html.to_ascii_lowercase();
+    let mut out = String::with_capacity(html.len());
+    let mut offset = 0usize;
+
+    while let Some(style_rel) = lower[offset..].find("style=") {
+        let style_start = offset + style_rel;
+        let value_start = style_start + "style=".len();
+        if !is_attribute_name_boundary(html, style_start) || value_start >= html.len() {
+            out.push_str(&html[offset..value_start]);
+            offset = value_start;
+            continue;
+        }
+
+        out.push_str(&html[offset..style_start]);
+        let quote = html.as_bytes()[value_start];
+        if quote == b'"' || quote == b'\'' {
+            let content_start = value_start + 1;
+            let Some(end_rel) = html[content_start..].find(quote as char) else {
+                out.push_str(&html[style_start..]);
+                return out;
+            };
+            let content_end = content_start + end_rel;
+            out.push_str("style=\"");
+            out.push_str(&escape_style_attr(&sanitize_style_attribute_value(
+                &html[content_start..content_end],
+            )));
+            out.push('"');
+            offset = content_end + 1;
+        } else {
+            let mut content_end = value_start;
+            while content_end < html.len() {
+                let byte = html.as_bytes()[content_end];
+                if byte.is_ascii_whitespace() || byte == b'>' {
+                    break;
+                }
+                content_end += 1;
+            }
+            out.push_str("style=\"");
+            out.push_str(&escape_style_attr(&sanitize_style_attribute_value(
+                &html[value_start..content_end],
+            )));
+            out.push('"');
+            offset = content_end;
+        }
+    }
+
+    out.push_str(&html[offset..]);
+    out
+}
+
+fn is_attribute_name_boundary(html: &str, start: usize) -> bool {
+    if start == 0 {
+        return true;
+    }
+    let previous = html.as_bytes()[start - 1];
+    previous.is_ascii_whitespace() || previous == b'<'
+}
+
+fn sanitize_style_attribute_value(value: &str) -> String {
+    css_declarations(value)
+        .into_iter()
+        .filter(|(name, value)| !name.is_empty() && !value.is_empty())
+        .map(|(name, value)| format!("{name}: {value};"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn escape_style_attr(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 pub(crate) fn strip_hidden_conditional_comments(html: &str) -> String {
@@ -1043,6 +1162,45 @@ mod tests {
         assert!(portrait.contains("padding: 8px"));
         assert!(landscape.contains("padding: 4px"));
         assert!(!landscape.contains("padding: 8px"));
+    }
+
+    #[test]
+    fn tolerates_unquoted_inline_style_attributes() {
+        let html = r#"
+            <html><body>
+              <table class="card" style=width:504px;><tr><td>Card</td></tr></table>
+            </body></html>
+        "#;
+
+        let inlined = inline_css(html, 800, 800).unwrap();
+
+        assert!(inlined.contains("width: 504px"));
+    }
+
+    #[test]
+    fn strips_bare_mso_declaration_attributes_before_inlining() {
+        let html = r#"
+            <html><body>
+              <table class="card" mso-table-lspace:0; mso-table-rspace:0; style="width:504px;"><tr><td>Card</td></tr></table>
+            </body></html>
+        "#;
+
+        let inlined = inline_css(html, 800, 800).unwrap();
+
+        assert!(inlined.contains("width: 504px"));
+        assert!(!inlined.contains("mso-table-lspace:0"));
+    }
+
+    #[test]
+    fn inlines_important_display_rules_over_existing_child_inline_display() {
+        let html = r#"
+            <html><head><style>.mobile { display: none !important; }</style></head>
+            <body><table><tr><td class="mobile"><div style="display: table;">Mobile</div></td></tr></table></body></html>
+        "#;
+
+        let inlined = inline_css(html, 800, 800).unwrap();
+
+        assert!(inlined.contains("display: none"));
     }
 
     #[test]
