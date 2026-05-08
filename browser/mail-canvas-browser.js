@@ -6,6 +6,7 @@ const DEFAULT_LIMITS = Object.freeze({
 
 const assetPattern =
   /url\(\s*(['"]?)([^'")]+)\1\s*\)|@import\s+(?:url\(\s*)?(['"]?)([^'")\s]+)\3\s*\)?/gi;
+const TEXT_DECODER = new TextDecoder();
 
 export async function createMailCanvasRenderer(options = {}) {
   if (!options.workerUrl) {
@@ -138,7 +139,7 @@ export class MailCanvasBrowserRenderer {
       assets.push({ url, bytes });
 
       if (url.endsWith(".css") || isStylesheetBytes(bytes)) {
-        const cssText = new TextDecoder().decode(bytes);
+        const cssText = TEXT_DECODER.decode(bytes);
         for (const nested of extractCssUrls(cssText)) {
           pending.push(absoluteUrl(nested, url));
         }
@@ -161,7 +162,7 @@ export class MailCanvasBrowserRenderer {
         throw new Error(`stylesheet exceeds maxAssetBytes (${url})`);
       }
       stylesheetAssets.push({ url, bytes });
-      const cssText = rewriteCssUrls(new TextDecoder().decode(bytes), url);
+      const cssText = rewriteCssUrls(TEXT_DECODER.decode(bytes), url);
       const style = document.createElement("style");
       style.textContent = cssText;
       link.replaceWith(style);
@@ -338,9 +339,7 @@ function isStylesheetBytes(bytes) {
   if (bytes.length === 0) {
     return false;
   }
-  const head = new TextDecoder()
-    .decode(bytes.subarray(0, Math.min(bytes.length, 32)))
-    .trimStart();
+  const head = TEXT_DECODER.decode(bytes.subarray(0, Math.min(bytes.length, 32))).trimStart();
   return head.startsWith("@") || head.includes("{");
 }
 
