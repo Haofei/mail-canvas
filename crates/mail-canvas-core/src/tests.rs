@@ -2051,6 +2051,36 @@ fn percentage_image_width_resolves_against_column_width_not_html_width_attr() {
 }
 
 #[test]
+fn inherited_image_width_without_parent_width_keeps_html_width() {
+    let layout = layout_for_test(
+        r#"<table width="600" border="0" cellpadding="0" cellspacing="0"><tr><td><a><img width="216" height="46" alt="" style="width:inherit;max-width:inherit;height:auto;display:block" /></a></td></tr></table>"#,
+        600,
+    );
+    let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
+        .expect("image layout");
+    assert!(
+        (image.rect.width - 216.0).abs() < 0.1,
+        "image width: {}",
+        image.rect.width
+    );
+}
+
+#[test]
+fn center_element_centers_inline_image_descendants() {
+    let layout = layout_for_test(
+        r#"<center><div style="width:600px"><a><img width="216" height="46" alt="" style="width:inherit;max-width:inherit;height:auto" /></a></div></center>"#,
+        800,
+    );
+    let image = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_)))
+        .expect("image layout");
+    assert!(
+        (image.rect.x - 292.0).abs() < 1.0,
+        "image x: {}",
+        image.rect.x
+    );
+}
+
+#[test]
 fn hero_image_width_stays_full_after_percent_width_rows() {
     let layout = layout_for_test(
         r#"<table width="600" border="0" cellpadding="0" cellspacing="0">

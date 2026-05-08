@@ -312,11 +312,15 @@ impl Style {
             letter_spacing: parent.letter_spacing,
             text_align: if tag == "table" {
                 TextAlign::Left
+            } else if tag == "center" {
+                TextAlign::Center
             } else {
                 parent.text_align
             },
             align_from_attribute: if tag == "table" {
                 false
+            } else if tag == "center" {
+                true
             } else {
                 parent.align_from_attribute
             },
@@ -1469,6 +1473,30 @@ pub(crate) fn style_for_node_with_fonts(
                     if let Some(font_size) = parse_font_size(&value, parent.font_size) {
                         style.set_font_size(font_size);
                     }
+                }
+                "width" if is_inherit_keyword(&value) => {
+                    style.width_auto = false;
+                    style.width = if tag == "table" {
+                        parent.width.or(Some(Length::Inherit))
+                    } else {
+                        parent.width
+                    };
+                }
+                "min-width" if is_inherit_keyword(&value) => {
+                    style.min_width = parent.min_width;
+                }
+                "max-width" if is_inherit_keyword(&value) => {
+                    style.max_width = parent.max_width;
+                }
+                "height" if is_inherit_keyword(&value) => {
+                    style.height_auto = false;
+                    style.height = parent.height;
+                }
+                "min-height" if is_inherit_keyword(&value) => {
+                    style.min_height = parent.min_height;
+                }
+                "max-height" if is_inherit_keyword(&value) => {
+                    style.max_height = parent.max_height;
                 }
                 _ => style.apply_declaration(&name, &value),
             }
