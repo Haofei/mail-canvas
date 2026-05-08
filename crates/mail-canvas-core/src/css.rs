@@ -393,6 +393,10 @@ pub(crate) fn css_declarations(block: &str) -> Vec<(String, String)> {
 }
 
 pub(crate) fn font_face_declarations(css: &str) -> Vec<Vec<(String, String)>> {
+    if find_ascii_case_insensitive_from(css, "@font-face", 0).is_none() {
+        return Vec::new();
+    }
+
     let options = ParserOptions {
         error_recovery: true,
         ..Default::default()
