@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, anyhow, bail};
@@ -118,9 +120,9 @@ pub(crate) struct WasmResourceProvider {
     assets: AssetRegistry,
     base_url: Option<Url>,
     policy: ResourcePolicy,
-    usage: Arc<Mutex<ResourceUsage>>,
-    asset_reports: Arc<Mutex<Vec<AssetReport>>>,
-    image_cache: Arc<Mutex<HashMap<String, ImageData>>>,
+    usage: Rc<RefCell<ResourceUsage>>,
+    asset_reports: Rc<RefCell<Vec<AssetReport>>>,
+    image_cache: Rc<RefCell<HashMap<String, ImageData>>>,
 }
 
 #[derive(Debug, Default)]
@@ -142,9 +144,9 @@ impl ResourceProviderFactory for WasmResourceProviderFactory {
             assets: self.assets.clone(),
             base_url: request.base_url.clone().or(document_base_url),
             policy: request.resource_policy.clone(),
-            usage: Arc::new(Mutex::new(ResourceUsage::default())),
-            asset_reports: Arc::new(Mutex::new(Vec::new())),
-            image_cache: Arc::new(Mutex::new(HashMap::new())),
+            usage: Rc::new(RefCell::new(ResourceUsage::default())),
+            asset_reports: Rc::new(RefCell::new(Vec::new())),
+            image_cache: Rc::new(RefCell::new(HashMap::new())),
         }
     }
 }
@@ -158,13 +160,7 @@ impl ResourceProvider for WasmResourceProvider {
         if let Some(asset) = self.assets.get(src, self.base_url.as_ref()) {
             let cache_key = asset.cache_key().to_owned();
             let source = asset.source();
-            if let Some(image) = self
-                .image_cache
-                .lock()
-                .expect("image cache mutex poisoned")
-                .get(cache_key.as_str())
-                .cloned()
-            {
+            if let Some(image) = self.image_cache.borrow().get(cache_key.as_str()).cloned() {
                 self.record_asset_report(
                     AssetReport::new(AssetKind::Image, AssetStatus::Loaded, asset.request_url)
                         .with_optional_resolved_url(asset.resolved_url)
@@ -182,8 +178,7 @@ impl ResourceProvider for WasmResourceProvider {
                 self.policy.max_decoded_pixels,
             )?;
             self.image_cache
-                .lock()
-                .expect("image cache mutex poisoned")
+                .borrow_mut()
                 .insert(cache_key, image.clone());
             self.record_asset_report(
                 AssetReport::new(AssetKind::Image, AssetStatus::Loaded, asset.request_url)
@@ -262,18 +257,11 @@ impl ResourceProvider for WasmResourceProvider {
     }
 
     fn take_asset_reports(&self) -> Vec<AssetReport> {
-        let mut reports = self
-            .asset_reports
-            .lock()
-            .expect("asset report mutex poisoned");
-        std::mem::take(&mut *reports)
+        std::mem::take(&mut *self.asset_reports.borrow_mut())
     }
 
     fn record_asset_report(&self, report: AssetReport) {
-        let mut reports = self
-            .asset_reports
-            .lock()
-            .expect("asset report mutex poisoned");
+        let mut reports = self.asset_reports.borrow_mut();
         if let Some(existing) = reports.iter_mut().find(|existing| {
             existing.kind == report.kind
                 && existing.request_url == report.request_url
@@ -290,7 +278,7 @@ impl ResourceProvider for WasmResourceProvider {
 
 impl WasmResourceProvider {
     fn record_resource_usage(&self, bytes: usize) -> Result<()> {
-        let mut usage = self.usage.lock().expect("resource usage mutex poisoned");
+        let mut usage = self.usage.borrow_mut();
         usage.count = usage.count.saturating_add(1);
         if usage.count > self.policy.max_resource_count {
             bail!(
@@ -515,9 +503,9 @@ mod tests {
             assets: registry,
             base_url: None,
             policy: ResourcePolicy::default(),
-            usage: Arc::new(Mutex::new(ResourceUsage::default())),
-            asset_reports: Arc::new(Mutex::new(Vec::new())),
-            image_cache: Arc::new(Mutex::new(HashMap::new())),
+            usage: Rc::new(RefCell::new(ResourceUsage::default())),
+            asset_reports: Rc::new(RefCell::new(Vec::new())),
+            image_cache: Rc::new(RefCell::new(HashMap::new())),
         };
 
         let first = provider
@@ -528,6 +516,6 @@ mod tests {
             .expect("second image");
 
         assert!(Arc::ptr_eq(&first.rgba, &second.rgba));
-        assert_eq!(provider.usage.lock().expect("resource usage").count, 1);
+        assert_eq!(provider.usage.borrow().count, 1);
     }
 }
