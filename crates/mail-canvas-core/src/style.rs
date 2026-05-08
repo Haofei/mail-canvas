@@ -103,7 +103,9 @@ impl TextRunStyle {
         }
 
         let font_size = (self.font_size * scale).max(1.0);
-        let line_height = (resolved_line_height_from_run_db(db, self) * scale).max(1.0);
+        let parent_line_height = resolved_line_height_from_db(db, parent_style);
+        let line_height =
+            (resolved_line_height_from_run_db(db, self).max(parent_line_height) * scale).max(1.0);
         attrs.metrics(Metrics::new(font_size, line_height))
     }
 
@@ -128,6 +130,7 @@ pub(crate) struct Style {
     pub(crate) height_auto: bool,
     pub(crate) min_height: Option<Length>,
     pub(crate) max_height: Option<Length>,
+    pub(crate) overflow_hidden: bool,
     pub(crate) margin: Edges,
     pub(crate) margin_left_auto: bool,
     pub(crate) margin_right_auto: bool,
@@ -205,6 +208,7 @@ impl Style {
             height_auto: false,
             min_height: None,
             max_height: None,
+            overflow_hidden: false,
             margin: Edges::ZERO,
             margin_left_auto: false,
             margin_right_auto: false,
@@ -282,6 +286,7 @@ impl Style {
             height_auto: false,
             min_height: None,
             max_height: None,
+            overflow_hidden: false,
             margin: Edges::ZERO,
             margin_left_auto: false,
             margin_right_auto: false,
@@ -538,6 +543,11 @@ impl Style {
             }
             "min-height" => self.min_height = parse_length(value),
             "max-height" => self.max_height = parse_length(value),
+            "overflow" | "overflow-x" | "overflow-y" => {
+                let value = value.trim();
+                self.overflow_hidden =
+                    value.eq_ignore_ascii_case("hidden") || value.eq_ignore_ascii_case("clip");
+            }
             "margin" => {
                 if let Some((edges, left_auto, right_auto)) =
                     parse_margin_edges(value, self.font_size)
@@ -917,6 +927,20 @@ impl Style {
         }
         if let Some(max_height) = self.max_height.and_then(|height| height.resolve(basis)) {
             height = Some(height.unwrap_or(max_height).min(max_height));
+        }
+        height
+    }
+
+    pub(crate) fn constrain_outer_height(&self, height: f32, basis: f32) -> f32 {
+        let mut height = height;
+        if let Some(explicit_height) = self.height.and_then(|height| height.resolve(basis)) {
+            height = height.max(explicit_height);
+        }
+        if let Some(min_height) = self.min_height.and_then(|height| height.resolve(basis)) {
+            height = height.max(min_height);
+        }
+        if let Some(max_height) = self.max_height.and_then(|height| height.resolve(basis)) {
+            height = height.min(max_height);
         }
         height
     }

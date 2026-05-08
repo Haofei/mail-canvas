@@ -1321,6 +1321,39 @@ fn paragraph_with_single_br_uses_one_line_height() {
 }
 
 #[test]
+fn inline_zero_line_height_span_does_not_collapse_parent_line_box() {
+    let layout = layout_for_test(
+        r#"<div style="font-size:15px;line-height:24px">A<br>B<sup style="font-size:75%;line-height:0">2</sup>C<br>D</div>"#,
+        300,
+    );
+    let text = find_text_layout(&layout).expect("text layout");
+
+    assert!(
+        (text.rect.height - 72.0).abs() < 0.1,
+        "three parent line boxes should remain 24px each, got {}",
+        text.rect.height
+    );
+}
+
+#[test]
+fn max_height_zero_with_overflow_hidden_collapses_block_children() {
+    let layout = layout_for_test(
+        r#"<div style="max-height:0;overflow:hidden"><p style="margin:0;font-size:16px;line-height:24px">Hidden</p></div><p style="margin:0;font-size:16px;line-height:24px">Visible</p>"#,
+        300,
+    );
+
+    let visible = find_layout(&layout, |child| {
+        child.debug.tag == "p" && child.debug.text == "Visible"
+    })
+    .expect("visible");
+    assert!(
+        (visible.rect.y - 0.0).abs() < 0.1,
+        "hidden overflow block should not advance layout, visible y: {}",
+        visible.rect.y
+    );
+}
+
+#[test]
 fn preserves_spaces_after_br_with_leading_source_space() {
     let text = format!("Thanks,{HARD_BREAK} [Sender Name] and the [Product Name] team");
     assert_eq!(
@@ -3116,6 +3149,32 @@ fn debug_snapshot_is_opt_in() {
     let debug = image.debug.expect("debug snapshot");
     assert!(debug.layout.is_some());
     assert!(!debug.text_rects.is_empty());
+}
+
+#[test]
+fn linked_stylesheet_rules_participate_in_inline_css() {
+    let css = "data:text/css,.hidden%7Bdisplay%3Anone%20!important%7D";
+    let html = format!(
+        r#"<html><head><link rel="stylesheet" href="{css}"></head><body><div class="hidden">Hidden</div><div>Visible</div></body></html>"#
+    );
+    let mut request = RenderRequest::defaults_for_html(html, 320, 240, 1.0);
+    request.debug = RenderDebugOptions::layout_dump();
+    let mut renderer = MailCanvasRenderer::new(320, 240, 1.0).unwrap();
+    let image = renderer.render_png(request).unwrap();
+    let debug = image.debug.expect("debug snapshot");
+
+    assert!(
+        !debug
+            .text_rects
+            .iter()
+            .any(|rect| rect.text.contains("Hidden"))
+    );
+    assert!(
+        debug
+            .text_rects
+            .iter()
+            .any(|rect| rect.text.contains("Visible"))
+    );
 }
 
 #[test]

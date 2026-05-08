@@ -1,10 +1,14 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context as _, Result, anyhow, bail};
 use cosmic_text::{FontSystem, SwashCache};
 use kuchiki::traits::TendrilSink as _;
 use tiny_skia::{Color, Pixmap};
+use url::Url;
 
-use crate::api::{RenderDiagnostics, RenderRequest};
-use crate::css::{inline_css_from_stripped_html, strip_hidden_conditional_comments};
+use crate::api::{AssetKind, AssetReport, AssetStatus, RenderDiagnostics, RenderRequest};
+use crate::css::{
+    inline_css_from_stripped_html, linked_stylesheet_media_matches,
+    strip_hidden_conditional_comments,
+};
 use crate::debug::RenderDebugSnapshot;
 use crate::dom::{document_base_url, ensure_dom_node_limit};
 use crate::fonts::{font_database_families, load_web_fonts_from_html};
@@ -33,6 +37,99 @@ struct RenderedPixmap {
     warnings: Vec<RenderWarning>,
     assets: Vec<crate::AssetReport>,
     debug: Option<RenderDebugSnapshot>,
+}
+
+fn expand_linked_stylesheets_for_inline_css<R: ResourceProvider>(
+    html: &str,
+    document_base: Option<&Url>,
+    resources: &R,
+    viewport_width: u32,
+    viewport_height: u32,
+) -> Result<String> {
+    let document = kuchiki::parse_html().one(html.to_string());
+    let Ok(links) = document.select("link") else {
+        return Ok(html.to_string());
+    };
+
+    let mut stylesheet_links = Vec::new();
+    for link in links {
+        let attrs = link.attributes.borrow();
+        let rel = attrs.get("rel").unwrap_or_default();
+        let is_stylesheet = rel
+            .split_ascii_whitespace()
+            .any(|token| token.eq_ignore_ascii_case("stylesheet"));
+        let is_alternate = rel
+            .split_ascii_whitespace()
+            .any(|token| token.eq_ignore_ascii_case("alternate"));
+        if !is_stylesheet || is_alternate {
+            continue;
+        }
+        if !linked_stylesheet_media_matches(attrs.get("media"), viewport_width, viewport_height) {
+            continue;
+        }
+        let Some(href) = attrs
+            .get("href")
+            .map(str::trim)
+            .filter(|href| !href.is_empty())
+        else {
+            continue;
+        };
+        stylesheet_links.push((link.as_node().clone(), resolve_url(href, document_base)));
+    }
+
+    if stylesheet_links.is_empty() {
+        return Ok(html.to_string());
+    }
+
+    for (node, url) in stylesheet_links {
+        match load_linked_stylesheet(resources, &url) {
+            Ok(css) => {
+                let style_doc = kuchiki::parse_html()
+                    .one(format!("<style>{}</style>", escape_style_text(&css)));
+                if let Ok(mut styles) = style_doc.select("style") {
+                    if let Some(style) = styles.next() {
+                        let style_node = style.as_node().clone();
+                        style_node.detach();
+                        node.insert_after(style_node);
+                    }
+                }
+            }
+            Err(error) => {
+                resources.record_asset_report(
+                    AssetReport::new(AssetKind::Stylesheet, AssetStatus::Failed, url.clone())
+                        .with_initiator("stylesheet")
+                        .with_detail(format!("stylesheet is not UTF-8: {error}")),
+                );
+            }
+        }
+        node.detach();
+    }
+
+    let mut bytes = Vec::new();
+    document
+        .serialize(&mut bytes)
+        .context("failed to serialize document after loading stylesheets")?;
+    String::from_utf8(bytes).context("serialized document is not UTF-8")
+}
+
+fn load_linked_stylesheet<R: ResourceProvider>(resources: &R, url: &str) -> Result<String> {
+    let bytes = resources.load_bytes(url, AssetKind::Stylesheet, "stylesheet")?;
+    std::str::from_utf8(&bytes)
+        .map(str::to_owned)
+        .context("stylesheet is not UTF-8")
+}
+
+fn resolve_url(url: &str, base: Option<&Url>) -> String {
+    if Url::parse(url).is_ok() {
+        return url.to_string();
+    }
+    base.and_then(|base| base.join(url).ok())
+        .map_or_else(|| url.to_string(), |url| url.to_string())
+}
+
+fn escape_style_text(css: &str) -> String {
+    css.replace("</style", "<\\/style")
+        .replace("</STYLE", "<\\/STYLE")
 }
 
 impl RendererCore {
@@ -117,6 +214,13 @@ impl RendererCore {
         );
 
         let available_font_families = font_database_families(self.font_system.db());
+        let render_html = expand_linked_stylesheets_for_inline_css(
+            &render_html,
+            document_base.as_ref(),
+            &resources,
+            request.width,
+            request.viewport_height,
+        )?;
         let html =
             inline_css_from_stripped_html(&render_html, request.width, request.viewport_height)?;
         let document = kuchiki::parse_html().one(html);

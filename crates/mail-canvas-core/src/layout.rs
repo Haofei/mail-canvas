@@ -810,10 +810,15 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         let inner_y = rect_y + style.border.top + style.padding.top;
         let mut content =
             self.layout_children(node, &style, inner_x, inner_y, inner_width, depth, &[])?;
-        let explicit_height = style.resolve_height(0.0).unwrap_or(0.0);
-        let rect_height = (content.advance + style.padding.vertical() + style.border.vertical())
-            .max(explicit_height)
-            .max(1.0);
+        let rect_height = style
+            .constrain_outer_height(
+                content.advance + style.padding.vertical() + style.border.vertical(),
+                0.0,
+            )
+            .max(0.0);
+        if style.overflow_hidden && rect_height <= 0.5 {
+            content.children.clear();
+        }
         self.append_absolute_children(
             node,
             &style,
@@ -876,7 +881,6 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             depth,
             inherited_floats,
         )?;
-        let min_height = style.resolve_height(0.0).unwrap_or(0.0);
         let collapsed_trailing_margin = if block_allows_trailing_margin_collapse(&style) {
             content.trailing_collapsible_margin.min(content.advance)
         } else {
@@ -889,9 +893,15 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             content.in_flow_advance
         };
         let content_box_height = (height_advance - collapsed_trailing_margin).max(0.0);
-        let rect_height = (content_box_height + style.padding.vertical() + style.border.vertical())
-            .max(min_height)
+        let rect_height = style
+            .constrain_outer_height(
+                content_box_height + style.padding.vertical() + style.border.vertical(),
+                0.0,
+            )
             .max(0.0);
+        if style.overflow_hidden && rect_height <= 0.5 {
+            content.children.clear();
+        }
         self.append_absolute_children(
             node,
             &style,

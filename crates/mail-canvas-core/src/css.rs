@@ -38,6 +38,34 @@ pub(crate) fn inline_css_from_stripped_html(
         .context("failed to inline CSS")
 }
 
+pub(crate) fn linked_stylesheet_media_matches(
+    media: Option<&str>,
+    viewport_width: u32,
+    viewport_height: u32,
+) -> bool {
+    let Some(media) = media.map(str::trim).filter(|media| !media.is_empty()) else {
+        return true;
+    };
+    let media_css = format!("@media {media} {{a{{color:red}}}}");
+    let options = ParserOptions {
+        error_recovery: true,
+        ..Default::default()
+    };
+    let Ok(stylesheet) = StyleSheet::parse(&media_css, options) else {
+        return true;
+    };
+    let Some(CssRule::Media(media_rule)) = stylesheet.rules.0.first() else {
+        return true;
+    };
+    media_list_matches(
+        &media_rule.query,
+        CssViewport {
+            width: viewport_width as f32,
+            height: viewport_height as f32,
+        },
+    )
+}
+
 fn sanitize_html_for_css_inliner(html: &str) -> String {
     let html = strip_mso_declaration_attributes(html);
     sanitize_style_attributes(&html)
