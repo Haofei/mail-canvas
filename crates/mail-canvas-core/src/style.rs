@@ -1987,7 +1987,8 @@ pub(crate) fn parse_box_shadow(
 
     let mut shadows = Vec::new();
     for shadow in split_css_top_level_list(value, ',') {
-        let mut lengths = Vec::new();
+        let mut lengths = [0.0_f32; 4];
+        let mut length_count = 0usize;
         let mut color = None;
         let mut inset = false;
         for token in css_top_level_whitespace_tokens(shadow) {
@@ -2000,17 +2001,20 @@ pub(crate) fn parse_box_shadow(
                 continue;
             }
             if let Some(length) = parse_css_length(token, font_size, true) {
-                lengths.push(length);
+                if length_count < lengths.len() {
+                    lengths[length_count] = length;
+                }
+                length_count += 1;
             }
         }
-        if lengths.len() < 2 {
+        if length_count < 2 {
             continue;
         }
         shadows.push(BoxShadow {
             offset_x: lengths[0],
             offset_y: lengths[1],
-            blur_radius: lengths.get(2).copied().unwrap_or(0.0).max(0.0),
-            spread: lengths.get(3).copied().unwrap_or(0.0),
+            blur_radius: if length_count > 2 { lengths[2] } else { 0.0 }.max(0.0),
+            spread: if length_count > 3 { lengths[3] } else { 0.0 },
             color: color.unwrap_or(default_color),
             inset,
         });
@@ -2031,7 +2035,8 @@ pub(crate) fn parse_text_shadow(
 
     let mut shadows = Vec::new();
     for shadow in split_css_top_level_list(value, ',') {
-        let mut lengths = Vec::new();
+        let mut lengths = [0.0_f32; 3];
+        let mut length_count = 0usize;
         let mut color = None;
         for token in css_top_level_whitespace_tokens(shadow) {
             if let Some(parsed_color) = parse_color(token) {
@@ -2039,16 +2044,19 @@ pub(crate) fn parse_text_shadow(
                 continue;
             }
             if let Some(length) = parse_css_length(token, font_size, true) {
-                lengths.push(length);
+                if length_count < lengths.len() {
+                    lengths[length_count] = length;
+                }
+                length_count += 1;
             }
         }
-        if lengths.len() < 2 {
+        if length_count < 2 {
             continue;
         }
         shadows.push(BoxShadow {
             offset_x: lengths[0],
             offset_y: lengths[1],
-            blur_radius: lengths.get(2).copied().unwrap_or(0.0).max(0.0),
+            blur_radius: if length_count > 2 { lengths[2] } else { 0.0 }.max(0.0),
             spread: 0.0,
             color: color.unwrap_or(default_color),
             inset: false,
