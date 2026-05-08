@@ -7,6 +7,7 @@
 /.cache/
 /runs/
 corpus/reallygoodemails/
+corpus/reallygoodemails-download-report.json
 /.idea/
 /.vscode/
 .DS_Store
