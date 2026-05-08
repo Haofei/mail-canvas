@@ -1100,6 +1100,11 @@ fn parses_alpha_color_serializations() {
         parse_color("rgb(0 0 0 / 80%)"),
         Some(Rgba::with_alpha(0, 0, 0, 204))
     );
+    assert_eq!(parse_color("RGB(0, 128, 0)"), Some(Rgba::rgb(0, 128, 0)));
+    assert_eq!(
+        parse_color("TRANSPARENT"),
+        Some(Rgba::with_alpha(0, 0, 0, 0))
+    );
 
     let mut style = Style::initial();
     for (name, value) in css_declarations("background: rgba(0,0,0,.8)") {

@@ -1930,7 +1930,7 @@ pub(crate) fn parse_radius(value: &str) -> Option<f32> {
 }
 
 pub(crate) fn parse_color(value: &str) -> Option<Rgba> {
-    let value = value.trim().to_ascii_lowercase();
+    let value = value.trim();
     if value.is_empty() {
         return None;
     }
@@ -1939,15 +1939,16 @@ pub(crate) fn parse_color(value: &str) -> Option<Rgba> {
             return Some(color);
         }
     }
-    if value.starts_with("rgb(") || value.starts_with("rgba(") {
-        return parse_rgb_function(&value);
+    if starts_ascii_case_insensitive(value, "rgb(") || starts_ascii_case_insensitive(value, "rgba(")
+    {
+        return parse_rgb_function(value);
     }
     for token in value.split_whitespace() {
         if let Some(color) = parse_color_token(token) {
             return Some(color);
         }
     }
-    parse_color_token(&value)
+    parse_color_token(value)
 }
 
 pub(crate) fn parse_html_color_attribute(value: &str) -> Option<Rgba> {
@@ -2287,16 +2288,29 @@ pub(crate) fn parse_color_token(value: &str) -> Option<Rgba> {
     if let Some(hex) = token.strip_prefix('#') {
         return parse_hex_color(hex);
     }
-    match token {
-        "black" => Some(Rgba::BLACK),
-        "white" => Some(Rgba::WHITE),
-        "red" => Some(Rgba::rgb(255, 0, 0)),
-        "green" => Some(Rgba::rgb(0, 128, 0)),
-        "blue" => Some(Rgba::rgb(0, 0, 255)),
-        "gray" | "grey" => Some(Rgba::rgb(128, 128, 128)),
-        "transparent" => Some(Rgba::with_alpha(0, 0, 0, 0)),
-        _ => None,
+    if token.eq_ignore_ascii_case("black") {
+        Some(Rgba::BLACK)
+    } else if token.eq_ignore_ascii_case("white") {
+        Some(Rgba::WHITE)
+    } else if token.eq_ignore_ascii_case("red") {
+        Some(Rgba::rgb(255, 0, 0))
+    } else if token.eq_ignore_ascii_case("green") {
+        Some(Rgba::rgb(0, 128, 0))
+    } else if token.eq_ignore_ascii_case("blue") {
+        Some(Rgba::rgb(0, 0, 255))
+    } else if token.eq_ignore_ascii_case("gray") || token.eq_ignore_ascii_case("grey") {
+        Some(Rgba::rgb(128, 128, 128))
+    } else if token.eq_ignore_ascii_case("transparent") {
+        Some(Rgba::with_alpha(0, 0, 0, 0))
+    } else {
+        None
     }
+}
+
+fn starts_ascii_case_insensitive(value: &str, prefix: &str) -> bool {
+    value
+        .get(..prefix.len())
+        .is_some_and(|start| start.eq_ignore_ascii_case(prefix))
 }
 
 pub(crate) fn parse_hex_color(hex: &str) -> Option<Rgba> {
