@@ -1591,6 +1591,47 @@ fn colspan_spacer_does_not_freeze_auto_table_columns() {
 }
 
 #[test]
+fn aligned_auto_tables_shrink_to_fixed_intrinsic_content() {
+    let layout = layout_for_test(
+        r#"<table width="600" cellpadding="0" cellspacing="0">
+            <tr><td width="600">
+              <table align="right" cellpadding="0" cellspacing="0">
+                <tr><td width="30"></td><td><img width="137" height="290"></td><td width="45"></td></tr>
+              </table>
+              <table align="left" width="380" cellpadding="0" cellspacing="0">
+                <tr><td>Desktop text column</td></tr>
+              </table>
+            </td></tr>
+          </table>"#,
+        800,
+    );
+    let floated_tables = collect_layouts(&layout, &|child| {
+        matches!(child.kind, LayoutKind::Table) && child.style.float_side != FloatSide::None
+    });
+
+    let right = floated_tables
+        .iter()
+        .find(|table| table.style.float_side == FloatSide::Right)
+        .expect("right floated table");
+    let left = floated_tables
+        .iter()
+        .find(|table| table.style.float_side == FloatSide::Left)
+        .expect("left floated table");
+
+    assert!(
+        right.rect.width < 260.0,
+        "auto aligned image table should shrink to intrinsic width, got {}",
+        right.rect.width
+    );
+    assert!((left.rect.width - 380.0).abs() < 0.1);
+    assert!(
+        (left.rect.y - right.rect.y).abs() < 0.1,
+        "left and right aligned tables should share a row"
+    );
+    assert!(left.rect.x < right.rect.x);
+}
+
+#[test]
 fn single_cell_spacer_row_does_not_freeze_later_multicolumn_content() {
     let layout = layout_for_test(
         r#"<table width="360" cellpadding="0" cellspacing="0">
@@ -1614,6 +1655,34 @@ fn single_cell_spacer_row_does_not_freeze_later_multicolumn_content() {
         cells[0].rect.width
     );
     assert!(cells[1].rect.width < 20.0);
+}
+
+#[test]
+fn spacer_cell_does_not_freeze_later_content_in_same_column() {
+    let layout = layout_for_test(
+        r#"<table width="510" cellpadding="0" cellspacing="0">
+            <tr>
+              <td width="180">&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td style="font-size:18px;line-height:27px">
+                Searching for new ways to boost your brand and re-engage your customers?
+              </td>
+            </tr>
+          </table>"#,
+        800,
+    );
+    let table =
+        find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+    let content_cell = &table.children[1].children[1];
+
+    assert!(
+        content_cell.rect.width > 250.0,
+        "later content should expand a column seeded by a spacer, got {}",
+        content_cell.rect.width
+    );
 }
 
 #[test]

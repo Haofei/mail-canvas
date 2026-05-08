@@ -354,11 +354,28 @@ fn expand_active_media_rules_in_style_blocks(html: &str, viewport: CssViewport) 
 
 fn expand_active_media_rules(css: &str, viewport: CssViewport) -> String {
     if let Some(expanded) = expand_active_media_rules_with_lightningcss(css, viewport) {
-        return expanded;
+        return normalize_email_selectors_for_inliner(&expanded);
     }
 
     let mut out = strip_media_rules_fallback(css);
     append_active_media_css_fallback(css, viewport.width as u32, &mut out);
+    normalize_email_selectors_for_inliner(&out)
+}
+
+fn normalize_email_selectors_for_inliner(css: &str) -> String {
+    let mut out = String::with_capacity(css.len());
+    let mut offset = 0usize;
+    while let Some(start) = find_ascii_case_insensitive_from(css, "[class]", offset) {
+        let after = start + "[class]".len();
+        if css[after..].starts_with('.') {
+            out.push_str(&css[offset..start]);
+            offset = after;
+        } else {
+            out.push_str(&css[offset..after]);
+            offset = after;
+        }
+    }
+    out.push_str(&css[offset..]);
     out
 }
 
@@ -1332,6 +1349,22 @@ mod tests {
         assert!(portrait.contains("padding: 8px"));
         assert!(landscape.contains("padding: 4px"));
         assert!(!landscape.contains("padding: 8px"));
+    }
+
+    #[test]
+    fn normalizes_class_attribute_selector_hack_for_css_inliner() {
+        let html = r#"
+            <html><head><style>
+              [class].cta { padding: 8px !important; }
+            </style></head>
+            <body>
+              <div class="cta" style="padding:4px">CTA</div>
+            </body></html>
+        "#;
+
+        let inlined = inline_css(html, 800, 1200).unwrap();
+
+        assert!(inlined.contains("padding: 8px"), "{inlined}");
     }
 
     #[test]

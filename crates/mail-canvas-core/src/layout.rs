@@ -1031,8 +1031,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 )
             }
         } else {
-            self.preferred_table_outer_width(&grid, &style, max_table_width, spacing)?
-                .min(max_table_width)
+            self.preferred_auto_table_outer_width(&grid, &style, max_table_width, spacing)?
         };
         let table_width = style
             .constrain_outer_width(table_width, containing_width)
@@ -1759,6 +1758,30 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         )
     }
 
+    fn preferred_auto_table_outer_width(
+        &mut self,
+        grid: &TableGrid,
+        table_style: &Style,
+        max_outer_width: f32,
+        spacing: f32,
+    ) -> Result<f32> {
+        if table_style.float_side != FloatSide::None {
+            let intrinsic = self.fixed_replaced_table_min_outer_width(
+                grid,
+                table_style,
+                max_outer_width,
+                spacing,
+            )?;
+            if intrinsic > 1.0 {
+                return Ok(intrinsic.min(max_outer_width).max(1.0));
+            }
+        }
+
+        Ok(self
+            .preferred_table_outer_width(grid, table_style, max_outer_width, spacing)?
+            .min(max_outer_width))
+    }
+
     fn resolve_table_column_widths(
         &mut self,
         grid: &TableGrid,
@@ -1842,7 +1865,6 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 let spacer_cell = table_cell_is_spacer(&cell.node);
                 let uses_intrinsic_fixed_width =
                     style.width.as_ref().is_some_and(length_is_intrinsic_fixed)
-                        || (spacer_cell && cell.colspan == 1 && !single_cell_spacer_row)
                         || style.wrap == TextWrap::None
                         || cell_contains_only_intrinsic_fixed_replaced_content(&cell.node, &style);
                 if uses_intrinsic_fixed_width {
@@ -2274,13 +2296,12 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                         .max(declared)
                     }
                 } else {
-                    self.preferred_table_outer_width(
+                    self.preferred_auto_table_outer_width(
                         &grid,
                         &child_style,
                         containing_width,
                         spacing,
                     )?
-                    .min(containing_width)
                 }
             } else {
                 child_style
