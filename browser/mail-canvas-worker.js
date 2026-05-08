@@ -50,6 +50,17 @@ self.addEventListener("message", async (event) => {
       return;
     }
 
+    if (message.type === "registerFonts") {
+      if (!renderer) {
+        throw new Error("worker not initialized");
+      }
+      for (const font of message.fonts ?? []) {
+        renderer.register_font(new Uint8Array(font.bytes));
+      }
+      self.postMessage({ requestId, ok: true });
+      return;
+    }
+
     if (message.type === "clear") {
       if (renderer) {
         renderer.clear_assets();

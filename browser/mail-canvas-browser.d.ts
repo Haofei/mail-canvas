@@ -5,6 +5,7 @@ export type MailCanvasAssetLimits = {
 };
 
 export type MailCanvasFontInput =
+  | URL
   | string
   | {
       url?: string;
@@ -15,6 +16,7 @@ export type CreateMailCanvasRendererOptions = {
   workerUrl: string | URL;
   baseUrl?: string | URL;
   fonts?: MailCanvasFontInput[];
+  defaultEmojiFont?: MailCanvasFontInput | false;
   limits?: MailCanvasAssetLimits;
 };
 

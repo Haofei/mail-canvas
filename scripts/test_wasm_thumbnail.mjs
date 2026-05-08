@@ -26,6 +26,7 @@ async function main() {
   );
   assert.equal(report.wrapperChecks.destroyRejects, true);
   assert.equal(report.wrapperChecks.limitRejects, true);
+  assert.equal(report.wrapperChecks.defaultEmojiLoads, true);
   console.log(JSON.stringify(report, null, 2));
 }
 

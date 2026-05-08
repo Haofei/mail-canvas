@@ -4,6 +4,9 @@ const DEFAULT_LIMITS = Object.freeze({
   maxAssetCount: 128,
 });
 
+const DEFAULT_EMOJI_FONT_URL = new URL("../fixtures/fonts/NotoColorEmoji.ttf", import.meta.url);
+const EMOJI_CODEPOINT_PATTERN = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}]/u;
+const NUMERIC_ENTITY_PATTERN = /&#(?:x([0-9a-fA-F]+)|([0-9]+));/g;
 const assetPattern =
   /url\(\s*(['"]?)([^'")]+)\1\s*\)|@import\s+(?:url\(\s*)?(['"]?)([^'")\s]+)\3\s*\)?/gi;
 const TEXT_DECODER = new TextDecoder();
@@ -32,6 +35,10 @@ export async function createMailCanvasRenderer(options = {}) {
   return new MailCanvasBrowserRenderer(client, {
     baseUrl: options.baseUrl,
     limits: { ...DEFAULT_LIMITS, ...(options.limits ?? {}) },
+    defaultEmojiFont:
+      options.defaultEmojiFont === false
+        ? null
+        : (options.defaultEmojiFont ?? DEFAULT_EMOJI_FONT_URL),
   });
 }
 
@@ -40,6 +47,9 @@ export class MailCanvasBrowserRenderer {
     this.client = client;
     this.defaultBaseUrl = options.baseUrl;
     this.limits = options.limits;
+    this.defaultEmojiFont = options.defaultEmojiFont;
+    this.defaultEmojiFontRegistered = false;
+    this.defaultEmojiFontPromise = null;
     this.assetCache = new Map();
     this.destroyed = false;
   }
@@ -52,6 +62,7 @@ export class MailCanvasBrowserRenderer {
     const scale = positiveNumber(options.scale ?? 1, "scale");
     const baseUrl = resolveBaseUrl(options.baseUrl ?? this.defaultBaseUrl);
     const started = performance.now();
+    await this.#ensureDefaultEmojiFont(html, baseUrl);
     const prepared = await this.#inlineStylesheetLinks(html, baseUrl);
     const assets = await this.#fetchAssetGraph(prepared.assetUrls, baseUrl, prepared.assets);
     const fetchedAt = performance.now();
@@ -193,6 +204,36 @@ export class MailCanvasBrowserRenderer {
       throw new Error("renderer has been destroyed");
     }
   }
+
+  async #ensureDefaultEmojiFont(html, baseUrl) {
+    if (
+      this.defaultEmojiFontRegistered ||
+      !this.defaultEmojiFont ||
+      !htmlNeedsEmoji(html)
+    ) {
+      return;
+    }
+    if (!this.defaultEmojiFontPromise) {
+      this.defaultEmojiFontPromise = (async () => {
+        const fontAssets = await fetchFontAssets([this.defaultEmojiFont], baseUrl);
+        const fontPayload = fontAssets.map((asset) => ({
+          url: asset.url,
+          bytes: transferableBytes(asset.bytes),
+        }));
+        await this.client.call(
+          {
+            type: "registerFonts",
+            fonts: fontPayload,
+          },
+          fontPayload.map((asset) => asset.bytes),
+        );
+        this.defaultEmojiFontRegistered = true;
+      })().finally(() => {
+        this.defaultEmojiFontPromise = null;
+      });
+    }
+    await this.defaultEmojiFontPromise;
+  }
 }
 
 class WorkerClient {
@@ -311,7 +352,8 @@ async function fetchFontAssets(fonts, baseUrl) {
       });
       continue;
     }
-    const url = absoluteUrl(typeof font === "string" ? font : font.url, resolvedBase);
+    const rawUrl = typeof font === "string" || font instanceof URL ? font : font.url;
+    const url = absoluteUrl(rawUrl, resolvedBase);
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`failed to fetch font ${url}: ${response.status} ${response.statusText}`);
@@ -360,6 +402,33 @@ function positiveNumber(value, label) {
     throw new Error(`${label} must be a finite positive number`);
   }
   return parsed;
+}
+
+function htmlNeedsEmoji(html) {
+  if (EMOJI_CODEPOINT_PATTERN.test(html)) {
+    return true;
+  }
+  NUMERIC_ENTITY_PATTERN.lastIndex = 0;
+  let match;
+  while ((match = NUMERIC_ENTITY_PATTERN.exec(html)) !== null) {
+    const radix = match[1] ? 16 : 10;
+    const raw = match[1] || match[2];
+    const codepoint = Number.parseInt(raw, radix);
+    if (Number.isFinite(codepoint) && isEmojiScalar(codepoint)) {
+      NUMERIC_ENTITY_PATTERN.lastIndex = 0;
+      return true;
+    }
+  }
+  NUMERIC_ENTITY_PATTERN.lastIndex = 0;
+  return false;
+}
+
+function isEmojiScalar(codepoint) {
+  return (
+    (codepoint >= 0x1f000 && codepoint <= 0x1faff) ||
+    (codepoint >= 0x2600 && codepoint <= 0x27bf) ||
+    (codepoint >= 0x2300 && codepoint <= 0x23ff)
+  );
 }
 
 function asUint8Array(bytes) {

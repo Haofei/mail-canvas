@@ -41,13 +41,21 @@ async function runInBrowser(baseUrl) {
         const heroBlob = await fetch(hero).then((response) => response.blob());
         const heroBlobUrl = URL.createObjectURL(heroBlob);
         const workerUrl = new URL("/browser/mail-canvas-worker.js", window.location.href);
+        const originalFetch = window.fetch.bind(window);
+        let emojiFontFetches = 0;
+        window.fetch = (input, init) => {
+          const url = typeof input === "string" ? input : String(input?.url || input);
+          if (url.includes("NotoColorEmoji.ttf")) {
+            emojiFontFetches += 1;
+          }
+          return originalFetch(input, init);
+        };
         const renderer = await createMailCanvasRenderer({
           baseUrl: window.location.href,
           workerUrl,
           fonts: [
             "./assets/NotoSans-Regular.ttf",
             "./assets/NotoSans-Bold.ttf",
-            "/fixtures/fonts/NotoColorEmoji.ttf",
           ],
           limits: {
             maxAssetBytes: 10 * 1024 * 1024,
@@ -131,9 +139,11 @@ async function runInBrowser(baseUrl) {
             wrapperChecks: {
               destroyRejects,
               limitRejects,
+              defaultEmojiLoads: emojiFontFetches === 1,
             },
           };
         } finally {
+          window.fetch = originalFetch;
           URL.revokeObjectURL(heroBlobUrl);
           renderer.destroy();
         }

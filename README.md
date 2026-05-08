@@ -206,7 +206,6 @@ const renderer = await createMailCanvasRenderer({
   fonts: [
     "./assets/NotoSans-Regular.ttf",
     "./assets/NotoSans-Bold.ttf",
-    "./assets/NotoColorEmoji.ttf",
   ],
   limits: {
     maxAssetBytes: 10 * 1024 * 1024,
@@ -222,6 +221,11 @@ const result = await renderer.renderThumbnail({
 
 renderer.destroy();
 ```
+
+The wrapper lazily loads the bundled Noto Color Emoji fallback when the input
+HTML contains emoji. Pass `defaultEmojiFont: false` to disable it, or
+`defaultEmojiFont: "./fonts/NotoColorEmoji.ttf"` to use an application-hosted
+copy.
 
 ### HTTP Service and Docker
 
@@ -526,7 +530,6 @@ const renderer = await createMailCanvasRenderer({
   fonts: [
     "./assets/NotoSans-Regular.ttf",
     "./assets/NotoSans-Bold.ttf",
-    "./assets/NotoColorEmoji.ttf",
   ],
   limits: { maxAssetBytes: 10 * 1024 * 1024, maxTotalAssetBytes: 64 * 1024 * 1024, maxAssetCount: 128 },
 });

@@ -25,7 +25,7 @@ export function thumbnailHtml(hero) {
   <tr><td style="padding:34px 60px">
     <div style="font-size:14px;letter-spacing:2px;text-transform:uppercase;color:#4577b9">WASM benchmark</div>
     <div style="font-size:42px;line-height:48px;font-weight:700;margin-top:14px">Browser worker thumbnail render</div>
-    <p style="font-size:18px;line-height:28px;color:#536176;margin:18px 0 0">This fixed 800 by 1200 case exercises the public browser wrapper, font registration, diagnostics parsing, and WASM rendering path.</p>
+    <p style="font-size:18px;line-height:28px;color:#536176;margin:18px 0 0">This fixed 800 by 1200 case exercises the public browser wrapper, font registration, diagnostics parsing, emoji fallback 🚀, and WASM rendering path.</p>
   </td></tr>
   <tr><td style="padding:10px 60px 34px">
     <table width="680" cellpadding="0" cellspacing="0" role="presentation">
