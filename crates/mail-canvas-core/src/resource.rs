@@ -68,9 +68,15 @@ pub trait ResourceProviderFactory {
 #[derive(Debug, Clone)]
 pub(crate) struct TestResourceProvider {
     policy: crate::ResourcePolicy,
-    total_bytes: std::sync::Arc<std::sync::Mutex<usize>>,
-    resource_count: std::sync::Arc<std::sync::Mutex<usize>>,
+    usage: std::sync::Arc<std::sync::Mutex<TestResourceUsage>>,
     asset_reports: std::sync::Arc<std::sync::Mutex<Vec<AssetReport>>>,
+}
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct TestResourceUsage {
+    total_bytes: usize,
+    count: usize,
 }
 
 #[cfg(test)]
@@ -78,8 +84,7 @@ impl TestResourceProvider {
     pub(crate) fn from_request(request: &crate::RenderRequest) -> Self {
         Self {
             policy: request.resource_policy.clone(),
-            total_bytes: std::sync::Arc::new(std::sync::Mutex::new(0)),
-            resource_count: std::sync::Arc::new(std::sync::Mutex::new(0)),
+            usage: std::sync::Arc::new(std::sync::Mutex::new(TestResourceUsage::default())),
             asset_reports: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
@@ -235,28 +240,21 @@ impl ResourceProvider for TestResourceProvider {
 #[cfg(test)]
 impl TestResourceProvider {
     fn record_resource_usage(&self, bytes: usize) -> Result<()> {
-        let mut count = self
-            .resource_count
-            .lock()
-            .expect("resource count mutex poisoned");
-        *count = count.saturating_add(1);
-        if *count > self.policy.max_resource_count {
+        let mut usage = self.usage.lock().expect("resource usage mutex poisoned");
+        usage.count = usage.count.saturating_add(1);
+        if usage.count > self.policy.max_resource_count {
             bail!(
                 "resource count exceeds max-resource-count: {} > {}",
-                *count,
+                usage.count,
                 self.policy.max_resource_count
             );
         }
 
-        let mut total = self
-            .total_bytes
-            .lock()
-            .expect("resource bytes mutex poisoned");
-        *total = total.saturating_add(bytes);
-        if *total > self.policy.max_total_resource_bytes {
+        usage.total_bytes = usage.total_bytes.saturating_add(bytes);
+        if usage.total_bytes > self.policy.max_total_resource_bytes {
             bail!(
                 "resource bytes exceed max-total-resource-bytes: {} > {}",
-                *total,
+                usage.total_bytes,
                 self.policy.max_total_resource_bytes
             );
         }

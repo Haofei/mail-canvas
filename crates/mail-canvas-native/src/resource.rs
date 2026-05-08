@@ -26,12 +26,17 @@ const BLINK_RESOURCE_USER_AGENT: &str = concat!(
 pub struct ResourcePolicy {
     pub(crate) base_url: Option<Url>,
     pub(crate) policy: mail_canvas_core::ResourcePolicy,
-    pub(crate) total_bytes: Arc<Mutex<usize>>,
-    pub(crate) resource_count: Arc<Mutex<usize>>,
+    pub(crate) usage: Arc<Mutex<ResourceUsage>>,
     pub(crate) asset_reports: Arc<Mutex<Vec<AssetReport>>>,
     image_cache: Arc<Mutex<HashMap<String, ImageData>>>,
     byte_cache: Arc<Mutex<HashMap<String, Arc<[u8]>>>>,
     agent: ureq::Agent,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct ResourceUsage {
+    pub(crate) total_bytes: usize,
+    pub(crate) count: usize,
 }
 
 impl ResourcePolicy {
@@ -40,8 +45,7 @@ impl ResourcePolicy {
         Self {
             base_url: request.base_url.clone().or(document_base_url),
             policy: request.resource_policy.clone(),
-            total_bytes: Arc::new(Mutex::new(0)),
-            resource_count: Arc::new(Mutex::new(0)),
+            usage: Arc::new(Mutex::new(ResourceUsage::default())),
             asset_reports: Arc::new(Mutex::new(Vec::new())),
             image_cache: Arc::new(Mutex::new(HashMap::new())),
             byte_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -81,28 +85,21 @@ impl ResourcePolicy {
     }
 
     fn record_resource_usage(&self, bytes: usize) -> Result<()> {
-        let mut count = self
-            .resource_count
-            .lock()
-            .expect("resource count mutex poisoned");
-        *count = count.saturating_add(1);
-        if *count > self.policy.max_resource_count {
+        let mut usage = self.usage.lock().expect("resource usage mutex poisoned");
+        usage.count = usage.count.saturating_add(1);
+        if usage.count > self.policy.max_resource_count {
             bail!(
                 "resource count exceeds max-resource-count: {} > {}",
-                *count,
+                usage.count,
                 self.policy.max_resource_count
             );
         }
 
-        let mut total = self
-            .total_bytes
-            .lock()
-            .expect("resource bytes mutex poisoned");
-        *total = total.saturating_add(bytes);
-        if *total > self.policy.max_total_resource_bytes {
+        usage.total_bytes = usage.total_bytes.saturating_add(bytes);
+        if usage.total_bytes > self.policy.max_total_resource_bytes {
             bail!(
                 "resource bytes exceed max-total-resource-bytes: {} > {}",
-                *total,
+                usage.total_bytes,
                 self.policy.max_total_resource_bytes
             );
         }
@@ -693,8 +690,7 @@ mod tests {
         ResourcePolicy {
             base_url: None,
             policy,
-            total_bytes: Arc::new(Mutex::new(0)),
-            resource_count: Arc::new(Mutex::new(0)),
+            usage: Arc::new(Mutex::new(ResourceUsage::default())),
             asset_reports: Arc::new(Mutex::new(Vec::new())),
             image_cache: Arc::new(Mutex::new(HashMap::new())),
             byte_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -750,10 +746,7 @@ mod tests {
         let second = load_image("pixel.png", &policy, "img").expect("second load");
 
         assert!(Arc::ptr_eq(&first.rgba, &second.rgba));
-        assert_eq!(
-            *policy.resource_count.lock().expect("resource count mutex"),
-            1
-        );
+        assert_eq!(policy.usage.lock().expect("resource usage mutex").count, 1);
 
         let _ = fs::remove_file(image_path);
         let _ = fs::remove_dir(dir);
@@ -779,14 +772,9 @@ mod tests {
 
         assert_eq!(first, second);
         assert!(Arc::ptr_eq(&first, &second));
-        assert_eq!(
-            *policy.resource_count.lock().expect("resource count mutex"),
-            1
-        );
-        assert_eq!(
-            *policy.total_bytes.lock().expect("resource bytes mutex"),
-            first.len()
-        );
+        let usage = policy.usage.lock().expect("resource usage mutex");
+        assert_eq!(usage.count, 1);
+        assert_eq!(usage.total_bytes, first.len());
 
         let _ = fs::remove_file(css_path);
         let _ = fs::remove_dir(dir);

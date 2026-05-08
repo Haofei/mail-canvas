@@ -364,9 +364,14 @@ struct WasmResourceProvider {
     assets: AssetRegistry,
     base_url: Option<Url>,
     policy: ResourcePolicy,
-    total_bytes: Arc<Mutex<usize>>,
-    resource_count: Arc<Mutex<usize>>,
+    usage: Arc<Mutex<ResourceUsage>>,
     asset_reports: Arc<Mutex<Vec<AssetReport>>>,
+}
+
+#[derive(Debug, Default)]
+struct ResourceUsage {
+    total_bytes: usize,
+    count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -382,8 +387,7 @@ impl ResourceProviderFactory for WasmResourceProviderFactory {
             assets: self.assets.clone(),
             base_url: request.base_url.clone().or(document_base_url),
             policy: request.resource_policy.clone(),
-            total_bytes: Arc::new(Mutex::new(0)),
-            resource_count: Arc::new(Mutex::new(0)),
+            usage: Arc::new(Mutex::new(ResourceUsage::default())),
             asset_reports: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -509,28 +513,21 @@ impl ResourceProvider for WasmResourceProvider {
 
 impl WasmResourceProvider {
     fn record_resource_usage(&self, bytes: usize) -> Result<()> {
-        let mut count = self
-            .resource_count
-            .lock()
-            .expect("resource count mutex poisoned");
-        *count = count.saturating_add(1);
-        if *count > self.policy.max_resource_count {
+        let mut usage = self.usage.lock().expect("resource usage mutex poisoned");
+        usage.count = usage.count.saturating_add(1);
+        if usage.count > self.policy.max_resource_count {
             bail!(
                 "resource count exceeds max-resource-count: {} > {}",
-                *count,
+                usage.count,
                 self.policy.max_resource_count
             );
         }
 
-        let mut total = self
-            .total_bytes
-            .lock()
-            .expect("resource bytes mutex poisoned");
-        *total = total.saturating_add(bytes);
-        if *total > self.policy.max_total_resource_bytes {
+        usage.total_bytes = usage.total_bytes.saturating_add(bytes);
+        if usage.total_bytes > self.policy.max_total_resource_bytes {
             bail!(
                 "resource bytes exceed max-total-resource-bytes: {} > {}",
-                *total,
+                usage.total_bytes,
                 self.policy.max_total_resource_bytes
             );
         }
