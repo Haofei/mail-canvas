@@ -30,12 +30,16 @@ async function runInBrowser(baseUrl) {
           return false;
         }
 
-        const [{ createMailCanvasRenderer }, { createHeroDataUrl, thumbnailHtml }] =
-          await Promise.all([
-            import("/browser/mail-canvas-browser.js"),
-            import("/scripts/wasm_thumbnail_fixture.mjs"),
-          ]);
+        const [
+          { createMailCanvasRenderer },
+          { createHeroDataUrl, repeatedImageHtml, thumbnailHtml },
+        ] = await Promise.all([
+          import("/browser/mail-canvas-browser.js"),
+          import("/scripts/wasm_thumbnail_fixture.mjs"),
+        ]);
         const hero = await createHeroDataUrl(1400, 650);
+        const heroBlob = await fetch(hero).then((response) => response.blob());
+        const heroBlobUrl = URL.createObjectURL(heroBlob);
         const workerUrl = new URL("/browser/mail-canvas-worker.js", window.location.href);
         const renderer = await createMailCanvasRenderer({
           baseUrl: window.location.href,
@@ -61,6 +65,15 @@ async function runInBrowser(baseUrl) {
             baseUrl: window.location.href,
           });
           const totalMs = performance.now() - started;
+          const repeatedStarted = performance.now();
+          const repeatedResult = await renderer.renderThumbnail({
+            html: repeatedImageHtml(heroBlobUrl),
+            width: 800,
+            height: 1200,
+            scale: 1,
+            baseUrl: window.location.href,
+          });
+          const repeatedTotalMs = performance.now() - repeatedStarted;
           renderer.destroy();
           const destroyRejects = await rejectsWithMessage(
             () =>
@@ -108,12 +121,20 @@ async function runInBrowser(baseUrl) {
               assets: result.diagnostics.assets.length,
               registeredAssets: result.assets.registered,
             },
+            repeatedImage: {
+              pngBytes: repeatedResult.png.byteLength,
+              totalMs: repeatedTotalMs,
+              fetchMs: repeatedResult.timing.fetchMs,
+              renderMs: repeatedResult.timing.renderMs,
+              diagnosticsAssets: repeatedResult.diagnostics.assets.length,
+            },
             wrapperChecks: {
               destroyRejects,
               limitRejects,
             },
           };
         } finally {
+          URL.revokeObjectURL(heroBlobUrl);
           renderer.destroy();
         }
       });

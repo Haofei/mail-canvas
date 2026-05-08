@@ -41,3 +41,19 @@ export function thumbnailHtml(hero) {
 </body>
 </html>`;
 }
+
+export function repeatedImageHtml(src, repeatCount = 8) {
+  const rows = Array.from(
+    { length: repeatCount },
+    (_, index) =>
+      `<tr><td><img src="${src}" width="800" style="display:block;width:800px;height:150px;object-fit:cover" alt="hero ${index}"></td></tr>`,
+  ).join("\n");
+  return `<!doctype html>
+<html>
+<body style="margin:0;background:#fff">
+<table width="800" cellpadding="0" cellspacing="0" role="presentation" style="width:800px;background:#fff">
+${rows}
+</table>
+</body>
+</html>`;
+}

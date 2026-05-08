@@ -18,6 +18,12 @@ async function main() {
   assert.ok(report.timing.renderMs > 0, "expected positive renderMs");
   assert.equal(report.diagnostics.warnings, 0);
   assert.ok(report.diagnostics.assets >= 1, "expected at least one asset diagnostic");
+  assert.ok(report.repeatedImage.pngBytes > 100_000, "expected repeated-image PNG output");
+  assert.ok(report.repeatedImage.renderMs > 0, "expected positive repeated-image renderMs");
+  assert.ok(
+    report.repeatedImage.diagnosticsAssets >= 1,
+    "expected repeated-image asset diagnostics",
+  );
   assert.equal(report.wrapperChecks.destroyRejects, true);
   assert.equal(report.wrapperChecks.limitRejects, true);
   console.log(JSON.stringify(report, null, 2));
