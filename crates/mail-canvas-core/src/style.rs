@@ -2056,10 +2056,10 @@ pub(crate) fn background_shorthand_removes_image(value: &str) -> bool {
 }
 
 pub(crate) fn parse_background_repeat(value: &str) -> Option<BackgroundRepeat> {
-    let lower = strip_important(value).to_ascii_lowercase();
-    if lower.contains("no-repeat") {
+    let value = strip_important(value);
+    if find_ascii_case_insensitive_from(value, "no-repeat", 0).is_some() {
         Some(BackgroundRepeat::NoRepeat)
-    } else if lower.contains("repeat") {
+    } else if find_ascii_case_insensitive_from(value, "repeat", 0).is_some() {
         Some(BackgroundRepeat::Repeat)
     } else {
         None
@@ -2067,12 +2067,16 @@ pub(crate) fn parse_background_repeat(value: &str) -> Option<BackgroundRepeat> {
 }
 
 pub(crate) fn parse_background_size(value: &str) -> Option<BackgroundSize> {
-    let value = strip_important(value).trim().to_ascii_lowercase();
-    match value.split_whitespace().next()? {
-        "auto" => Some(BackgroundSize::Auto),
-        "cover" => Some(BackgroundSize::Cover),
-        "contain" => Some(BackgroundSize::Contain),
-        _ => None,
+    let value = strip_important(value).trim();
+    let token = value.split_whitespace().next()?;
+    if token.eq_ignore_ascii_case("auto") {
+        Some(BackgroundSize::Auto)
+    } else if token.eq_ignore_ascii_case("cover") {
+        Some(BackgroundSize::Cover)
+    } else if token.eq_ignore_ascii_case("contain") {
+        Some(BackgroundSize::Contain)
+    } else {
+        None
     }
 }
 
@@ -2084,13 +2088,19 @@ pub(crate) fn parse_background_size_from_shorthand(value: &str) -> BackgroundSiz
 }
 
 pub(crate) fn parse_object_fit(value: &str) -> Option<ObjectFit> {
-    match strip_important(value).trim().to_ascii_lowercase().as_str() {
-        "fill" => Some(ObjectFit::Fill),
-        "contain" => Some(ObjectFit::Contain),
-        "cover" => Some(ObjectFit::Cover),
-        "none" => Some(ObjectFit::None),
-        "scale-down" => Some(ObjectFit::ScaleDown),
-        _ => None,
+    let value = strip_important(value).trim();
+    if value.eq_ignore_ascii_case("fill") {
+        Some(ObjectFit::Fill)
+    } else if value.eq_ignore_ascii_case("contain") {
+        Some(ObjectFit::Contain)
+    } else if value.eq_ignore_ascii_case("cover") {
+        Some(ObjectFit::Cover)
+    } else if value.eq_ignore_ascii_case("none") {
+        Some(ObjectFit::None)
+    } else if value.eq_ignore_ascii_case("scale-down") {
+        Some(ObjectFit::ScaleDown)
+    } else {
+        None
     }
 }
 

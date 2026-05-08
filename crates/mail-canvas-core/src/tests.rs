@@ -1035,7 +1035,7 @@ fn parses_background_cover_position_and_repeat() {
     let mut style = Style::initial();
     style.apply_declaration(
         "background",
-        "#2a3448 url(hero.jpg) no-repeat center top / cover",
+        "#2a3448 url(hero.jpg) NO-REPEAT center top / COVER",
     );
 
     assert_eq!(style.background, Some(Rgba::rgb(0x2a, 0x34, 0x48)));
@@ -1065,7 +1065,7 @@ fn parses_background_cover_position_and_repeat() {
 #[test]
 fn parses_object_fit_cover() {
     let mut style = Style::initial();
-    style.apply_declaration("object-fit", "cover");
+    style.apply_declaration("object-fit", "COVER");
     style.apply_declaration("object-position", "left top");
 
     assert_eq!(style.object_fit, ObjectFit::Cover);
