@@ -2085,15 +2085,21 @@ pub(crate) fn split_css_top_level_list(value: &str, separator: char) -> Vec<&str
             '(' => paren_depth += 1,
             ')' => paren_depth = paren_depth.saturating_sub(1),
             _ if ch == separator && paren_depth == 0 => {
-                parts.push(value[start..index].trim());
+                let part = value[start..index].trim();
+                if !part.is_empty() {
+                    parts.push(part);
+                }
                 start = index + ch.len_utf8();
             }
             _ => {}
         }
     }
 
-    parts.push(value[start..].trim());
-    parts.into_iter().filter(|part| !part.is_empty()).collect()
+    let part = value[start..].trim();
+    if !part.is_empty() {
+        parts.push(part);
+    }
+    parts
 }
 
 pub(crate) fn css_top_level_whitespace_tokens(value: &str) -> Vec<&str> {
