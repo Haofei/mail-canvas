@@ -43,9 +43,9 @@ const SAMPLE_HTML = `<!doctype html>
                 </td>
               </tr>
             </table>
-            <p class="body-copy">Edit the HTML on the left, keep linked CSS or images relative to the base URL, then render again. Diagnostics below show which assets were loaded or blocked.</p>
+            <p class="body-copy">Edit the HTML on the left, keep linked CSS or images relative to the base URL, then render again. Diagnostics below show which assets were loaded or blocked. Emoji fallback is bundled for preview QA 🚀</p>
             <a class="button" href="https://github.com/Haofei/mail-canvas">Open Repository</a>
-            <div class="footer">Bundled demo fonts: Noto Sans Regular + Bold.</div>
+            <div class="footer">Bundled demo fonts: Noto Sans Regular + Bold + Noto Color Emoji.</div>
           </td>
         </tr>
       </table>
@@ -56,6 +56,7 @@ const SAMPLE_HTML = `<!doctype html>
 const DEMO_FONTS = [
   "./assets/NotoSans-Regular.ttf",
   "./assets/NotoSans-Bold.ttf",
+  "/fixtures/fonts/NotoColorEmoji.ttf",
 ];
 
 let renderer;

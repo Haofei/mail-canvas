@@ -9,6 +9,7 @@ const repoRoot = path.resolve(__dirname, "..");
 const demoRoot = path.join(repoRoot, "demo");
 const browserRoot = path.join(repoRoot, "browser");
 const scriptsRoot = path.join(repoRoot, "scripts");
+const fixturesRoot = path.join(repoRoot, "fixtures");
 const host = "127.0.0.1";
 const startPort = Number(process.env.PORT || 4173);
 
@@ -39,6 +40,13 @@ function safePath(urlPath) {
   if (decoded.startsWith("/scripts/")) {
     const resolved = path.resolve(scriptsRoot, `.${decoded.slice("/scripts".length)}`);
     if (!resolved.startsWith(scriptsRoot)) {
+      return null;
+    }
+    return resolved;
+  }
+  if (decoded.startsWith("/fixtures/")) {
+    const resolved = path.resolve(fixturesRoot, `.${decoded.slice("/fixtures".length)}`);
+    if (!resolved.startsWith(fixturesRoot)) {
       return null;
     }
     return resolved;

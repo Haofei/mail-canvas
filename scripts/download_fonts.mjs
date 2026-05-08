@@ -112,6 +112,15 @@ const EXISTING_FIXTURES = [
     aliases: ['Apple Symbols', 'Segoe UI Symbol'],
     license: 'OFL-1.1',
   },
+  {
+    family: 'Noto Color Emoji',
+    weight: 400,
+    style: 'normal',
+    path: 'NotoColorEmoji.ttf',
+    aliases: ['Apple Color Emoji', 'Segoe UI Emoji'],
+    license: 'OFL-1.1',
+    source: 'googlefonts/noto-emoji default color emoji font',
+  },
 ];
 
 async function main() {

@@ -14,6 +14,7 @@ const FIXTURE_FONT_FILES = [
   path.join(ROOT_DIR, 'fixtures', 'fonts', 'NotoSans-Regular.ttf'),
   path.join(ROOT_DIR, 'fixtures', 'fonts', 'NotoSans-Bold.ttf'),
   path.join(ROOT_DIR, 'fixtures', 'fonts', 'NotoSansMath-Regular.ttf'),
+  path.join(ROOT_DIR, 'fixtures', 'fonts', 'NotoColorEmoji.ttf'),
 ];
 
 function parseArgs(argv) {

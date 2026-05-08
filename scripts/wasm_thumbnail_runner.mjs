@@ -40,7 +40,11 @@ async function runInBrowser(baseUrl) {
         const renderer = await createMailCanvasRenderer({
           baseUrl: window.location.href,
           workerUrl,
-          fonts: ["./assets/NotoSans-Regular.ttf", "./assets/NotoSans-Bold.ttf"],
+          fonts: [
+            "./assets/NotoSans-Regular.ttf",
+            "./assets/NotoSans-Bold.ttf",
+            "/fixtures/fonts/NotoColorEmoji.ttf",
+          ],
           limits: {
             maxAssetBytes: 10 * 1024 * 1024,
             maxTotalAssetBytes: 64 * 1024 * 1024,

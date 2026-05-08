@@ -195,7 +195,11 @@ import { createMailCanvasRenderer } from "./browser/mail-canvas-browser.js";
 
 const renderer = await createMailCanvasRenderer({
   workerUrl: new URL("./browser/mail-canvas-worker.js", import.meta.url),
-  fonts: ["./assets/NotoSans-Regular.ttf", "./assets/NotoSans-Bold.ttf"],
+  fonts: [
+    "./assets/NotoSans-Regular.ttf",
+    "./assets/NotoSans-Bold.ttf",
+    "./assets/NotoColorEmoji.ttf",
+  ],
   limits: {
     maxAssetBytes: 10 * 1024 * 1024,
     maxTotalAssetBytes: 64 * 1024 * 1024,
@@ -317,10 +321,10 @@ npm run fonts:download
 ```
 
 The committed bundle intentionally stays small: email-safe aliases are mapped to
-Arimo/Tinos, Noto covers generic fallback/math symbols, and common Google Fonts
-such as Roboto, Open Sans, Lato, Montserrat, Poppins, Inter, Source Sans 3,
-Merriweather, and Nunito Sans are vendored as latin subsets. Avoid adding
-template-specific font workarounds to the fixture catalog.
+Arimo/Tinos, Noto covers generic fallback/math symbols/default emoji, and common
+Google Fonts such as Roboto, Open Sans, Lato, Montserrat, Poppins, Inter, Source
+Sans 3, Merriweather, and Nunito Sans are vendored as latin subsets. Avoid
+adding template-specific font workarounds to the fixture catalog.
 
 Compare one local HTML file:
 
@@ -502,7 +506,11 @@ import { createMailCanvasRenderer } from "./browser/mail-canvas-browser.js";
 
 const renderer = await createMailCanvasRenderer({
   workerUrl: new URL("./browser/mail-canvas-worker.js", import.meta.url),
-  fonts: ["./assets/NotoSans-Regular.ttf", "./assets/NotoSans-Bold.ttf"],
+  fonts: [
+    "./assets/NotoSans-Regular.ttf",
+    "./assets/NotoSans-Bold.ttf",
+    "./assets/NotoColorEmoji.ttf",
+  ],
   limits: { maxAssetBytes: 10 * 1024 * 1024, maxTotalAssetBytes: 64 * 1024 * 1024, maxAssetCount: 128 },
 });
 

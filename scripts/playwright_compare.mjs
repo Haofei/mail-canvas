@@ -24,6 +24,7 @@ const FIXTURE_FONT_FILES = [
   path.join(ROOT_DIR, 'fixtures', 'fonts', 'NotoSans-Regular.ttf'),
   path.join(ROOT_DIR, 'fixtures', 'fonts', 'NotoSans-Bold.ttf'),
   path.join(ROOT_DIR, 'fixtures', 'fonts', 'NotoSansMath-Regular.ttf'),
+  path.join(ROOT_DIR, 'fixtures', 'fonts', 'NotoColorEmoji.ttf'),
 ];
 
 function parseArgs(argv) {
@@ -1260,6 +1261,13 @@ function fallbackFixtureFontFaces() {
       style: 'normal',
       path: 'NotoSansMath-Regular.ttf',
       aliases: ['Apple Symbols', 'Segoe UI Symbol'],
+    },
+    {
+      family: 'Noto Color Emoji',
+      weight: 400,
+      style: 'normal',
+      path: 'NotoColorEmoji.ttf',
+      aliases: ['Apple Color Emoji', 'Segoe UI Emoji'],
     },
   ];
 }
