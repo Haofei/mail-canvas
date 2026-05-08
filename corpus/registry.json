@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-08T02:15:05.127Z",
+  "updatedAt": "2026-05-08T02:30:39.020Z",
   "templates": [
     {
       "name": "beefree-confirm-and-you-are-official",
@@ -1627,6 +1627,28 @@
       "lastRun": null
     },
     {
+      "name": "reallygoodemails-love-pride-and-family-get-real-in-our-latest-curated-collections",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/love-pride-and-family-get-real-in-our-latest-curated-collections",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-love-pride-and-family-get-real-in-our-latest-curated-collections.html",
+      "htmlMd5": "edf55ab9d3e15cb87036d3cdb6732a49",
+      "htmlBytes": 122567,
+      "assetCount": 35,
+      "assetBytes": 6135652,
+      "assetManifestMd5": "ebd63ad938bf808610b6be00db58443b",
+      "contentMd5": "8554fff2033c020f16ebba0585f7185b",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T02:30:38.862Z",
+        "commit": "7a36d3b",
+        "workDir": "runs/pipeline-one-new-cleanup2-20260507-193016",
+        "priority": "P1",
+        "reason": "media rectangle mismatch",
+        "diffPercent": "20.32%",
+        "heightDelta": -25
+      }
+    },
+    {
       "name": "reallygoodemails-love-your-sleep-together",
       "provider": "reallygoodemails",
       "url": "https://reallygoodemails.com/emails/love-your-sleep-together",
@@ -1781,6 +1803,28 @@
       "lastRun": null
     },
     {
+      "name": "reallygoodemails-the-latest-updates-to-help-you-wrap-up-peak-season-strong",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/the-latest-updates-to-help-you-wrap-up-peak-season-strong",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-the-latest-updates-to-help-you-wrap-up-peak-season-strong.html",
+      "htmlMd5": "f3493dbe4a8a9d09c60bede9c30971f5",
+      "htmlBytes": 114735,
+      "assetCount": 16,
+      "assetBytes": 768999,
+      "assetManifestMd5": "6d5e9aee77e1c8a7ac103be65dd2b9c1",
+      "contentMd5": "83cbc14feb0c6d4e0f7b28d5525bdadd",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T02:25:41.638Z",
+        "commit": "7a36d3b",
+        "workDir": "runs/pipeline-one-new-20260507-192522",
+        "priority": "P1",
+        "reason": "media rectangle mismatch",
+        "diffPercent": "15.43%",
+        "heightDelta": -16
+      }
+    },
+    {
       "name": "reallygoodemails-the-makers-behind-the-magic",
       "provider": "reallygoodemails",
       "url": "https://reallygoodemails.com/emails/the-makers-behind-the-magic",
@@ -1793,6 +1837,28 @@
       "contentMd5": "ddd2ba7474b23a8ca2dec93c35263f9b",
       "retainedInRepo": false,
       "lastRun": null
+    },
+    {
+      "name": "reallygoodemails-the-ultimate-gift-our-latest-stellar-drop",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/the-ultimate-gift-our-latest-stellar-drop",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-the-ultimate-gift-our-latest-stellar-drop.html",
+      "htmlMd5": "f203845324340e574f74e0f98b5e0b51",
+      "htmlBytes": 38816,
+      "assetCount": 59,
+      "assetBytes": 3815164,
+      "assetManifestMd5": "788fe33662c4edd00d368346dae52ef5",
+      "contentMd5": "993e56e336dc6f2d5a4a10c73d1d29a7",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T02:28:15.114Z",
+        "commit": "7a36d3b",
+        "workDir": "runs/pipeline-one-new-cleanup-20260507-192753",
+        "priority": "P3",
+        "reason": "low-risk pixel/raster difference",
+        "diffPercent": "0.96%",
+        "heightDelta": -6
+      }
     },
     {
       "name": "reallygoodemails-touchdown-confirmed-astronaut",

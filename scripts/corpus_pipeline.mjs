@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -44,6 +44,7 @@ function parseArgs(argv) {
     maxTotalResourceBytes: DEFAULT_MAX_TOTAL_RESOURCE_BYTES,
     registryPath: path.join(ROOT_DIR, 'corpus', 'registry.json'),
     updateRegistry: true,
+    keepVendored: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -131,6 +132,9 @@ function parseArgs(argv) {
         break;
       case '--no-registry':
         args.updateRegistry = false;
+        break;
+      case '--keep-vendored':
+        args.keepVendored = true;
         break;
       default:
         throw new Error(`unknown argument: ${arg}`);
@@ -254,6 +258,21 @@ async function main() {
       pipelineJson,
     ]);
   }
+  if (vendoredNames.length > 0 && !args.keepVendored) {
+    await cleanupVendoredTemplates(steps, vendoredNames);
+    if (args.updateRegistry) {
+      await runStep(steps, 'registry-refresh', 'node', [
+        'scripts/corpus_registry.mjs',
+        'refresh',
+        '--registry',
+        args.registryPath,
+      ]);
+    }
+  }
+  await writeJson(pipelineJson, {
+    ...summary,
+    steps,
+  });
 
   console.log(`pipeline: ${pipelineJson}`);
   if (compare) {
@@ -518,6 +537,40 @@ async function writeManifest(args, targets) {
     });
   }
   await writeJson(path.join(args.workDir, 'manifest.json'), { targets: entries });
+}
+
+async function cleanupVendoredTemplates(steps, names) {
+  const startedAt = new Date().toISOString();
+  const catalogPath = path.join(ROOT_DIR, 'corpus', 'catalog.json');
+  const catalog = await readCatalog();
+  const removeNames = new Set(names);
+  const removedEntries = catalog.filter((entry) => removeNames.has(entry.name));
+  if (removedEntries.length === 0) {
+    steps.push({
+      name: 'cleanup-vendored',
+      command: ['internal', 'cleanup-vendored', ...names],
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      exitCode: 0,
+    });
+    return;
+  }
+  const retainedCatalog = catalog.filter((entry) => !removeNames.has(entry.name));
+  await writeJson(catalogPath, retainedCatalog);
+  for (const entry of removedEntries) {
+    if (!entry.sourcePath) continue;
+    const htmlPath = path.resolve(ROOT_DIR, entry.sourcePath);
+    const assetDir = htmlPath.replace(/\.html$/i, '.assets');
+    await rm(htmlPath, { force: true });
+    await rm(assetDir, { recursive: true, force: true });
+  }
+  steps.push({
+    name: 'cleanup-vendored',
+    command: ['internal', 'cleanup-vendored', ...names],
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    exitCode: 0,
+  });
 }
 
 function selectTargets(args, vendoredNames) {

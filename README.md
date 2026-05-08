@@ -293,7 +293,9 @@ The pipeline writes stable artifacts under the run directory:
 
 Committed corpus files are intentionally small. Bulk downloads are tracked by
 `corpus/registry.json` with HTML and asset MD5 fingerprints, but only promoted
-golden templates stay in git.
+golden templates stay in git. The pipeline removes newly vendored research
+HTML/assets after recording them; pass `--keep-vendored` only when intentionally
+inspecting or promoting a template.
 - `triage.json` and `triage.md` — prioritized failures grouped as `P0` to
   `P3` by likely fix value.
 - `pipeline.json` — commands, targets, timings, and output paths for the run.

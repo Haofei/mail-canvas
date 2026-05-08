@@ -54,6 +54,11 @@ npm run corpus:pipeline -- \
   --exclude-seen
 ```
 
+By default the pipeline removes newly vendored research HTML/assets from
+`corpus/` after the run and leaves only the registry record. Pass
+`--keep-vendored` when intentionally promoting or inspecting the downloaded
+files before cleanup.
+
 If a research template should become a permanent regression fixture, copy only
 that HTML and its `.assets/` directory into `corpus/`, add a single
 `catalog.json` entry, then refresh `registry.json` and `manifest.json`.
