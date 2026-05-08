@@ -42,7 +42,6 @@ fn build_head_markup(css: Option<&str>, base_url: Option<&Url>, width: u32) -> S
     ));
     head.push_str("#email-render-root { width: 100%; }\n");
     head.push_str("table { border-collapse: separate; border-spacing: 0; }\n");
-    head.push_str("img { display: block; }\n");
     head.push_str("</style>\n");
     if let Some(css) = css {
         head.push_str("<style id=\"email-render-css\">\n");

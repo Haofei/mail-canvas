@@ -249,8 +249,8 @@ fn blockified_table_cells_stack_within_their_row() {
         r#"
         <table width="262" style="border-collapse:collapse">
           <tr>
-            <th style="display:block;padding:0" width="262"><img width="262" height="40" alt=""></th>
-            <th style="display:block;padding:0" width="262"><img width="262" height="80" alt=""></th>
+            <th style="display:block;padding:0" width="262"><img style="display:block" width="262" height="40" alt=""></th>
+            <th style="display:block;padding:0" width="262"><img style="display:block" width="262" height="80" alt=""></th>
           </tr>
         </table>
         "#,
@@ -1050,6 +1050,25 @@ fn float_left_reduces_following_text_line_width() {
 }
 
 #[test]
+fn nested_float_affects_following_sibling_text_in_same_formatting_context() {
+    let layout = layout_for_test(
+        r#"<div style="width:300px;font-size:16px;line-height:20px">
+            <span style="display:block"><a><img style="float:left;width:80px;height:80px;margin:0 20px 20px 0"></a></span>
+            <span style="font-size:20px">Title beside image</span>
+            <div style="line-height:20px">Body text should wrap next to the floated image before it continues below.</div>
+        </div>"#,
+        400,
+    );
+
+    let float = find_layout_with_float(&layout, FloatSide::Left).expect("float");
+    let title = find_text_layout(&layout).expect("title");
+
+    assert!(title.rect.y < float.rect.y + float.rect.height);
+    assert!(title.rect.x >= float.rect.x + float.rect.width - 0.1);
+    assert!(title.rect.width <= 200.1);
+}
+
+#[test]
 fn clear_left_moves_block_below_float() {
     let layout = layout_for_test(
         r#"<div style="width:100px">
@@ -1445,7 +1464,7 @@ fn table_cell_css_padding_overrides_cellpadding_attribute() {
 #[test]
 fn table_cells_inherit_browser_middle_valign_from_rows() {
     let layout = layout_for_test(
-        r#"<table width="100" cellpadding="0"><tr><td height="40"><img width="20" height="10" alt=""></td></tr></table>"#,
+        r#"<table width="100" cellpadding="0"><tr><td height="40"><img style="display:block" width="20" height="10" alt=""></td></tr></table>"#,
         100,
     );
     let cell = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Cell)).expect("cell");
@@ -2215,7 +2234,7 @@ fn legacy_aligned_tables_float_side_by_side() {
 #[test]
 fn block_images_do_not_follow_parent_text_align() {
     let layout = layout_for_test(
-        r#"<div style="text-align:center"><img width="50" height="20" alt=""></div>"#,
+        r#"<div style="text-align:center"><img style="display:block" width="50" height="20" alt=""></div>"#,
         200,
     );
     let image =
@@ -2277,7 +2296,7 @@ fn legacy_align_attribute_centers_block_image_wrappers() {
 #[test]
 fn inline_block_tables_keep_table_cell_row_layout() {
     let layout = layout_for_test(
-        r##"<table class="social-table" style="display:inline-block"><tbody><tr><td><a><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="32" height="32" alt=""></a></td><td><a><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="32" height="32" alt=""></a></td><td><a><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="32" height="32" alt=""></a></td><td><a><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="32" height="32" alt=""></a></td></tr></tbody></table>"##,
+        r##"<table class="social-table" style="display:inline-block"><tbody><tr><td><a><img style="display:block" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="32" height="32" alt=""></a></td><td><a><img style="display:block" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="32" height="32" alt=""></a></td><td><a><img style="display:block" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="32" height="32" alt=""></a></td><td><a><img style="display:block" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7" width="32" height="32" alt=""></a></td></tr></tbody></table>"##,
         200,
     );
     let social_table = find_layout(&layout, |child| {
@@ -2305,7 +2324,7 @@ fn inline_block_tables_keep_table_cell_row_layout() {
 #[test]
 fn inline_anchor_width_does_not_constrain_wrapped_image() {
     let layout = layout_for_test(
-        r#"<div><a style="width:50%"><img style="width:100%" width="640" height="20" alt=""></a></div>"#,
+        r#"<div><a style="width:50%"><img style="display:block;width:100%" width="640" height="20" alt=""></a></div>"#,
         640,
     );
     let image =

@@ -402,6 +402,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     let dx = target_x - flow.node.rect.x;
                     let dy = target_y - flow.node.rect.y;
                     translate_layout(&mut flow.node, dx, dy);
+                    translate_placed_floats(&mut flow.escaped_floats, dx, dy);
                     floats.push(PlacedFloat {
                         side: child_float_side,
                         rect: Rect::new(occupied_x, float_y, occupied_width, occupied_height),
@@ -435,10 +436,13 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                         );
                     }
                     if (cursor_y - flow_start_y).abs() > f32::EPSILON {
-                        translate_layout(&mut flow.node, 0.0, cursor_y - flow_start_y);
+                        let dy = cursor_y - flow_start_y;
+                        translate_layout(&mut flow.node, 0.0, dy);
+                        translate_placed_floats(&mut flow.escaped_floats, 0.0, dy);
                     }
                     if inline_row_width > 0.0 {
                         translate_layout(&mut flow.node, inline_row_width, 0.0);
+                        translate_placed_floats(&mut flow.escaped_floats, inline_row_width, 0.0);
                     }
                     inline_row_width += inline_flow_width;
                     let baseline_descent = if flow.node.style.vertical_align
@@ -462,8 +466,15 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     last_inline_block_fallback = false;
                     continue;
                 }
+                let before_align_x = flow.node.rect.x;
+                let before_align_y = flow.node.rect.y;
                 align_table_child_to_parent_text(&mut flow.node, style, x, width);
                 align_block_child_to_legacy_align_attribute(&mut flow.node, style, x, width);
+                let aligned_dx = flow.node.rect.x - before_align_x;
+                let aligned_dy = flow.node.rect.y - before_align_y;
+                if aligned_dx.abs() > f32::EPSILON || aligned_dy.abs() > f32::EPSILON {
+                    translate_placed_floats(&mut flow.escaped_floats, aligned_dx, aligned_dy);
+                }
                 let margin_overlap = if can_collapse_sibling_margin(child_display) {
                     previous_margin_bottom
                         .map(|previous: f32| previous.min(flow.node.style.margin.top))
@@ -473,7 +484,9 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 };
                 if margin_overlap > 0.0 {
                     translate_layout(&mut flow.node, 0.0, -margin_overlap);
+                    translate_placed_floats(&mut flow.escaped_floats, 0.0, -margin_overlap);
                 }
+                floats.extend(flow.escaped_floats);
                 cursor_y += flow.advance - margin_overlap;
                 previous_margin_bottom =
                     can_collapse_sibling_margin(child_display).then_some(collapsible_margin_bottom);
@@ -526,6 +539,8 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         Ok(LayoutChildren {
             children,
             advance: float_bottom - y,
+            in_flow_advance: cursor_y - y,
+            floats,
             trailing_collapsible_margin: previous_margin_bottom.unwrap_or(0.0),
         })
     }
@@ -756,6 +771,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         Ok(Some(FlowBox {
             advance: style.margin.top + rect_height + collapsible_margin_bottom,
             collapsible_margin_bottom,
+            escaped_floats: Vec::new(),
             node: LayoutBox {
                 kind: LayoutKind::Block,
                 rect: Rect::new(rect_x, rect_y, rect_width, rect_height),
@@ -802,7 +818,13 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         } else {
             0.0
         };
-        let content_box_height = (content.advance - collapsed_trailing_margin).max(0.0);
+        let contains_descendant_floats = block_establishes_float_container(&style);
+        let height_advance = if contains_descendant_floats {
+            content.advance
+        } else {
+            content.in_flow_advance
+        };
+        let content_box_height = (height_advance - collapsed_trailing_margin).max(0.0);
         let rect_height = (content_box_height + style.padding.vertical() + style.border.vertical())
             .max(min_height)
             .max(0.0);
@@ -819,6 +841,11 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         Ok(Some(FlowBox {
             advance: style.margin.top + rect_height + collapsed_bottom_margin,
             collapsible_margin_bottom: collapsed_bottom_margin,
+            escaped_floats: if contains_descendant_floats {
+                Vec::new()
+            } else {
+                content.floats
+            },
             node: LayoutBox {
                 kind: LayoutKind::Block,
                 rect: Rect::new(rect_x, rect_y, outer_width, rect_height),
@@ -981,6 +1008,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         Ok(Some(FlowBox {
             advance: style.margin.top + rect_height + collapsible_margin_bottom,
             collapsible_margin_bottom,
+            escaped_floats: Vec::new(),
             node: LayoutBox {
                 kind: LayoutKind::Block,
                 rect: Rect::new(rect_x, rect_y, outer_width, rect_height),
@@ -1247,6 +1275,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         Ok(Some(FlowBox {
             advance: style.margin.top + table_height + collapsible_margin_bottom,
             collapsible_margin_bottom,
+            escaped_floats: Vec::new(),
             node: LayoutBox {
                 kind: LayoutKind::Table,
                 rect: Rect::new(rect_x, rect_y, table_width, table_height),
@@ -1413,6 +1442,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         Ok(Some(FlowBox {
             advance: style.margin.top + table_height + collapsible_margin_bottom,
             collapsible_margin_bottom,
+            escaped_floats: Vec::new(),
             node: LayoutBox {
                 kind: LayoutKind::Table,
                 rect: Rect::new(rect_x, rect_y, table_width, table_height),
@@ -1596,6 +1626,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         Ok(Some(FlowBox {
             advance: style.margin.top + table_height + collapsible_margin_bottom,
             collapsible_margin_bottom,
+            escaped_floats: Vec::new(),
             node: LayoutBox {
                 kind: LayoutKind::Table,
                 rect: Rect::new(rect_x, rect_y, table_width, table_height),
@@ -2004,6 +2035,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         FlowBox {
             advance: style.margin.top + height + collapsible_margin_bottom,
             collapsible_margin_bottom,
+            escaped_floats: Vec::new(),
             node: LayoutBox {
                 kind: LayoutKind::Image(image),
                 rect: Rect::new(
@@ -2080,6 +2112,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         Ok(Some(FlowBox {
             advance: style.margin.top + rect_height + collapsed_bottom_margin,
             collapsible_margin_bottom: collapsed_bottom_margin,
+            escaped_floats: Vec::new(),
             node: LayoutBox {
                 kind: LayoutKind::Block,
                 rect: Rect::new(rect_x, rect_y, outer_width, rect_height),
@@ -2101,6 +2134,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         FlowBox {
             advance: style.margin.top + height + collapsible_margin_bottom,
             collapsible_margin_bottom,
+            escaped_floats: Vec::new(),
             node: LayoutBox {
                 kind: LayoutKind::Block,
                 rect: Rect::new(x + style.margin.left, y + style.margin.top, width, height),
@@ -2649,6 +2683,18 @@ pub(crate) fn float_intersects_y(float: &PlacedFloat, y: f32) -> bool {
     y >= float.rect.y && y < float.rect.y + float.rect.height
 }
 
+fn translate_placed_floats(floats: &mut [PlacedFloat], dx: f32, dy: f32) {
+    for float in floats {
+        float.rect.x += dx;
+        float.rect.y += dy;
+    }
+}
+
+fn block_establishes_float_container(style: &Style) -> bool {
+    matches!(style.display, Display::Flex | Display::InlineBlock)
+        || style.float_side != FloatSide::None
+}
+
 pub(crate) fn taffy_leaf_style(
     style: &Style,
     measured_width: f32,
@@ -2857,12 +2903,15 @@ struct FlowBox {
     node: LayoutBox,
     advance: f32,
     collapsible_margin_bottom: f32,
+    escaped_floats: Vec<PlacedFloat>,
 }
 
 #[derive(Debug, Default)]
 struct LayoutChildren {
     children: Vec<LayoutBox>,
     advance: f32,
+    in_flow_advance: f32,
+    floats: Vec<PlacedFloat>,
     trailing_collapsible_margin: f32,
 }
 
@@ -3197,7 +3246,8 @@ fn inline_needs_inline_block_container(node: &NodeRef, style: &Style) -> bool {
         }
         let child_style = style_for_node(&child, style);
         if tag == "img" {
-            return matches!(child_style.display, Display::Inline | Display::InlineBlock);
+            return child_style.float_side == FloatSide::None
+                && matches!(child_style.display, Display::Inline | Display::InlineBlock);
         }
 
         match child_style.display {
