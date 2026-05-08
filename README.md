@@ -127,6 +127,14 @@ Run a fast diagnostics check for one template:
 npm run check -- examples/basic.html --warnings-json /tmp/basic.warnings.json
 ```
 
+Run fixed performance probes against MailCanvas and Chromium. Use `--runs` for
+median/min/max timing and RSS summaries when comparing optimizations:
+
+```sh
+npm run benchmark:thumbnail -- --fixture-fonts --runs 3
+npm run benchmark:memory -- --fixture-fonts --runs 3
+```
+
 These tools support `--profile` presets: `generic`, `desktop-800`,
 `mobile-375`, `thumbnail`, `gmail-ish`, `apple-mail-ish`, `outlook-ish`, and
 `images-blocked`. These are practical product profiles, not exact client
@@ -447,6 +455,10 @@ npm run snapshot -- "templates/**/*.html" --baseline snapshots
 
 # 快速诊断检查
 npm run check -- examples/basic.html --warnings-json /tmp/basic.warnings.json
+
+# 固定性能探针；--runs 输出 timing/RSS 的 min/median/max
+npm run benchmark:thumbnail -- --fixture-fonts --runs 3
+npm run benchmark:memory -- --fixture-fonts --runs 3
 ```
 
 支持 `--profile` 预设：`generic`、`desktop-800`、`mobile-375`、`thumbnail`、

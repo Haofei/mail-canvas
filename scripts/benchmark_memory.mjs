@@ -25,6 +25,7 @@ function parseArgs(argv) {
     timeoutMs: 15000,
     out: null,
     fixtureFonts: false,
+    runs: 1,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -51,6 +52,9 @@ function parseArgs(argv) {
       case '--out':
         args.out = path.resolve(next());
         break;
+      case '--runs':
+        args.runs = Number.parseInt(next(), 10);
+        break;
       case '--fixture-fonts':
         args.fixtureFonts = true;
         break;
@@ -66,6 +70,9 @@ async function main() {
   if (!['corpus', 'repeated-image', 'thumbnail-800x1200'].includes(args.caseName)) {
     throw new Error(`unknown --case: ${args.caseName}`);
   }
+  if (!Number.isInteger(args.runs) || args.runs < 1) {
+    throw new Error('--runs must be a positive integer');
+  }
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'mail-canvas-benchmark-'));
   try {
     const source = await loadBenchmarkSource(args, tmpDir);
@@ -79,7 +86,8 @@ async function main() {
     await runOrThrow('cargo', ['build', '--release'], ROOT_DIR);
     const renderer = path.join(ROOT_DIR, 'target', 'release', 'mail-canvas');
 
-    const rust = await measureNativeCommand(
+    const rust = await measureRepeated(
+      measureNativeCommand,
       renderer,
       [
         '--html',
@@ -102,9 +110,11 @@ async function main() {
           : []),
       ],
       ROOT_DIR,
+      args.runs,
     );
 
-    const chromium = await measureCommand(
+    const chromium = await measureRepeated(
+      measureCommand,
       process.execPath,
       [
         path.join(ROOT_DIR, 'scripts', 'playwright_capture.mjs'),
@@ -120,6 +130,7 @@ async function main() {
         baseUrl,
       ],
       ROOT_DIR,
+      args.runs,
     );
 
     const report = {
@@ -129,6 +140,7 @@ async function main() {
       url: source.url,
       width: renderWidth,
       height: source.maxHeight ?? null,
+      runs: args.runs,
       mailCanvas: rust,
       chromium,
       delta: {
@@ -288,6 +300,55 @@ async function runOrThrow(command, args, cwd) {
   if (result.exitCode !== 0) {
     throw new Error(`${command} ${args.join(' ')} failed`);
   }
+}
+
+async function measureRepeated(measure, command, args, cwd, runs) {
+  const samples = [];
+  for (let index = 0; index < runs; index += 1) {
+    const sample = await measure(command, args, cwd);
+    samples.push({
+      ...sample,
+      run: index + 1,
+    });
+    if (sample.exitCode !== 0) {
+      break;
+    }
+  }
+  const successful = samples.filter((sample) => sample.exitCode === 0);
+  const representative = medianByElapsed(successful.length > 0 ? successful : samples);
+  return {
+    ...representative,
+    runs: samples.length,
+    summary: summarizeSamples(successful),
+    samples,
+  };
+}
+
+function medianByElapsed(samples) {
+  if (samples.length === 0) {
+    return null;
+  }
+  const sorted = [...samples].sort((left, right) => left.elapsedMs - right.elapsedMs);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function summarizeSamples(samples) {
+  return {
+    elapsedMs: numericSummary(samples.map((sample) => sample.elapsedMs)),
+    maxRssKb: numericSummary(samples.map((sample) => sample.maxRssKb)),
+  };
+}
+
+function numericSummary(values) {
+  if (values.length === 0) {
+    return { min: null, median: null, max: null };
+  }
+  const sorted = [...values].sort((left, right) => left - right);
+  return {
+    min: sorted[0],
+    median: sorted[Math.floor(sorted.length / 2)],
+    max: sorted[sorted.length - 1],
+  };
 }
 
 function measureCommand(command, args, cwd) {
