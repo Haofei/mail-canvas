@@ -1,17 +1,16 @@
 use std::collections::HashMap;
-use std::fs;
 use std::sync::{Arc, Mutex};
 
-use anyhow::{Context as _, Result, anyhow, bail};
-use data_url::DataUrl;
+use anyhow::{Result, bail};
 use mail_canvas_core::{
     AssetKind, AssetReport, AssetSource, AssetStatus, ImageData, RenderRequest, ResourceProvider,
     ResourceProviderFactory,
 };
 use url::Url;
 
+use crate::bytes::{load_resource_bytes, load_resource_bytes_inner};
 use crate::image::decode_image_bytes;
-use crate::remote::{load_remote_url, resource_agent};
+use crate::remote::resource_agent;
 
 const MAX_ASSET_REPORTS: usize = 512;
 
@@ -22,7 +21,7 @@ pub struct ResourcePolicy {
     pub(crate) usage: Arc<Mutex<ResourceUsage>>,
     pub(crate) asset_reports: Arc<Mutex<Vec<AssetReport>>>,
     image_cache: Arc<Mutex<HashMap<String, ImageData>>>,
-    byte_cache: Arc<Mutex<HashMap<String, Arc<[u8]>>>>,
+    pub(crate) byte_cache: Arc<Mutex<HashMap<String, Arc<[u8]>>>>,
     pub(crate) agent: ureq::Agent,
 }
 
@@ -58,7 +57,7 @@ impl ResourcePolicy {
         self.push_asset_report(report);
     }
 
-    fn push_asset_report(&self, report: AssetReport) {
+    pub(crate) fn push_asset_report(&self, report: AssetReport) {
         let mut reports = self
             .asset_reports
             .lock()
@@ -127,12 +126,6 @@ impl ResourceProviderFactory for NativeResourceProviderFactory {
     fn create(&self, request: &RenderRequest, document_base_url: Option<Url>) -> Self::Provider {
         ResourcePolicy::from_request(request, document_base_url)
     }
-}
-
-struct LoadedResourceBytes {
-    resolved_url: Option<String>,
-    source: AssetSource,
-    bytes: Arc<[u8]>,
 }
 
 pub(crate) fn load_image(
@@ -214,213 +207,7 @@ fn asset_source_for_cache_key(key: &str) -> AssetSource {
     }
 }
 
-pub(crate) fn load_resource_bytes(
-    src: &str,
-    policy: &ResourcePolicy,
-    kind: AssetKind,
-    initiator: &'static str,
-) -> Result<Arc<[u8]>> {
-    let loaded = load_resource_bytes_inner(src, policy, kind, initiator, true)?;
-    Ok(loaded.bytes)
-}
-
-fn load_resource_bytes_inner(
-    src: &str,
-    policy: &ResourcePolicy,
-    kind: AssetKind,
-    initiator: &'static str,
-    record_loaded: bool,
-) -> Result<LoadedResourceBytes> {
-    if src.trim_start().starts_with("data:") {
-        let data_url = match DataUrl::process(src) {
-            Ok(data_url) => data_url,
-            Err(error) => {
-                let error = anyhow!("invalid data URL: {error}");
-                policy.push_asset_report(
-                    asset_report(kind, AssetStatus::Failed, src)
-                        .with_source(AssetSource::DataUrl)
-                        .with_initiator(initiator)
-                        .with_detail(error.to_string()),
-                );
-                return Err(error);
-            }
-        };
-        let (bytes, _) = match data_url
-            .decode_to_vec()
-            .map_err(|error| anyhow!("invalid data URL body: {error:?}"))
-        {
-            Ok(decoded) => decoded,
-            Err(error) => {
-                policy.push_asset_report(
-                    asset_report(kind, AssetStatus::Failed, src)
-                        .with_source(AssetSource::DataUrl)
-                        .with_initiator(initiator)
-                        .with_detail(error.to_string()),
-                );
-                return Err(error);
-            }
-        };
-        if let Err(error) = ensure_resource_size(bytes.len(), policy.policy.max_resource_bytes) {
-            policy.push_asset_report(
-                asset_report(kind, AssetStatus::Failed, src)
-                    .with_source(AssetSource::DataUrl)
-                    .with_initiator(initiator)
-                    .with_bytes(bytes.len())
-                    .with_detail(error.to_string()),
-            );
-            return Err(error);
-        }
-        policy.record_resource_usage(bytes.len())?;
-        let loaded = LoadedResourceBytes {
-            resolved_url: None,
-            source: AssetSource::DataUrl,
-            bytes: Arc::from(bytes),
-        };
-        if record_loaded {
-            policy.push_asset_report(
-                asset_report(kind, AssetStatus::Loaded, src)
-                    .with_source(AssetSource::DataUrl)
-                    .with_initiator(initiator)
-                    .with_bytes(loaded.bytes.len()),
-            );
-        }
-        return Ok(loaded);
-    }
-
-    let url = Url::parse(src)
-        .or_else(|_| {
-            policy
-                .base_url
-                .as_ref()
-                .ok_or(url::ParseError::RelativeUrlWithoutBase)
-                .and_then(|base| base.join(src))
-        })
-        .with_context(|| format!("failed to resolve resource URL {src}"));
-    let url = match url {
-        Ok(url) => url,
-        Err(error) => {
-            policy.push_asset_report(
-                asset_report(kind, AssetStatus::Failed, src)
-                    .with_initiator(initiator)
-                    .with_detail(error.to_string()),
-            );
-            return Err(error);
-        }
-    };
-    let resolved_url = Some(url.as_str().to_owned());
-    let source = asset_source_for_url(&url);
-
-    if kind != AssetKind::Image {
-        if let Some(bytes) = policy
-            .byte_cache
-            .lock()
-            .expect("byte cache mutex poisoned")
-            .get(url.as_str())
-            .cloned()
-        {
-            if record_loaded {
-                policy.push_asset_report(
-                    asset_report(kind, AssetStatus::Loaded, src)
-                        .with_source(source)
-                        .with_initiator(initiator)
-                        .with_bytes(bytes.len())
-                        .with_optional_resolved_url(resolved_url.clone()),
-                );
-            }
-            return Ok(LoadedResourceBytes {
-                resolved_url,
-                source,
-                bytes,
-            });
-        }
-    }
-
-    match url.scheme() {
-        "file" => match load_file_url(&url, policy) {
-            Ok(bytes) => {
-                let bytes = Arc::<[u8]>::from(bytes);
-                cache_resource_bytes(&url, kind, policy, &bytes);
-                if record_loaded {
-                    policy.push_asset_report(
-                        asset_report(kind, AssetStatus::Loaded, src)
-                            .with_source(AssetSource::File)
-                            .with_initiator(initiator)
-                            .with_bytes(bytes.len())
-                            .with_optional_resolved_url(resolved_url.clone()),
-                    );
-                }
-                Ok(LoadedResourceBytes {
-                    resolved_url,
-                    source: AssetSource::File,
-                    bytes,
-                })
-            }
-            Err(error) => {
-                policy.push_asset_report(
-                    asset_report(kind, resource_error_status(&error), src)
-                        .with_source(AssetSource::File)
-                        .with_initiator(initiator)
-                        .with_detail(error.to_string())
-                        .with_optional_resolved_url(resolved_url),
-                );
-                Err(error)
-            }
-        },
-        "https" | "http" => match load_remote_url(&url, policy) {
-            Ok(bytes) => {
-                let bytes = Arc::<[u8]>::from(bytes);
-                cache_resource_bytes(&url, kind, policy, &bytes);
-                if record_loaded {
-                    policy.push_asset_report(
-                        asset_report(kind, AssetStatus::Loaded, src)
-                            .with_source(AssetSource::Remote)
-                            .with_initiator(initiator)
-                            .with_bytes(bytes.len())
-                            .with_optional_resolved_url(resolved_url.clone()),
-                    );
-                }
-                Ok(LoadedResourceBytes {
-                    resolved_url,
-                    source: AssetSource::Remote,
-                    bytes,
-                })
-            }
-            Err(error) => {
-                policy.push_asset_report(
-                    asset_report(kind, resource_error_status(&error), src)
-                        .with_source(AssetSource::Remote)
-                        .with_initiator(initiator)
-                        .with_detail(error.to_string())
-                        .with_optional_resolved_url(resolved_url),
-                );
-                Err(error)
-            }
-        },
-        scheme => {
-            let error = anyhow!("unsupported resource URL scheme: {scheme}");
-            policy.push_asset_report(
-                asset_report(kind, AssetStatus::Failed, src)
-                    .with_initiator(initiator)
-                    .with_detail(error.to_string())
-                    .with_optional_resolved_url(resolved_url),
-            );
-            Err(error)
-        }
-    }
-}
-
-fn cache_resource_bytes(url: &Url, kind: AssetKind, policy: &ResourcePolicy, bytes: &Arc<[u8]>) {
-    if kind == AssetKind::Image {
-        return;
-    }
-    policy
-        .byte_cache
-        .lock()
-        .expect("byte cache mutex poisoned")
-        .insert(url.as_str().to_owned(), Arc::clone(bytes));
-}
-
-fn asset_source_for_url(url: &Url) -> AssetSource {
+pub(crate) fn asset_source_for_url(url: &Url) -> AssetSource {
     if url.scheme() == "file" {
         AssetSource::File
     } else {
@@ -428,11 +215,11 @@ fn asset_source_for_url(url: &Url) -> AssetSource {
     }
 }
 
-fn asset_report(kind: AssetKind, status: AssetStatus, request_url: &str) -> AssetReport {
+pub(crate) fn asset_report(kind: AssetKind, status: AssetStatus, request_url: &str) -> AssetReport {
     AssetReport::new(kind, status, request_url.to_string())
 }
 
-fn resource_error_status(error: &anyhow::Error) -> AssetStatus {
+pub(crate) fn resource_error_status(error: &anyhow::Error) -> AssetStatus {
     let message = error.to_string();
     if message.contains("disabled")
         || message.contains("rejected")
@@ -444,41 +231,9 @@ fn resource_error_status(error: &anyhow::Error) -> AssetStatus {
     }
 }
 
-fn load_file_url(url: &Url, policy: &ResourcePolicy) -> Result<Vec<u8>> {
-    let path = url
-        .to_file_path()
-        .map_err(|()| anyhow!("invalid file URL: {url}"))?;
-    let Some(base) = &policy.base_url else {
-        bail!("file resources require a file base URL");
-    };
-    if base.scheme() != "file" {
-        bail!("file resources require a file base URL");
-    }
-    if let Ok(root) = base.to_file_path() {
-        let root = root.canonicalize().unwrap_or(root);
-        let target = path.canonicalize().unwrap_or(path.clone());
-        if !target.starts_with(&root) {
-            bail!(
-                "file resource is outside the base directory: {}",
-                target.display()
-            );
-        }
-    }
-    let bytes = fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
-    ensure_resource_size(bytes.len(), policy.policy.max_resource_bytes)?;
-    policy.record_resource_usage(bytes.len())?;
-    Ok(bytes)
-}
-
-pub(crate) fn ensure_resource_size(len: usize, max_len: usize) -> Result<()> {
-    if len > max_len {
-        bail!("resource is too large: {len} bytes > {max_len} bytes");
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::time::Duration;
 
     use image::{ColorType, ImageEncoder, codecs::png::PngEncoder};
@@ -571,7 +326,8 @@ mod tests {
         let file_url = Url::from_file_path(&file_path).expect("file url");
         let policy = test_policy();
 
-        let error = load_file_url(&file_url, &policy).expect_err("file base is required");
+        let error =
+            crate::bytes::load_file_url(&file_url, &policy).expect_err("file base is required");
 
         assert!(error.to_string().contains("file base URL"));
         let _ = fs::remove_file(file_path);
@@ -592,7 +348,8 @@ mod tests {
         policy.base_url = Some(Url::from_directory_path(&root).expect("file base url"));
         let outside_url = Url::from_file_path(&outside).expect("outside file url");
 
-        let error = load_file_url(&outside_url, &policy).expect_err("outside should be rejected");
+        let error = crate::bytes::load_file_url(&outside_url, &policy)
+            .expect_err("outside should be rejected");
 
         assert!(error.to_string().contains("outside the base directory"));
         let _ = fs::remove_file(outside);

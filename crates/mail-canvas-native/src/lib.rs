@@ -7,6 +7,7 @@ use mail_canvas_core::{
     EmailRenderer, MailCanvasFontFallback, RenderRequest, RenderedImage, RenderedPdf, RendererCore,
 };
 
+mod bytes;
 mod fonts;
 mod image;
 mod output;

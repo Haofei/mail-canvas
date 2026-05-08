@@ -4,6 +4,7 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, anyhow, bail};
 use url::Url;
 
+use crate::bytes::ensure_resource_size;
 use crate::resource::ResourcePolicy;
 
 const BLINK_RESOURCE_USER_AGENT: &str = concat!(
@@ -66,7 +67,7 @@ fn load_remote_url_once(url: &Url, policy: &ResourcePolicy) -> Result<RemoteFetc
         .limit(policy.policy.max_resource_bytes as u64)
         .read_to_vec()
         .with_context(|| format!("failed to read response body from {url}"))?;
-    super::resource::ensure_resource_size(bytes.len(), policy.policy.max_resource_bytes)?;
+    ensure_resource_size(bytes.len(), policy.policy.max_resource_bytes)?;
     policy.record_resource_usage(bytes.len())?;
     Ok(RemoteFetch::Bytes(bytes))
 }
