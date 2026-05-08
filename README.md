@@ -248,9 +248,10 @@ docker run --rm -p 8787:8787 mail-canvas
   parsing, CSS inlining, layout, text shaping, painting, diagnostics, and
   resource/font/output traits. No filesystem, HTTP, CLI, or system-font
   scanning.
-- `crates/mail-canvas-native/` — native resource loading, filesystem helpers,
-  system font discovery, PNG output, and raster PDF output.
-- `crates/mail-canvas-wasm/` — `wasm-bindgen` wrapper for browser workers.
+- `crates/mail-canvas-native/` — native shell for filesystem/remote resources,
+  image decoding, system font discovery, PNG output, and raster PDF output.
+- `crates/mail-canvas-wasm/` — `wasm-bindgen` wrapper for browser workers, with
+  browser-provided asset registration and diagnostics output.
 - `crates/mail-canvas-cli/` — CLI wrapper around the native renderer.
 - `scripts/` — Chromium comparison, layout dump, template corpus, and
   developer tools.
@@ -560,9 +561,10 @@ docker run --rm -p 8787:8787 mail-canvas
 - `crates/mail-canvas-core/` — 平台无关的渲染引擎：HTML 解析、CSS inline、
   layout、文字排版、绘制、diagnostics，以及 resource/font/output trait。
   不涉及文件系统、HTTP、CLI 或系统字体。
-- `crates/mail-canvas-native/` — native 资源加载、文件系统、系统字体发现、
-  PNG 和 raster PDF 输出。
-- `crates/mail-canvas-wasm/` — `wasm-bindgen` 封装，面向浏览器 worker。
+- `crates/mail-canvas-native/` — native 壳层，负责文件/远程资源、图片解码、
+  系统字体发现、PNG 和 raster PDF 输出。
+- `crates/mail-canvas-wasm/` — `wasm-bindgen` 封装，面向浏览器 worker，负责
+  浏览器侧 asset 注册和 diagnostics 输出。
 - `crates/mail-canvas-cli/` — 基于 native renderer 的 CLI。
 - `scripts/` — Chromium 对比、布局 dump、模板语料和开发工具。
 - `browser/` — 浏览器集成层，含 worker 管理和资源抓取。
