@@ -414,6 +414,11 @@ fn paint_box_shadow(
             if src_alpha == 0 {
                 continue;
             }
+            let css_x = (px as f32 + 0.5) / scale;
+            let css_y = (py as f32 + 0.5) / scale;
+            if point_inside_rounded_rect(css_x, css_y, rect, radius) {
+                continue;
+            }
             let a = ((u16::from(src_alpha) * u16::from(color.a) + 127) / 255) as u8;
             if a == 0 {
                 continue;
@@ -422,6 +427,25 @@ fn paint_box_shadow(
             composite_pixel(&mut data[index..index + 4], color.r, color.g, color.b, a);
         }
     }
+}
+fn point_inside_rounded_rect(x: f32, y: f32, rect: Rect, radius: f32) -> bool {
+    if x < rect.x || y < rect.y || x >= rect.x + rect.width || y >= rect.y + rect.height {
+        return false;
+    }
+    let radius = radius.max(0.0).min(rect.width / 2.0).min(rect.height / 2.0);
+    if radius <= 0.0 {
+        return true;
+    }
+
+    let left = rect.x + radius;
+    let right = rect.x + rect.width - radius;
+    let top = rect.y + radius;
+    let bottom = rect.y + rect.height - radius;
+    let nearest_x = x.clamp(left, right);
+    let nearest_y = y.clamp(top, bottom);
+    let dx = x - nearest_x;
+    let dy = y - nearest_y;
+    dx * dx + dy * dy <= radius * radius
 }
 fn blurred_mask_alpha(mask: &Pixmap, sigma: f32) -> Vec<u8> {
     let width = mask.width() as usize;
@@ -1432,6 +1456,24 @@ mod tests {
         assert_eq!(alpha_at(&pixmap, 59, 0), 0);
         assert!(alpha_at(&pixmap, 30, 1) > 0);
         assert_eq!(alpha_at(&pixmap, 30, 15), 0);
+    }
+
+    #[test]
+    fn outer_box_shadow_does_not_paint_inside_transparent_box() {
+        let mut pixmap = Pixmap::new(80, 80).expect("pixmap");
+        let rect = Rect::new(20.0, 20.0, 30.0, 30.0);
+        let shadow = BoxShadow {
+            offset_x: 0.0,
+            offset_y: 4.0,
+            blur_radius: 6.0,
+            spread: -2.0,
+            color: Rgba::rgb(0, 0, 0),
+            inset: false,
+        };
+        paint_box_shadow(&mut pixmap, 1.0, rect, 0.0, shadow.color, &shadow);
+
+        assert_eq!(alpha_at(&pixmap, 35, 35), 0);
+        assert!(alpha_at(&pixmap, 35, 52) > 0);
     }
 }
 
