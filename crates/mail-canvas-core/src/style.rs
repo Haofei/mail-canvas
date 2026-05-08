@@ -5,7 +5,9 @@ use cosmic_text::{
 use kuchiki::NodeRef;
 
 use crate::ImageData;
-use crate::css::{css_declarations, first_css_url, unquote_css_value};
+use crate::css::{
+    css_declarations, find_ascii_case_insensitive_from, first_css_url, unquote_css_value,
+};
 use crate::fonts::{FontFamilyIndex, WebFontFace};
 use crate::text::{
     normal_line_height_fallback, parse_line_height_declaration, resolved_line_height_from_db,
@@ -2049,7 +2051,8 @@ pub(crate) fn parse_background_image(value: &str) -> Option<String> {
 
 pub(crate) fn background_shorthand_removes_image(value: &str) -> bool {
     let value = strip_important(value).trim();
-    value.eq_ignore_ascii_case("none") || !value.to_ascii_lowercase().contains("url(")
+    value.eq_ignore_ascii_case("none")
+        || find_ascii_case_insensitive_from(value, "url(", 0).is_none()
 }
 
 pub(crate) fn parse_background_repeat(value: &str) -> Option<BackgroundRepeat> {

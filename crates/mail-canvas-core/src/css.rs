@@ -528,8 +528,7 @@ pub(crate) fn css_format_hint(segment: &str) -> Option<String> {
 }
 
 pub(crate) fn first_css_url(value: &str) -> Option<String> {
-    let lower = value.to_ascii_lowercase();
-    let url_start = lower.find("url(")?;
+    let url_start = find_ascii_case_insensitive_from(value, "url(", 0)?;
     css_function_value(value, url_start).map(|(url, _)| url)
 }
 

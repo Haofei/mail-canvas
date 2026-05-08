@@ -786,6 +786,11 @@ fn parses_background_images_from_css_and_html_attributes() {
     let mut style = Style::initial();
     style.apply_declaration("background-image", "url('hero.jpg')");
     assert_eq!(style.background_image_src.as_deref(), Some("hero.jpg"));
+    style.apply_declaration(
+        "background",
+        "#fff URL('hero-2.jpg') center/cover no-repeat",
+    );
+    assert_eq!(style.background_image_src.as_deref(), Some("hero-2.jpg"));
 
     let document = kuchiki::parse_html()
         .one(r#"<table><tr><td background="assets/top.jpg">A</td></tr></table>"#);
