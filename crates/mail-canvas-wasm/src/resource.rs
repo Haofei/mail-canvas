@@ -71,15 +71,19 @@ impl AssetRegistry {
     }
 
     fn get(&self, src: &str, base_url: Option<&Url>) -> Option<RegisteredAsset> {
-        let inner = self.inner.lock().expect("asset registry mutex poisoned");
-        if let Some(bytes) = inner.entries.get(src) {
-            return Some(RegisteredAsset {
-                request_url: src.to_string(),
-                resolved_url: None,
-                bytes: Arc::clone(bytes),
-            });
+        {
+            let inner = self.inner.lock().expect("asset registry mutex poisoned");
+            if let Some(bytes) = inner.entries.get(src) {
+                return Some(RegisteredAsset {
+                    request_url: src.to_string(),
+                    resolved_url: None,
+                    bytes: Arc::clone(bytes),
+                });
+            }
         }
+
         let resolved = resolve_asset_url(src, base_url)?;
+        let inner = self.inner.lock().expect("asset registry mutex poisoned");
         let bytes = Arc::clone(inner.entries.get(resolved.as_str())?);
         Some(RegisteredAsset {
             request_url: src.to_string(),
