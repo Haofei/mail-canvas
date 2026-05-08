@@ -1,74 +1,33 @@
-# Corpus
+# Corpus Policy
 
-`manifest.json` is the committed template corpus index used by the Playwright
-comparison scripts.
+MailCanvas keeps committed corpus files only when they are useful for
+deterministic regression or repeatable research. Large one-off download batches
+belong in `runs/` or an external artifact store, not in git.
 
-`catalog.json` is the vendored fixture index. Playwright and benchmark scripts
-load template HTML from these local files so corpus runs do not depend on
-upstream template hosts remaining available.
+## Tiers
 
-Fields:
+- `golden`: small, representative, deterministic templates used by CI gates.
+  Assets must be local or intentionally absent. Templates should cover classic
+  open-source layouts, modern generated/editor output, and a few stable
+  marketing examples.
+- `research`: real templates worth keeping for compatibility analysis. These
+  can be noisy or have known gaps, but should still be reproducible with local
+  assets.
+- `dirty`: legacy, malformed, or browser-repair-dependent templates. These are
+  useful for investigation but should not define product quality.
+- `runs/`: generated reports and temporary download batches. This directory is
+  ignored by git.
 
-- `name`: stable template id
-- `url`: upstream catalog or source URL used for reporting
-- `sourcePath`: optional committed local HTML fixture path
-- `preserveLocal`: keep a committed generated/exported fixture instead of
-  refreshing it from the upstream URL
-- `baseUrl`: optional base URL for resolving relative remote assets from local fixtures
-- `provider`: source family
-- `category`: coarse email category
-- `corpusGroup`: validation group:
-  - `golden`: clean, vendored templates from stable GitHub/framework sources;
-    this is the primary renderer compatibility corpus.
-  - `real-world-dirty`: editor/community exports kept for diagnostics when their
-    HTML or assets are not clean enough for golden gates.
-  - `legacy-reference`: useful email-client compatibility references that rely
-    on older hacks outside the modern renderer target.
-- `supportTier`: `modern-supported`, `legacy-hacks`, or `invalid-structure`
-- `status`: `active` or `known-warning`
-- `expectedWarnings`: expected renderer warning count for known-warning fixtures
-- `reason` / `supportReason`: scope and validation notes
+## Promotion Rules
 
-Refresh it with:
+Promote a template to committed corpus only when it meets at least one of these
+criteria:
 
-```sh
-npm run corpus:manifest
-```
+- It protects a fixed renderer bug.
+- It represents a widely used email generator or public template family.
+- It covers a layout class not already represented in golden/research.
+- It is needed to reproduce a high-value compatibility issue.
 
-Refresh vendored local fixtures with:
-
-```sh
-node scripts/vendor_corpus_templates.mjs
-```
-
-Refresh the generated MJML official golden fixtures with:
-
-```sh
-npm run corpus:vendor-mjml
-```
-
-This uses `npx mjml@4.16.1` only while refreshing fixtures. The committed HTML
-and mirrored assets are what CI uses.
-
-Audit local fixtures for corpus issues that can distort visual comparisons:
-
-```sh
-npm run corpus:audit
-```
-
-Audit only the primary golden corpus:
-
-```sh
-npm run corpus:audit -- --corpus-group golden
-```
-
-The audit reports invalid inline `style="...url("...")..."` URL quoting and
-empty linked CSS files, both of which should be treated as fixture quality
-problems before using a high visual diff as renderer evidence.
-
-Run visual comparisons for each quality group:
-
-```sh
-npm run compare:corpus
-npm run compare:dirty
-```
+Do not commit templates just because they were downloaded by a scheduled job.
+Keep the pipeline report, triage JSON, and first-bad crop; then promote only the
+few templates that teach the renderer something durable.

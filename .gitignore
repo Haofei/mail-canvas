@@ -4,6 +4,8 @@
 /browser/pkg/
 /demo/pkg/
 /.rge-auth/
+/.cache/
+/runs/
 /.idea/
 /.vscode/
 *.png

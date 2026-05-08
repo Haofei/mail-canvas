@@ -488,6 +488,12 @@
     "sourcePath": "corpus/postmark/postmark-welcome.html"
   },
   {
+    "name": "reallygoodemails-kelly-finish-setting-up-your-apple-iphone-with-the-latest-google-apps",
+    "url": "https://reallygoodemails.com/emails/-kelly-finish-setting-up-your-apple-iphone-with-the-latest-google-apps",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-kelly-finish-setting-up-your-apple-iphone-with-the-latest-google-apps.html",
+    "preserveLocal": true
+  },
+  {
     "name": "reallygoodemails-accurate",
     "url": "https://reallygoodemails.com/emails/accurate",
     "sourcePath": "corpus/reallygoodemails/reallygoodemails-accurate.html",
@@ -515,6 +521,12 @@
     "name": "reallygoodemails-dear-october-14th-me-did-you-go",
     "url": "https://reallygoodemails.com/emails/dear-october-14th-me-did-you-go",
     "sourcePath": "corpus/reallygoodemails/reallygoodemails-dear-october-14th-me-did-you-go.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-discover-our-latest-bedroom-collection",
+    "url": "https://reallygoodemails.com/emails/discover-our-latest-bedroom-collection",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-discover-our-latest-bedroom-collection.html",
     "preserveLocal": true
   },
   {
@@ -557,6 +569,12 @@
     "name": "reallygoodemails-grammarly-pro-sharpen-strong-voice",
     "url": "https://reallygoodemails.com/emails/grammarly-pro-sharpen-strong-voice",
     "sourcePath": "corpus/reallygoodemails/reallygoodemails-grammarly-pro-sharpen-strong-voice.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-have-you-seen-the-latest-features",
+    "url": "https://reallygoodemails.com/emails/have-you-seen-the-latest-features",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-have-you-seen-the-latest-features.html",
     "preserveLocal": true
   },
   {
@@ -623,6 +641,12 @@
     "name": "reallygoodemails-meet-tracking-that-fits-real-life",
     "url": "https://reallygoodemails.com/emails/meet-tracking-that-fits-real-life",
     "sourcePath": "corpus/reallygoodemails/reallygoodemails-meet-tracking-that-fits-real-life.html",
+    "preserveLocal": true
+  },
+  {
+    "name": "reallygoodemails-new-our-latest-picks-for-you",
+    "url": "https://reallygoodemails.com/emails/new-our-latest-picks-for-you",
+    "sourcePath": "corpus/reallygoodemails/reallygoodemails-new-our-latest-picks-for-you.html",
     "preserveLocal": true
   },
   {

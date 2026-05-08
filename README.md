@@ -269,6 +269,49 @@ Run only the modern editor/generated marketing corpus:
 npm run compare:editors
 ```
 
+Run the fixed corpus pipeline for large template intake, audit, comparison, and
+triage:
+
+```sh
+npm run corpus:pipeline -- \
+  --provider reallygoodemails \
+  --category saas \
+  --limit 10 \
+  --random \
+  --exclude-existing \
+  --work-dir runs/rge-saas
+```
+
+The pipeline writes stable artifacts under the run directory:
+
+- `manifest.json` — selected templates and HTML hashes.
+- `audit.json` — corpus health issues scoped to the selected templates.
+- `compare/` — Chromium reference screenshots, MailCanvas screenshots, layout
+  dumps, diagnostics, full side-by-side images, and pixel diff images.
+- `first-bad-crops/` — browser/Rust/diff crops around the first divergent
+  vertical band.
+- `triage.json` and `triage.md` — prioritized failures grouped as `P0` to
+  `P3` by likely fix value.
+- `pipeline.json` — commands, targets, timings, and output paths for the run.
+
+Use `--skip-vendor --only TEMPLATE_NAME` to rerun an existing fixture. Browser
+screenshots are cached by prepared HTML and width via `--browser-cache-dir` so
+unchanged templates avoid repeated Chromium screenshot work across pipeline
+runs.
+
+Refresh deterministic font fixtures when the supported open-source font bundle
+changes:
+
+```sh
+npm run fonts:download
+```
+
+The committed bundle intentionally stays small: email-safe aliases are mapped to
+Arimo/Tinos, Noto covers generic fallback/math symbols, and common Google Fonts
+such as Roboto, Open Sans, Lato, Montserrat, Poppins, Inter, Source Sans 3,
+Merriweather, and Nunito Sans are vendored as latin subsets. Avoid adding
+template-specific font workarounds to the fixture catalog.
+
 Compare one local HTML file:
 
 ```sh

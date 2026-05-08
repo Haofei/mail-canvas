@@ -227,7 +227,7 @@ async function vendorSlug(context, slug, args) {
     await page.goto(detailUrl, { waitUntil: 'domcontentloaded', timeout: args.timeoutMs });
     await page.waitForTimeout(1000);
     const html = await extractEmailHtml(page);
-    const name = `reallygoodemails-${slug}`;
+    const name = `${PROVIDER}-${slugToTemplateName(slug)}`;
     const providerDir = args.outDir;
     const htmlPath = path.join(providerDir, `${name}.html`);
     const assetDir = path.join(providerDir, `${name}.assets`);
@@ -244,6 +244,14 @@ async function vendorSlug(context, slug, args) {
   } finally {
     await page.close();
   }
+}
+
+function slugToTemplateName(slug) {
+  return slug
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-');
 }
 
 async function extractEmailHtml(page) {

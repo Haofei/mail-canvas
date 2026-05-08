@@ -659,10 +659,12 @@ function templateCorpusGroup(name) {
       'sendgrid',
       'emailoctopus',
       'mjml',
-      'reallygoodemails',
     ].includes(provider)
   ) {
     return 'golden';
+  }
+  if (provider === 'reallygoodemails') {
+    return 'research';
   }
   if (provider === 'cerberus') {
     return 'legacy-reference';

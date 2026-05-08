@@ -1,0 +1,293 @@
+{
+  "generatedAt": "2026-05-08T00:47:11.108Z",
+  "note": "Deterministic fixture fonts for CI/reference rendering. Do not add template-specific font hacks here.",
+  "fonts": [
+    {
+      "family": "Arimo",
+      "weight": 400,
+      "style": "normal",
+      "path": "Arimo-Regular.ttf",
+      "aliases": [
+        "Arial",
+        "Arial Nova",
+        "Avenir",
+        "Avenir Next",
+        "Avenir Next LT Pro",
+        "Corbel",
+        "Helvetica",
+        "Helvetica Neue",
+        "Lucida Grande",
+        "Lucida Sans",
+        "Lucida Sans Unicode",
+        "Nimbus Sans",
+        "Segoe UI",
+        "Tahoma",
+        "Trebuchet MS",
+        "Verdana"
+      ],
+      "license": "Apache-2.0"
+    },
+    {
+      "family": "Arimo",
+      "weight": 700,
+      "style": "normal",
+      "path": "Arimo-Bold.ttf",
+      "aliases": [
+        "Arial",
+        "Arial Nova",
+        "Avenir",
+        "Avenir Next",
+        "Avenir Next LT Pro",
+        "Corbel",
+        "Helvetica",
+        "Helvetica Neue",
+        "Lucida Grande",
+        "Lucida Sans",
+        "Lucida Sans Unicode",
+        "Nimbus Sans",
+        "Segoe UI",
+        "Tahoma",
+        "Trebuchet MS",
+        "Verdana"
+      ],
+      "license": "Apache-2.0"
+    },
+    {
+      "family": "Tinos",
+      "weight": 400,
+      "style": "normal",
+      "path": "Tinos-Regular.ttf",
+      "aliases": [
+        "Cambria",
+        "Georgia",
+        "Palatino",
+        "Palatino Linotype",
+        "Times",
+        "Times New Roman"
+      ],
+      "license": "Apache-2.0"
+    },
+    {
+      "family": "Tinos",
+      "weight": 700,
+      "style": "normal",
+      "path": "Tinos-Bold.ttf",
+      "aliases": [
+        "Cambria",
+        "Georgia",
+        "Palatino",
+        "Palatino Linotype",
+        "Times",
+        "Times New Roman"
+      ],
+      "license": "Apache-2.0"
+    },
+    {
+      "family": "Noto Sans",
+      "weight": 400,
+      "style": "normal",
+      "path": "NotoSans-Regular.ttf",
+      "aliases": [],
+      "license": "OFL-1.1"
+    },
+    {
+      "family": "Noto Sans",
+      "weight": 700,
+      "style": "normal",
+      "path": "NotoSans-Bold.ttf",
+      "aliases": [],
+      "license": "OFL-1.1"
+    },
+    {
+      "family": "Noto Sans Math",
+      "weight": 400,
+      "style": "normal",
+      "path": "NotoSansMath-Regular.ttf",
+      "aliases": [
+        "Apple Symbols",
+        "Segoe UI Symbol"
+      ],
+      "license": "OFL-1.1"
+    },
+    {
+      "family": "Roboto",
+      "weight": 400,
+      "style": "normal",
+      "path": "google/Roboto-400.woff2",
+      "aliases": [],
+      "license": "Apache-2.0",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Roboto",
+      "weight": 700,
+      "style": "normal",
+      "path": "google/Roboto-700.woff2",
+      "aliases": [],
+      "license": "Apache-2.0",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Open Sans",
+      "weight": 400,
+      "style": "normal",
+      "path": "google/Open-Sans-400.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Open Sans",
+      "weight": 700,
+      "style": "normal",
+      "path": "google/Open-Sans-700.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Lato",
+      "weight": 400,
+      "style": "normal",
+      "path": "google/Lato-400.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Lato",
+      "weight": 700,
+      "style": "normal",
+      "path": "google/Lato-700.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Montserrat",
+      "weight": 400,
+      "style": "normal",
+      "path": "google/Montserrat-400.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Montserrat",
+      "weight": 700,
+      "style": "normal",
+      "path": "google/Montserrat-700.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Poppins",
+      "weight": 400,
+      "style": "normal",
+      "path": "google/Poppins-400.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Poppins",
+      "weight": 700,
+      "style": "normal",
+      "path": "google/Poppins-700.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Inter",
+      "weight": 400,
+      "style": "normal",
+      "path": "google/Inter-400.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Inter",
+      "weight": 700,
+      "style": "normal",
+      "path": "google/Inter-700.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Source Sans 3",
+      "weight": 400,
+      "style": "normal",
+      "path": "google/Source-Sans-3-400.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Source Sans 3",
+      "weight": 700,
+      "style": "normal",
+      "path": "google/Source-Sans-3-700.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Merriweather",
+      "weight": 400,
+      "style": "normal",
+      "path": "google/Merriweather-400.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Merriweather",
+      "weight": 700,
+      "style": "normal",
+      "path": "google/Merriweather-700.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Nunito Sans",
+      "weight": 400,
+      "style": "normal",
+      "path": "google/Nunito-Sans-400.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    },
+    {
+      "family": "Nunito Sans",
+      "weight": 700,
+      "style": "normal",
+      "path": "google/Nunito-Sans-700.woff2",
+      "aliases": [],
+      "license": "OFL-1.1",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "source": "Google Fonts CSS2 API latin subset"
+    }
+  ]
+}

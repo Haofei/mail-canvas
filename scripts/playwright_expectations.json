@@ -18,7 +18,10 @@
     "waypoint-ecommerce-promo-code": {},
     "mailgun-action": {},
     "leemunroe-inlined": {},
-    "waypoint-marketplace-first-listing-notification": {},
-    "sendgrid-merriweather-receipt": {}
+    "sendgrid-merriweather-receipt": {},
+    "postmark-receipt": {},
+    "mailpace-receipt": {},
+    "emailoctopus-abacus-transactional": {},
+    "mjml-basic": {}
   }
 }

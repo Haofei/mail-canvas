@@ -37,7 +37,7 @@ jobs:
         run: npm ci
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
-      - name: Download Really Good Emails fixtures
+      - name: Run Really Good Emails pipeline
         env:
           RGE_EMAIL: ${{ secrets.RGE_EMAIL }}
           RGE_PASSWORD: ${{ secrets.RGE_PASSWORD }}
@@ -46,14 +46,14 @@ jobs:
           if [ -n "${RGE_EMAIL:-}" ] && [ -n "${RGE_PASSWORD:-}" ]; then
             login_args=(--login)
           fi
-          npm run corpus:rge -- \
+          npm run corpus:pipeline -- \
+            --provider reallygoodemails \
             --category "$RGE_CATEGORY" \
             --collection "$RGE_COLLECTION" \
             --limit "$RGE_LIMIT" \
-            --replace-provider \
+            --include-existing \
+            --work-dir /tmp/mail-canvas-rge-pipeline \
             "${login_args[@]}"
-      - name: Compare Really Good Emails fixtures
-        run: npm run compare:rge
       - name: Append summary
         if: always()
         run: |
@@ -61,10 +61,10 @@ jobs:
           echo "- collection: $RGE_COLLECTION" >> "$GITHUB_STEP_SUMMARY"
           echo "- category: $RGE_CATEGORY" >> "$GITHUB_STEP_SUMMARY"
           echo "- limit: $RGE_LIMIT" >> "$GITHUB_STEP_SUMMARY"
-          if [ -f /tmp/mail-canvas-playwright-rge/report.md ]; then
-            cat /tmp/mail-canvas-playwright-rge/report.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f /tmp/mail-canvas-rge-pipeline/triage.md ]; then
+            cat /tmp/mail-canvas-rge-pipeline/triage.md >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "No comparison report produced." >> "$GITHUB_STEP_SUMMARY"
+            echo "No pipeline report produced." >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Upload Really Good Emails artifacts
         if: always()
@@ -74,12 +74,18 @@ jobs:
           path: |
             corpus/reallygoodemails
             corpus/catalog.json
-            /tmp/mail-canvas-playwright-rge/comparison.json
-            /tmp/mail-canvas-playwright-rge/comparison.report.json
-            /tmp/mail-canvas-playwright-rge/report.md
-            /tmp/mail-canvas-playwright-rge/browser
-            /tmp/mail-canvas-playwright-rge/rust
-            /tmp/mail-canvas-playwright-rge/diff
-            /tmp/mail-canvas-playwright-rge/side-by-side
-            /tmp/mail-canvas-playwright-rge/logs
+            /tmp/mail-canvas-rge-pipeline/pipeline.json
+            /tmp/mail-canvas-rge-pipeline/manifest.json
+            /tmp/mail-canvas-rge-pipeline/audit.json
+            /tmp/mail-canvas-rge-pipeline/triage.json
+            /tmp/mail-canvas-rge-pipeline/triage.md
+            /tmp/mail-canvas-rge-pipeline/first-bad-crops
+            /tmp/mail-canvas-rge-pipeline/compare/comparison.json
+            /tmp/mail-canvas-rge-pipeline/compare/comparison.report.json
+            /tmp/mail-canvas-rge-pipeline/compare/report.md
+            /tmp/mail-canvas-rge-pipeline/compare/browser
+            /tmp/mail-canvas-rge-pipeline/compare/rust
+            /tmp/mail-canvas-rge-pipeline/compare/diff
+            /tmp/mail-canvas-rge-pipeline/compare/side-by-side
+            /tmp/mail-canvas-rge-pipeline/compare/logs
           if-no-files-found: warn

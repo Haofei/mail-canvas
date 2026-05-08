@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -14,6 +15,7 @@ const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const DEFAULT_WORK_DIR = '/tmp/mail-canvas-playwright-compare';
 const DEFAULT_WIDTH = 600;
 const DEFAULT_TIMEOUT_MS = 15000;
+const FIXTURE_FONT_MANIFEST = path.join(ROOT_DIR, 'fixtures', 'fonts', 'fixture-fonts.json');
 const FIXTURE_FONT_FILES = [
   path.join(ROOT_DIR, 'fixtures', 'fonts', 'Arimo-Regular.ttf'),
   path.join(ROOT_DIR, 'fixtures', 'fonts', 'Arimo-Bold.ttf'),
@@ -40,6 +42,8 @@ function parseArgs(argv) {
     keep: false,
     expectations: null,
     fixtureFonts: false,
+    browserCacheDir: null,
+    continueOnError: false,
     maxImageBytes: null,
     maxDecodedPixels: null,
     maxTotalResourceBytes: null,
@@ -107,6 +111,12 @@ function parseArgs(argv) {
       case '--fixture-fonts':
         args.fixtureFonts = true;
         break;
+      case '--browser-cache-dir':
+        args.browserCacheDir = path.resolve(next());
+        break;
+      case '--continue-on-error':
+        args.continueOnError = true;
+        break;
       case '--max-image-bytes':
         args.maxImageBytes = Number.parseInt(next(), 10);
         break;
@@ -141,6 +151,12 @@ function parseArgs(argv) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.fixtureFonts) {
+    args.fixtureFontFaces = await loadFixtureFontFaces();
+    args.fixtureFontFiles = [
+      ...new Set(args.fixtureFontFaces.map((face) => path.resolve(ROOT_DIR, 'fixtures', 'fonts', face.path))),
+    ];
+  }
   const expectations = args.expectations ? await loadExpectations(args.expectations) : null;
   if (expectations?.width && args.width === DEFAULT_WIDTH) {
     args.width = expectations.width;
@@ -190,7 +206,15 @@ async function main() {
   const results = [];
   try {
     for (const template of downloaded) {
-      const result = await compareTemplate(template, args, dirs, renderer, browser);
+      let result;
+      try {
+        result = await compareTemplate(template, args, dirs, renderer, browser);
+      } catch (error) {
+        if (!args.continueOnError) {
+          throw error;
+        }
+        result = await failedComparisonResult(template, error);
+      }
       results.push(result);
       printResult(result);
     }
@@ -326,15 +350,16 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
   const baseUrl = template.sourceBaseUrl ?? template.baseUrl ?? new URL('.', template.url).href;
   await writeFile(
     preparedPath,
-    buildBrowserDocument(sourceHtml, baseUrl, args.width, args.fixtureFonts),
+    buildBrowserDocument(sourceHtml, baseUrl, args.width, args.fixtureFontFaces),
   );
 
-  const browserMetrics = await browserScreenshot(
+  const browserMetrics = await browserScreenshotWithCache(
     browser,
     preparedPath,
     browserPath,
     args.width,
     args.timeoutMs,
+    args.browserCacheDir,
   );
 
   const renderArgs = [
@@ -353,8 +378,8 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
     '--layout-json',
     layoutPath,
   ];
-  if (args.fixtureFonts) {
-    for (const fontPath of FIXTURE_FONT_FILES) {
+  if (args.fixtureFontFiles) {
+    for (const fontPath of args.fixtureFontFiles) {
       renderArgs.push('--font-file', fontPath);
     }
   }
@@ -378,7 +403,10 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
   });
   await writeFile(logPath, `${render.stdout}${render.stderr}`);
   if (render.status !== 0) {
-    throw new Error(`renderer failed for ${template.name}; see ${logPath}`);
+    return failedComparisonResult(template, new Error(rendererFailureMessage(render, logPath)), {
+      browserPng: browserPath,
+      log: logPath,
+    });
   }
   const rustLayout = JSON.parse(await readFile(layoutPath, 'utf8'));
   const rustRects = collectRustRectsFromLayout(rustLayout);
@@ -434,6 +462,81 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
   };
 }
 
+async function failedComparisonResult(template, error, files = {}) {
+  const message = error?.message ?? String(error);
+  const browser = files.browserPng ? await pngSize(files.browserPng) : null;
+  return {
+    name: template.name,
+    url: template.sourceUrl ?? template.url,
+    provider: template.provider,
+    corpusGroup: template.corpusGroup,
+    category: template.category,
+    supportTier: template.supportTier,
+    supportReason: template.supportReason,
+    corpusStatus: template.status,
+    corpusReason: template.reason,
+    corpusIssues: template.corpusIssues,
+    expectedWarnings: template.expectedWarnings,
+    status: 'render-failed',
+    error: message,
+    browserPng: files.browserPng ?? null,
+    rustPng: files.rustPng ?? null,
+    diffPng: files.diffPng ?? null,
+    sideBySidePng: files.sideBySidePng ?? null,
+    log: files.log ?? null,
+    diagnosticsJson: await existingPath(files.diagnosticsJson),
+    layoutJson: await existingPath(files.layoutJson),
+    browser: browser ?? { width: 0, height: 0 },
+    rust: { width: 0, height: 0 },
+    compared: { width: 0, height: 0 },
+    diffPixels: 0,
+    diffRatio: 1,
+    media: emptyMetric(),
+    mediaRects: { deltaRatio: 0, browserAreaPixels: 0, rustAreaPixels: 0, overlapPixels: 0 },
+    text: emptyMetric(),
+    nonMedia: emptyMetric(),
+    nonMediaText: emptyMetric(),
+    nonMediaNonText: emptyMetric(),
+    textCoverage: {
+      areaPixels: 0,
+      browserInk: 0,
+      rustInk: 0,
+      coverageDeltaRatio: 0,
+      alphaDeltaRatio: 0,
+    },
+    textRects: { positionDeltaRatio: 0, browserRects: 0, rustRects: 0, matchedRects: 0 },
+    bandDiffs: [],
+    firstBadRegion: null,
+    warningCount: 0,
+    assetSummary: { total: 0, loaded: 0, blocked: 0, failed: 0 },
+  };
+}
+
+async function pngSize(filePath) {
+  try {
+    const png = PNG.sync.read(await readFile(filePath));
+    return { width: png.width, height: png.height };
+  } catch {
+    return null;
+  }
+}
+
+async function existingPath(filePath) {
+  if (!filePath) {
+    return null;
+  }
+  try {
+    await stat(filePath);
+    return filePath;
+  } catch {
+    return null;
+  }
+}
+
+function emptyMetric() {
+  return { areaPixels: 0, diffPixels: 0, diffRatio: 0 };
+}
+
 function summarizeAssets(assets) {
   const summary = { total: assets.length, loaded: 0, blocked: 0, failed: 0 };
   for (const asset of assets) {
@@ -442,6 +545,15 @@ function summarizeAssets(assets) {
     if (asset.status === 'failed') summary.failed += 1;
   }
   return summary;
+}
+
+function rendererFailureMessage(render, logPath) {
+  const lines = `${render.stdout ?? ''}\n${render.stderr ?? ''}`
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && line !== 'Caused by:');
+  const summary = lines.slice(0, 4).join(' / ');
+  return summary ? `${summary}; see ${logPath}` : `renderer failed; see ${logPath}`;
 }
 
 async function detectCorpusIssues(html, sourcePath) {
@@ -555,6 +667,36 @@ async function browserScreenshot(browser, htmlPath, outPath, width, timeoutMs) {
   } finally {
     await page.close();
   }
+}
+
+async function browserScreenshotWithCache(browser, htmlPath, outPath, width, timeoutMs, cacheDir) {
+  if (!cacheDir) {
+    return browserScreenshot(browser, htmlPath, outPath, width, timeoutMs);
+  }
+
+  const html = await readFile(htmlPath, 'utf8');
+  const cacheKey = createHash('sha256')
+    .update('mail-canvas-browser-v1\0')
+    .update(String(width))
+    .update('\0')
+    .update(html)
+    .digest('hex');
+  const pngCachePath = path.join(cacheDir, `${cacheKey}.png`);
+  const metricsCachePath = path.join(cacheDir, `${cacheKey}.json`);
+
+  try {
+    const metrics = JSON.parse(await readFile(metricsCachePath, 'utf8'));
+    await copyFile(pngCachePath, outPath);
+    return metrics;
+  } catch {
+    // Cache misses are expected for new or changed templates.
+  }
+
+  await mkdir(cacheDir, { recursive: true });
+  const metrics = await browserScreenshot(browser, htmlPath, outPath, width, timeoutMs);
+  await copyFile(outPath, pngCachePath);
+  await writeFile(metricsCachePath, `${JSON.stringify(metrics, null, 2)}\n`);
+  return metrics;
 }
 
 async function waitForStableBrowserAssets(page, timeoutMs) {
@@ -1022,7 +1164,7 @@ function padPng(source, width, height) {
   return target;
 }
 
-function buildBrowserDocument(sourceHtml, baseUrl, width, fixtureFonts = false) {
+function buildBrowserDocument(sourceHtml, baseUrl, width, fixtureFontFaces = null) {
   const head = [
     '<meta charset="utf-8">',
     `<base href="${escapeAttr(baseUrl)}">`,
@@ -1033,7 +1175,7 @@ function buildBrowserDocument(sourceHtml, baseUrl, width, fixtureFonts = false) 
     'table { border-collapse: separate; border-spacing: 0; }',
     'img { display: block; }',
     '</style>',
-    fixtureFonts ? fixtureFontCss() : '',
+    fixtureFontFaces ? fixtureFontCss(fixtureFontFaces) : '',
   ].join('\n');
   const lower = sourceHtml.toLowerCase();
   const looksLikeDocument =
@@ -1063,14 +1205,19 @@ function buildBrowserDocument(sourceHtml, baseUrl, width, fixtureFonts = false) 
   return `<!doctype html><html><head>${head}</head>${sourceHtml}</html>`;
 }
 
-function fixtureFontCss() {
-  const arimoRegular = pathToFileURL(FIXTURE_FONT_FILES[0]).href;
-  const arimoBold = pathToFileURL(FIXTURE_FONT_FILES[1]).href;
-  const tinosRegular = pathToFileURL(FIXTURE_FONT_FILES[2]).href;
-  const tinosBold = pathToFileURL(FIXTURE_FONT_FILES[3]).href;
-  const notoRegular = pathToFileURL(FIXTURE_FONT_FILES[4]).href;
-  const notoBold = pathToFileURL(FIXTURE_FONT_FILES[5]).href;
-  const notoMathRegular = pathToFileURL(FIXTURE_FONT_FILES[6]).href;
+async function loadFixtureFontFaces() {
+  try {
+    const manifest = JSON.parse(await readFile(FIXTURE_FONT_MANIFEST, 'utf8'));
+    if (Array.isArray(manifest.fonts) && manifest.fonts.length > 0) {
+      return manifest.fonts;
+    }
+  } catch {
+    // Older checkouts can still use the built-in fixture list below.
+  }
+  return fallbackFixtureFontFaces();
+}
+
+function fallbackFixtureFontFaces() {
   const sansAliases = [
     'Arial',
     'Arial Nova',
@@ -1083,47 +1230,50 @@ function fixtureFontCss() {
     'Lucida Grande',
     'Lucida Sans',
     'Lucida Sans Unicode',
-    'Montserrat',
     'Nimbus Sans',
-    'Open Sans',
-    'Roboto',
     'Segoe UI',
     'Tahoma',
     'Trebuchet MS',
     'Verdana',
   ];
-  const serifAliases = [
-    'Cambria',
-    'Georgia',
-    'Palatino',
-    'Palatino Linotype',
-    'Times',
-    'Times New Roman',
+  const serifAliases = ['Cambria', 'Georgia', 'Palatino', 'Palatino Linotype', 'Times', 'Times New Roman'];
+  return [
+    { family: 'Arimo', weight: 400, style: 'normal', path: 'Arimo-Regular.ttf', aliases: sansAliases },
+    { family: 'Arimo', weight: 700, style: 'normal', path: 'Arimo-Bold.ttf', aliases: sansAliases },
+    { family: 'Tinos', weight: 400, style: 'normal', path: 'Tinos-Regular.ttf', aliases: serifAliases },
+    { family: 'Tinos', weight: 700, style: 'normal', path: 'Tinos-Bold.ttf', aliases: serifAliases },
+    { family: 'Noto Sans', weight: 400, style: 'normal', path: 'NotoSans-Regular.ttf', aliases: [] },
+    { family: 'Noto Sans', weight: 700, style: 'normal', path: 'NotoSans-Bold.ttf', aliases: [] },
+    {
+      family: 'Noto Sans Math',
+      weight: 400,
+      style: 'normal',
+      path: 'NotoSansMath-Regular.ttf',
+      aliases: ['Apple Symbols', 'Segoe UI Symbol'],
+    },
   ];
+}
+
+function fixtureFontCss(fontFaces) {
   const css = ['<style id="email-render-fixture-fonts">'];
-  for (const family of sansAliases) {
-    css.push(fontFaceCss(family, 400, arimoRegular), fontFaceCss(family, 700, arimoBold));
+  for (const face of fontFaces) {
+    const url = pathToFileURL(path.resolve(ROOT_DIR, 'fixtures', 'fonts', face.path)).href;
+    for (const family of [face.family, ...(face.aliases ?? [])]) {
+      css.push(fontFaceCss(family, face.weight, face.style ?? 'normal', url));
+    }
   }
-  for (const family of serifAliases) {
-    css.push(fontFaceCss(family, 400, tinosRegular), fontFaceCss(family, 700, tinosBold));
-  }
-  css.push(fontFaceCss('Noto Sans', 400, notoRegular), fontFaceCss('Noto Sans', 700, notoBold));
-  css.push(
-    fontFaceCss('Noto Sans Math', 400, notoMathRegular),
-    fontFaceCss('Apple Symbols', 400, notoMathRegular),
-    fontFaceCss('Segoe UI Symbol', 400, notoMathRegular),
-  );
   css.push('</style>');
   return css.join('\n');
 }
 
-function fontFaceCss(family, weight, url) {
+function fontFaceCss(family, weight, style, url) {
+  const format = url.endsWith('.woff2') ? 'woff2' : 'truetype';
   return [
     '@font-face {',
     `font-family: "${family}";`,
-    `src: url("${url}") format("truetype");`,
+    `src: url("${url}") format("${format}");`,
     `font-weight: ${weight};`,
-    'font-style: normal;',
+    `font-style: ${style};`,
     'font-display: block;',
     '}',
   ].join(' ');
@@ -1138,6 +1288,13 @@ function escapeAttr(value) {
 }
 
 function printResult(result) {
+  if (result.status === 'render-failed') {
+    const corpusIssues = formatCorpusIssues(result.corpusIssues);
+    console.log(
+      `${result.name}\tstatus render-failed\terror ${result.error}\tlog ${result.log ?? ''}\tcorpus ${corpusIssues}`,
+    );
+    return;
+  }
   const percent = (result.diffRatio * 100).toFixed(2);
   const media = result.media.areaPixels > 0 ? `${(result.media.diffRatio * 100).toFixed(2)}%` : '';
   const mediaRect = (result.mediaRects.deltaRatio * 100).toFixed(2);
@@ -1407,6 +1564,14 @@ function renderMarkdownReport(results, args, expectations) {
   ];
 
   for (const result of results) {
+    if (result.status === 'render-failed') {
+      const corpusIssues = formatCorpusIssues(result.corpusIssues);
+      const logLink = result.log ? `[log](${result.log})` : '';
+      lines.push(
+        `| ${result.name} | ${result.provider ?? ''} | ${result.corpusGroup ?? ''} | failed | failed | 100.00% |  |  |  |  |  |  |  |  |  |  |  |  | 0 | 0/0/0 | ${corpusIssues} | ${logLink} |`,
+      );
+      continue;
+    }
     const percent = formatPercent(result.diffRatio);
     const mediaPercent =
       result.media.areaPixels > 0 ? formatPercent(result.media.diffRatio) : '';
@@ -1564,10 +1729,13 @@ function buildComparisonSummary(results, failures, expectations) {
       firstBadRegion: result.firstBadRegion,
       warnings: result.warningCount,
       corpusIssues: result.corpusIssues,
+      status: result.status ?? 'ok',
+      error: result.error,
     }));
   return {
     generatedAt: new Date().toISOString(),
     resultCount: results.length,
+    renderFailedCount: results.filter((result) => result.status === 'render-failed').length,
     failureCount: failures.length,
     failedTemplates: [...new Set(failures.map((failure) => failure.split(':', 1)[0]))],
     validationMode: expectations?.validationMode ?? 'none',

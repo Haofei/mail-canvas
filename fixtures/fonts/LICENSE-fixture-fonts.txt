@@ -1,0 +1,7 @@
+Fixture font license note
+
+These fonts are included only to make MailCanvas regression tests deterministic.
+Arimo and Tinos are Apache-2.0 licensed; Noto fonts are OFL-1.1 licensed.
+Additional Google Fonts downloaded by scripts/download_fonts.mjs use the license
+recorded in fixture-fonts.json. Keep this bundle limited to broadly used
+open-source email/web fonts, not template-specific overrides.

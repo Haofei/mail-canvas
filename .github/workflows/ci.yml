@@ -71,7 +71,7 @@ jobs:
             /tmp/mail-canvas-playwright-regression/logs
           if-no-files-found: warn
 
-  playwright-full-corpus:
+  playwright-golden-corpus:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,20 +87,20 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Generate corpus manifest
         run: npm run corpus:manifest
-      - name: Run full Playwright corpus
-        id: full-corpus
+      - name: Run observational golden corpus
+        id: golden-corpus
         continue-on-error: true
         run: npm run compare:corpus
       - name: Append corpus summary
         if: always()
         run: |
-          echo "## Full corpus report" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Golden corpus report" >> "$GITHUB_STEP_SUMMARY"
           if [ -f /tmp/mail-canvas-playwright-corpus/report.md ]; then
             cat /tmp/mail-canvas-playwright-corpus/report.md >> "$GITHUB_STEP_SUMMARY"
           else
             echo "No corpus report produced." >> "$GITHUB_STEP_SUMMARY"
           fi
-          if [ "${{ steps.full-corpus.outcome }}" != "success" ]; then
+          if [ "${{ steps.golden-corpus.outcome }}" != "success" ]; then
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "Corpus run completed with expectation failures. See uploaded artifact for latest diffs." >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -108,7 +108,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-full-corpus
+          name: playwright-golden-corpus
           path: |
             /tmp/mail-canvas-playwright-corpus/comparison.json
             /tmp/mail-canvas-playwright-corpus/comparison.report.json
