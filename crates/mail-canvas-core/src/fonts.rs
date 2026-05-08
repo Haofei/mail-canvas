@@ -583,13 +583,15 @@ fn declaration_value<'a>(declarations: &'a [(String, String)], name: &str) -> Op
 }
 
 fn parse_font_face_weight(value: &str) -> Option<FontWeight> {
-    value
-        .split_whitespace()
-        .find_map(|token| match token.to_ascii_lowercase().as_str() {
-            "normal" => Some(FontWeight::NORMAL),
-            "bold" => Some(FontWeight::BOLD),
-            raw => raw.parse::<u16>().ok().map(FontWeight),
-        })
+    value.split_whitespace().find_map(|token| {
+        if token.eq_ignore_ascii_case("normal") {
+            Some(FontWeight::NORMAL)
+        } else if token.eq_ignore_ascii_case("bold") {
+            Some(FontWeight::BOLD)
+        } else {
+            token.parse::<u16>().ok().map(FontWeight)
+        }
+    })
 }
 
 pub(crate) fn font_face_covers_basic_latin(declarations: &[(String, String)]) -> bool {
@@ -641,15 +643,13 @@ fn choose_font_source(src: &str) -> Option<FontSourceCandidate> {
 }
 
 fn font_source_candidates(src: &str) -> Vec<FontSourceCandidate> {
-    let lower = src.to_ascii_lowercase();
     let mut candidates = Vec::new();
     let mut offset = 0usize;
 
-    while offset < lower.len() {
-        let Some(url_rel) = lower[offset..].find("url(") else {
+    while offset < src.len() {
+        let Some(url_start) = find_ascii_case_insensitive_from(src, "url(", offset) else {
             break;
         };
-        let url_start = offset + url_rel;
         let Some((url, end)) = css_function_value(src, url_start) else {
             offset = url_start + "url(".len();
             continue;
@@ -665,12 +665,7 @@ fn font_source_candidates(src: &str) -> Vec<FontSourceCandidate> {
 
 fn font_source_supported(candidate: &FontSourceCandidate) -> bool {
     if let Some(format) = &candidate.format {
-        let format = format.to_ascii_lowercase();
-        if format.contains("woff2")
-            || format.contains("woff")
-            || format.contains("truetype")
-            || format.contains("opentype")
-        {
+        if font_format_supported(format) {
             return true;
         }
     }
@@ -679,14 +674,25 @@ fn font_source_supported(candidate: &FontSourceCandidate) -> bool {
         .url
         .split(['?', '#'])
         .next()
-        .unwrap_or(candidate.url.as_str())
-        .to_ascii_lowercase();
+        .unwrap_or(candidate.url.as_str());
     matches!(
         Path::new(&path)
             .extension()
             .and_then(|extension| extension.to_str()),
-        Some("woff2" | "woff" | "ttf" | "otf" | "ttc" | "otc")
+        Some(extension) if font_extension_supported(extension)
     )
+}
+
+fn font_format_supported(format: &str) -> bool {
+    ["woff2", "woff", "truetype", "opentype"]
+        .iter()
+        .any(|needle| font_format_contains(format, needle))
+}
+
+fn font_extension_supported(extension: &str) -> bool {
+    ["woff2", "woff", "ttf", "otf", "ttc", "otc"]
+        .iter()
+        .any(|candidate| extension.eq_ignore_ascii_case(candidate))
 }
 
 fn decode_font_resource(
@@ -707,11 +713,11 @@ fn decode_font_resource(
         return Ok(Arc::new(SharedFontBytes(bytes)));
     }
 
-    match candidate.format.as_deref().map(str::to_ascii_lowercase) {
-        Some(format) if format.contains("woff2") => wuff::decompress_woff2(&bytes)
+    match candidate.format.as_deref() {
+        Some(format) if font_format_contains(format, "woff2") => wuff::decompress_woff2(&bytes)
             .map(|bytes| Arc::new(bytes) as Arc<dyn AsRef<[u8]> + Sync + Send>)
             .map_err(|error| anyhow!("failed to decode WOFF2 font: {error}")),
-        Some(format) if format.contains("woff") => wuff::decompress_woff1(&bytes)
+        Some(format) if font_format_contains(format, "woff") => wuff::decompress_woff1(&bytes)
             .map(|bytes| Arc::new(bytes) as Arc<dyn AsRef<[u8]> + Sync + Send>)
             .map_err(|error| anyhow!("failed to decode WOFF font: {error}")),
         _ => bail!("unsupported font data"),
@@ -731,5 +737,37 @@ fn normalize_resource_url(url: &str) -> String {
         format!("https:{url}")
     } else {
         url.to_string()
+    }
+}
+
+fn font_format_contains(format: &str, needle: &str) -> bool {
+    find_ascii_case_insensitive_from(format, needle, 0).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_font_face_weight_without_normalizing_tokens() {
+        assert_eq!(parse_font_face_weight("BOLD"), Some(FontWeight::BOLD));
+        assert_eq!(parse_font_face_weight("Normal"), Some(FontWeight::NORMAL));
+        assert_eq!(parse_font_face_weight("700"), Some(FontWeight(700)));
+    }
+
+    #[test]
+    fn font_source_candidates_are_case_insensitive_without_normalizing_src() {
+        let candidates = font_source_candidates(
+            r#"URL("fonts/inter.WOFF2") FORMAT("WOFF2"), url(fonts/inter.ttf)"#,
+        );
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].url, "fonts/inter.WOFF2");
+        assert_eq!(candidates[0].format.as_deref(), Some("WOFF2"));
+        assert!(font_source_supported(&candidates[0]));
+        assert!(font_source_supported(&FontSourceCandidate {
+            url: "fonts/inter.TTF?v=1".to_string(),
+            format: None,
+        }));
     }
 }
