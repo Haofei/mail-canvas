@@ -24,6 +24,9 @@ async function main() {
     report.repeatedImage.diagnosticsAssets >= 1,
     "expected repeated-image asset diagnostics",
   );
+  assert.equal(report.repeatedImage.transferredAssets, 1);
+  assert.ok(report.repeatedImageCached.pngBytes > 100_000, "expected cached PNG output");
+  assert.equal(report.repeatedImageCached.transferredAssets, 0);
   assert.equal(report.wrapperChecks.destroyRejects, true);
   assert.equal(report.wrapperChecks.limitRejects, true);
   assert.equal(report.wrapperChecks.defaultEmojiLoads, true);

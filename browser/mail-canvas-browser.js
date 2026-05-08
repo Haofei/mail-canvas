@@ -51,6 +51,7 @@ export class MailCanvasBrowserRenderer {
     this.defaultEmojiFontRegistered = false;
     this.defaultEmojiFontPromise = null;
     this.assetCache = new Map();
+    this.registeredAssetUrls = new Set();
     this.destroyed = false;
   }
 
@@ -66,7 +67,13 @@ export class MailCanvasBrowserRenderer {
     const prepared = await this.#inlineStylesheetLinks(html, baseUrl);
     const assets = await this.#fetchAssetGraph(prepared.assetUrls, baseUrl, prepared.assets);
     const fetchedAt = performance.now();
-    const assetPayload = assets.map((asset) => ({
+    let newAssets = assets.filter((asset) => !this.registeredAssetUrls.has(asset.url));
+    if (this.registeredAssetUrls.size + newAssets.length > this.limits.maxAssetCount) {
+      await this.client.call({ type: "clear" });
+      this.registeredAssetUrls.clear();
+      newAssets = assets;
+    }
+    const assetPayload = newAssets.map((asset) => ({
       url: asset.url,
       bytes: transferableBytes(asset.bytes),
     }));
@@ -83,6 +90,9 @@ export class MailCanvasBrowserRenderer {
       },
       assetPayload.map((asset) => asset.bytes),
     );
+    for (const asset of newAssets) {
+      this.registeredAssetUrls.add(asset.url);
+    }
     const renderedAt = performance.now();
     const png = new Uint8Array(response.png);
     return {
@@ -103,6 +113,7 @@ export class MailCanvasBrowserRenderer {
 
   async clearCache() {
     this.assetCache.clear();
+    this.registeredAssetUrls.clear();
     if (!this.destroyed) {
       await this.client.call({ type: "clear" });
     }
@@ -113,6 +124,7 @@ export class MailCanvasBrowserRenderer {
       return;
     }
     this.assetCache.clear();
+    this.registeredAssetUrls.clear();
     this.client.destroy();
     this.destroyed = true;
   }

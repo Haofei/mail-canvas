@@ -57,9 +57,10 @@ function benchmarkMarkdown(report) {
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | ${report.case} | ${report.width}x${report.height} | ${formatMs(report.timing.totalMs)} | ${formatMs(report.timing.fetchMs)} | ${formatMs(report.timing.renderMs)} | ${formatBytes(report.pngBytes)} | ${report.diagnostics.warnings} | ${report.diagnostics.assets} |
 
-| Extra Case | Total | Fetch | Render | PNG | Assets |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| repeated-image | ${formatMs(report.repeatedImage.totalMs)} | ${formatMs(report.repeatedImage.fetchMs)} | ${formatMs(report.repeatedImage.renderMs)} | ${formatBytes(report.repeatedImage.pngBytes)} | ${report.repeatedImage.diagnosticsAssets} |
+| Extra Case | Total | Fetch | Render | PNG | Assets | Transferred |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| repeated-image | ${formatMs(report.repeatedImage.totalMs)} | ${formatMs(report.repeatedImage.fetchMs)} | ${formatMs(report.repeatedImage.renderMs)} | ${formatBytes(report.repeatedImage.pngBytes)} | ${report.repeatedImage.diagnosticsAssets} | ${report.repeatedImage.transferredAssets} |
+| repeated-image cached | ${formatMs(report.repeatedImageCached.totalMs)} | ${formatMs(report.repeatedImageCached.fetchMs)} | ${formatMs(report.repeatedImageCached.renderMs)} | ${formatBytes(report.repeatedImageCached.pngBytes)} | ${report.repeatedImageCached.diagnosticsAssets} | ${report.repeatedImageCached.transferredAssets} |
 `;
 }
 

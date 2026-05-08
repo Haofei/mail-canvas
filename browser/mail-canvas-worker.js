@@ -21,7 +21,6 @@ self.addEventListener("message", async (event) => {
         throw new Error("worker not initialized");
       }
       const started = performance.now();
-      renderer.clear_assets();
       for (const asset of message.assets ?? []) {
         renderer.register_asset(asset.url, new Uint8Array(asset.bytes));
       }
@@ -42,6 +41,7 @@ self.addEventListener("message", async (event) => {
           diagnostics,
           assetSummary: {
             registered: renderer.asset_count(),
+            transferred: (message.assets ?? []).length,
           },
           renderMs: performance.now() - started,
         },

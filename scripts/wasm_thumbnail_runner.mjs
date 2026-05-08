@@ -82,6 +82,15 @@ async function runInBrowser(baseUrl) {
             baseUrl: window.location.href,
           });
           const repeatedTotalMs = performance.now() - repeatedStarted;
+          const repeatedCachedStarted = performance.now();
+          const repeatedCachedResult = await renderer.renderThumbnail({
+            html: repeatedImageHtml(heroBlobUrl),
+            width: 800,
+            height: 1200,
+            scale: 1,
+            baseUrl: window.location.href,
+          });
+          const repeatedCachedTotalMs = performance.now() - repeatedCachedStarted;
           renderer.destroy();
           const destroyRejects = await rejectsWithMessage(
             () =>
@@ -135,6 +144,15 @@ async function runInBrowser(baseUrl) {
               fetchMs: repeatedResult.timing.fetchMs,
               renderMs: repeatedResult.timing.renderMs,
               diagnosticsAssets: repeatedResult.diagnostics.assets.length,
+              transferredAssets: repeatedResult.assets.transferred,
+            },
+            repeatedImageCached: {
+              pngBytes: repeatedCachedResult.png.byteLength,
+              totalMs: repeatedCachedTotalMs,
+              fetchMs: repeatedCachedResult.timing.fetchMs,
+              renderMs: repeatedCachedResult.timing.renderMs,
+              diagnosticsAssets: repeatedCachedResult.diagnostics.assets.length,
+              transferredAssets: repeatedCachedResult.assets.transferred,
             },
             wrapperChecks: {
               destroyRejects,
