@@ -46,7 +46,7 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
       - name: Generate corpus manifest
-        run: npm run corpus:manifest
+        run: npm run research:manifest
       - name: Run MailCanvas tools smoke test
         run: npm run test:tools
       - name: Build browser WASM bundle
@@ -86,11 +86,11 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
       - name: Generate corpus manifest
-        run: npm run corpus:manifest
+        run: npm run research:manifest
       - name: Run observational golden corpus
         id: golden-corpus
         continue-on-error: true
-        run: npm run compare:corpus
+        run: npm run research:compare:golden
       - name: Append corpus summary
         if: always()
         run: |

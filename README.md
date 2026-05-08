@@ -62,12 +62,13 @@ npx playwright install chromium
 
 ```sh
 cargo run -p mail-canvas-cli -- \
+  render \
   --html examples/basic.html \
   --css examples/basic.css \
   --output out.png \
   --warnings-json warnings.json \
   --pdf-output out.pdf \
-  --width 600
+  --profile desktop-800
 ```
 
 Key options (see `--help` for the full list):
@@ -75,6 +76,7 @@ Key options (see `--help` for the full list):
 | Option | Default | Description |
 |---|---|---|
 | `--width` | `600` | CSS viewport width |
+| `--profile` | `generic` | Viewport preset: `generic`, `desktop-800`, `mobile-375`, `mobile-390`, `mobile-414`, `thumbnail`, `gmail-ish`, `apple-mail-ish`, `outlook-ish`, or `images-blocked` |
 | `--scale` | `1.0` | Output pixel scale |
 | `--viewport-height` | `800` | Initial CSS viewport height |
 | `--min-height` | `1` | Minimum final CSS height |
@@ -96,10 +98,25 @@ Key options (see `--help` for the full list):
 | `--max-table-cells` | `100000` | Maximum expanded table cell slots |
 | `--font-file` / `--font-dir` | - | Load explicit fonts instead of system fonts |
 
-### Developer Tools
+### Product Commands
+
+The native renderer is pure Rust. It does not require Node to render:
+
+```sh
+cargo run -p mail-canvas-cli -- render --html examples/basic.html --output out.png
+cargo run -p mail-canvas-cli -- render --html examples/basic.html --output mobile.png --profile mobile-390
+cargo run -p mail-canvas-cli -- profiles
+```
+
+`mail-canvas --html ... --output ...` remains supported for compatibility, but
+new integrations should call `mail-canvas render ...`.
+
+### Node Tooling
 
 The product-facing developer tools live in `scripts/mail_canvas_tools.mjs` and
-wrap the native CLI without adding Chromium to the MailCanvas render path.
+wrap the native CLI without adding Chromium to the MailCanvas render path. Node
+is optional for the core renderer; it is used for preview servers, reports,
+Playwright comparison, corpus downloading, and the browser/WASM wrapper.
 
 Render once, or run a lightweight local preview server:
 
@@ -131,14 +148,14 @@ Run fixed performance probes against MailCanvas and Chromium. Use `--runs` for
 median/min/max timing and RSS summaries when comparing optimizations:
 
 ```sh
-npm run benchmark:thumbnail -- --fixture-fonts --runs 3
-npm run benchmark:memory -- --fixture-fonts --runs 3
+npm run perf:thumbnail -- --fixture-fonts --runs 3
+npm run perf:memory -- --fixture-fonts --runs 3
 ```
 
 These tools support `--profile` presets: `generic`, `desktop-800`,
-`mobile-375`, `thumbnail`, `gmail-ish`, `apple-mail-ish`, `outlook-ish`, and
-`images-blocked`. These are practical product profiles, not exact client
-emulators.
+`mobile-375`, `mobile-390`, `mobile-414`, `thumbnail`, `gmail-ish`,
+`apple-mail-ish`, `outlook-ish`, and `images-blocked`. These are practical
+product profiles, not exact client emulators.
 
 ### GitHub Action
 
@@ -231,7 +248,7 @@ copy.
 
 ```sh
 cargo build -p mail-canvas-cli
-npm run serve:http
+npm run dev:serve-http
 curl -sS http://127.0.0.1:8787/render \
   -H 'content-type: application/json' \
   --data '{"html":"<table><tr><td>Hello</td></tr></table>","width":600}' \
@@ -277,20 +294,20 @@ presence, layout stability, media regions) rather than strict pixel equality.
 Run the committed golden corpus comparison for diagnostics:
 
 ```sh
-npm run compare:corpus
+npm run research:compare:golden
 ```
 
 Run only the committed editor/generated samples:
 
 ```sh
-npm run compare:editors
+npm run research:compare:editors
 ```
 
 Run the corpus pipeline for temporary large-template intake, audit, comparison,
 triage, and registry updates:
 
 ```sh
-npm run corpus:pipeline -- \
+npm run research:pipeline -- \
   --provider reallygoodemails \
   --category saas \
   --limit 10 \
@@ -330,7 +347,7 @@ Refresh deterministic font fixtures when the supported open-source font bundle
 changes:
 
 ```sh
-npm run fonts:download
+npm run dev:fonts-download
 ```
 
 The committed bundle intentionally stays small: email-safe aliases are mapped to
@@ -346,7 +363,7 @@ template-specific font workarounds to the fixture catalog.
 Compare one local HTML file:
 
 ```sh
-npm run compare:local -- --html ./cnn.html --name cnn-local
+npm run research:compare:local -- --html ./cnn.html --name cnn-local
 ```
 
 ### CSS Support Matrix
@@ -438,17 +455,31 @@ npx playwright install chromium
 
 ```sh
 cargo run -p mail-canvas-cli -- \
+  render \
   --html examples/basic.html \
   --css examples/basic.css \
   --output out.png \
   --warnings-json warnings.json \
   --pdf-output out.pdf \
-  --width 600
+  --profile desktop-800
 ```
 
-常用参数见上方英文部分的选项表，或运行 `--help` 查看完整列表。
+常用参数见上方英文部分的选项表，或运行 `--help` 查看完整列表。Native
+渲染器是纯 Rust，不依赖 Node；Node 只用于 preview、diff、Playwright 对比、
+语料下载、报告生成和浏览器/WASM 包装层。
 
-### 开发工具
+### 产品命令
+
+```sh
+cargo run -p mail-canvas-cli -- render --html examples/basic.html --output out.png
+cargo run -p mail-canvas-cli -- render --html examples/basic.html --output mobile.png --profile mobile-390
+cargo run -p mail-canvas-cli -- profiles
+```
+
+旧的 `mail-canvas --html ... --output ...` 仍然兼容，但新的集成应该使用
+`mail-canvas render ...`。
+
+### Node 工具
 
 ```sh
 # 单次渲染或本地预览
@@ -466,12 +497,13 @@ npm run snapshot -- "templates/**/*.html" --baseline snapshots
 npm run check -- examples/basic.html --warnings-json /tmp/basic.warnings.json
 
 # 固定性能探针；--runs 输出 timing/RSS 的 min/median/max
-npm run benchmark:thumbnail -- --fixture-fonts --runs 3
-npm run benchmark:memory -- --fixture-fonts --runs 3
+npm run perf:thumbnail -- --fixture-fonts --runs 3
+npm run perf:memory -- --fixture-fonts --runs 3
 ```
 
-支持 `--profile` 预设：`generic`、`desktop-800`、`mobile-375`、`thumbnail`、
-`gmail-ish`、`apple-mail-ish`、`outlook-ish`、`images-blocked`。
+支持 `--profile` 预设：`generic`、`desktop-800`、`mobile-375`、`mobile-390`、
+`mobile-414`、`thumbnail`、`gmail-ish`、`apple-mail-ish`、`outlook-ish`、
+`images-blocked`。
 
 ### GitHub Action
 
@@ -544,7 +576,7 @@ renderer.destroy();
 
 ```sh
 cargo build -p mail-canvas-cli
-npm run serve:http
+npm run dev:serve-http
 curl -sS http://127.0.0.1:8787/render \
   -H 'content-type: application/json' \
   --data '{"html":"<table><tr><td>Hello</td></tr></table>","width":600}' \
@@ -580,13 +612,13 @@ docker run --rm -p 8787:8787 mail-canvas
 npm run test:visual
 
 # 已提交 golden corpus 对比（诊断用）
-npm run compare:corpus
+npm run research:compare:golden
 
 # 已提交的编辑器/生成器样例对比
-npm run compare:editors
+npm run research:compare:editors
 
 # 本地 HTML 对比
-npm run compare:local -- --html ./cnn.html --name cnn-local
+npm run research:compare:local -- --html ./cnn.html --name cnn-local
 ```
 
 `test:visual` 使用 Chromium 作为参考，通过语义容差（内容存在、布局稳定、

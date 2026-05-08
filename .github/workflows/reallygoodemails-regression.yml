@@ -46,7 +46,7 @@ jobs:
           if [ -n "${RGE_EMAIL:-}" ] && [ -n "${RGE_PASSWORD:-}" ]; then
             login_args=(--login)
           fi
-          npm run corpus:pipeline -- \
+          npm run research:pipeline -- \
             --provider reallygoodemails \
             --category "$RGE_CATEGORY" \
             --collection "$RGE_COLLECTION" \

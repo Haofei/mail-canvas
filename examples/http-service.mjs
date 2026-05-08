@@ -40,6 +40,7 @@ const server = http.createServer(async (request, response) => {
       await execFileAsync(
         renderer,
         [
+          'render',
           '--html',
           htmlPath,
           '--output',

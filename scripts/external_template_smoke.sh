@@ -29,6 +29,7 @@ for html in "$WORK_DIR"/html/*.html; do
   name="$(basename "$html" .html)"
   log="$WORK_DIR/$name.log"
   "$RENDERER" \
+    render \
     --html "$html" \
     --output "$WORK_DIR/png/$name.png" \
     --pdf-output "$WORK_DIR/pdf/$name.pdf" \

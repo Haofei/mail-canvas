@@ -364,6 +364,7 @@ async function compareTemplate(template, args, dirs, renderer, browser) {
   );
 
   const renderArgs = [
+    'render',
     '--html',
     template.htmlPath,
     '--output',

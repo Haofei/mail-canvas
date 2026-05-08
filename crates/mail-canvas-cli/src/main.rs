@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail};
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 use mail_canvas_core::{
     EmailRenderer, RenderDebugOptions, RenderRequest, RenderedImage, ResourcePolicy,
 };
@@ -14,13 +14,108 @@ enum PdfMode {
     Raster,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum RenderProfile {
+    Generic,
+    #[value(name = "desktop-800")]
+    Desktop800,
+    #[value(name = "mobile-375")]
+    Mobile375,
+    #[value(name = "mobile-390")]
+    Mobile390,
+    #[value(name = "mobile-414")]
+    Mobile414,
+    Thumbnail,
+    #[value(name = "gmail-ish")]
+    GmailIsh,
+    #[value(name = "apple-mail-ish")]
+    AppleMailIsh,
+    #[value(name = "outlook-ish")]
+    OutlookIsh,
+    #[value(name = "images-blocked")]
+    ImagesBlocked,
+}
+
+impl RenderProfile {
+    fn defaults(self) -> ProfileDefaults {
+        match self {
+            Self::Generic => ProfileDefaults {
+                width: 600,
+                viewport_height: 800,
+                scale: 1.0,
+            },
+            Self::Desktop800 | Self::Thumbnail | Self::AppleMailIsh | Self::ImagesBlocked => {
+                ProfileDefaults {
+                    width: 800,
+                    viewport_height: 1200,
+                    scale: 1.0,
+                }
+            }
+            Self::Mobile375 => ProfileDefaults {
+                width: 375,
+                viewport_height: 812,
+                scale: 1.0,
+            },
+            Self::Mobile390 => ProfileDefaults {
+                width: 390,
+                viewport_height: 844,
+                scale: 1.0,
+            },
+            Self::Mobile414 => ProfileDefaults {
+                width: 414,
+                viewport_height: 896,
+                scale: 1.0,
+            },
+            Self::GmailIsh | Self::OutlookIsh => ProfileDefaults {
+                width: 600,
+                viewport_height: 800,
+                scale: 1.0,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProfileDefaults {
+    width: u32,
+    viewport_height: u32,
+    scale: f32,
+}
+
+impl Default for ProfileDefaults {
+    fn default() -> Self {
+        Self {
+            width: 600,
+            viewport_height: 800,
+            scale: 1.0,
+        }
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(name = "mail-canvas")]
-#[command(about = "Render an HTML/CSS email template to a PNG")]
-struct Args {
+#[command(about = "Render and inspect HTML/CSS email templates without launching Chrome")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
+    #[command(flatten)]
+    legacy_render: RenderArgs,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Render an HTML/CSS email template to a PNG or raster PDF.
+    Render(Box<RenderArgs>),
+    /// List built-in viewport/profile presets.
+    Profiles,
+}
+
+#[derive(Debug, Parser)]
+struct RenderArgs {
     /// HTML file to render.
     #[arg(long)]
-    html: PathBuf,
+    html: Option<PathBuf>,
 
     /// Optional CSS file to inject into the document head.
     #[arg(long)]
@@ -28,7 +123,7 @@ struct Args {
 
     /// PNG output path.
     #[arg(short, long)]
-    output: PathBuf,
+    output: Option<PathBuf>,
 
     /// Optional JSON diagnostics output path for structured renderer warnings.
     #[arg(long)]
@@ -47,28 +142,32 @@ struct Args {
     pdf_mode: PdfMode,
 
     /// CSS viewport width.
-    #[arg(long, default_value_t = 600)]
-    width: u32,
+    #[arg(long)]
+    width: Option<u32>,
 
     /// Initial CSS viewport height used before full-height measurement.
-    #[arg(long, default_value_t = 800)]
-    viewport_height: u32,
+    #[arg(long)]
+    viewport_height: Option<u32>,
 
     /// Minimum final CSS output height.
-    #[arg(long, default_value_t = 1)]
-    min_height: u32,
+    #[arg(long)]
+    min_height: Option<u32>,
 
     /// Maximum final CSS output height.
     #[arg(long)]
     max_height: Option<u32>,
 
     /// Device pixel scale. Use 2.0 for retina output.
-    #[arg(long, default_value_t = 1.0)]
-    scale: f32,
+    #[arg(long)]
+    scale: Option<f32>,
+
+    /// Viewport preset. This changes width, viewport-height, and scale unless explicitly set.
+    #[arg(long, value_enum)]
+    profile: Option<RenderProfile>,
 
     /// Reserved compatibility option; the pure Rust renderer does not load pages.
-    #[arg(long, default_value_t = 30)]
-    timeout: u64,
+    #[arg(long)]
+    timeout: Option<u64>,
 
     /// Resource timeout in milliseconds. Overrides --timeout.
     #[arg(long)]
@@ -132,22 +231,47 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let cli = Cli::parse();
+    match cli.command {
+        Some(Command::Render(args)) => run_render(*args),
+        Some(Command::Profiles) => {
+            print_profiles();
+            Ok(())
+        }
+        None => run_render(cli.legacy_render),
+    }
+}
+
+fn run_render(args: RenderArgs) -> Result<()> {
     let _ignored_settle_ms = args.settle_ms;
+    let profile_defaults = args
+        .profile
+        .map(RenderProfile::defaults)
+        .unwrap_or_default();
+    let width = args.width.unwrap_or(profile_defaults.width);
+    let viewport_height = args
+        .viewport_height
+        .unwrap_or(profile_defaults.viewport_height);
+    let min_height = args.min_height.unwrap_or(1);
+    let scale = args.scale.unwrap_or(profile_defaults.scale);
+    let html = args
+        .html
+        .as_ref()
+        .context("missing --html; use `mail-canvas render --html email.html --output out.png`")?;
+    let output = args
+        .output
+        .as_ref()
+        .context("missing --output; use `mail-canvas render --html email.html --output out.png`")?;
     let font_paths = collect_font_paths(&args.font_files, &args.font_dirs)?;
 
-    let document = build_document_from_files(
-        &args.html,
-        args.css.as_deref(),
-        args.base_url.as_deref(),
-        args.width,
-    )?;
+    let document =
+        build_document_from_files(html, args.css.as_deref(), args.base_url.as_deref(), width)?;
     let request = RenderRequest {
         html: document.html,
-        width: args.width,
-        viewport_height: args.viewport_height,
-        min_height: args.min_height,
-        scale: args.scale,
+        width,
+        viewport_height,
+        min_height,
+        scale,
         base_url: document.base_url,
         max_height: args.max_height,
         resource_policy: ResourcePolicy {
@@ -157,7 +281,7 @@ fn main() -> Result<()> {
             timeout: args
                 .timeout_ms
                 .map(Duration::from_millis)
-                .unwrap_or_else(|| Duration::from_secs(args.timeout)),
+                .unwrap_or_else(|| Duration::from_secs(args.timeout.unwrap_or(30))),
             max_resource_bytes: args.max_image_bytes,
             max_total_resource_bytes: args.max_total_resource_bytes,
             max_decoded_pixels: args.max_decoded_pixels,
@@ -181,12 +305,12 @@ fn main() -> Result<()> {
     )?;
     let image = renderer.render_png(request)?;
 
-    if let Some(parent) = args.output.parent() {
+    if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
-    fs::write(&args.output, &image.png)
-        .with_context(|| format!("failed to write {}", args.output.display()))?;
+    fs::write(output, &image.png)
+        .with_context(|| format!("failed to write {}", output.display()))?;
 
     if let Some(path) = &args.warnings_json {
         write_warnings_json(path, &image)?;
@@ -206,7 +330,7 @@ fn main() -> Result<()> {
         image.scale,
         image.pixel_width,
         image.pixel_height,
-        args.output.display()
+        output.display()
     );
 
     for message in &image.console_messages {
@@ -232,6 +356,19 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn print_profiles() {
+    println!("generic        width=600 viewport-height=800 scale=1");
+    println!("desktop-800    width=800 viewport-height=1200 scale=1");
+    println!("thumbnail      width=800 viewport-height=1200 scale=1");
+    println!("mobile-375     width=375 viewport-height=812 scale=1");
+    println!("mobile-390     width=390 viewport-height=844 scale=1");
+    println!("mobile-414     width=414 viewport-height=896 scale=1");
+    println!("gmail-ish      width=600 viewport-height=800 scale=1");
+    println!("apple-mail-ish width=800 viewport-height=1200 scale=1");
+    println!("outlook-ish    width=600 viewport-height=800 scale=1");
+    println!("images-blocked width=800 viewport-height=1200 scale=1");
 }
 
 fn write_warnings_json(path: &std::path::Path, image: &RenderedImage) -> Result<()> {
@@ -325,5 +462,31 @@ mod tests {
         assert!(is_font_file(Path::new("NotoSans.TTF")));
         assert!(is_font_file(Path::new("NotoSans.otc")));
         assert!(!is_font_file(Path::new("NotoSans.woff2")));
+    }
+
+    #[test]
+    fn mobile_profiles_use_phone_viewports() {
+        let profile = RenderProfile::Mobile390.defaults();
+        assert_eq!(profile.width, 390);
+        assert_eq!(profile.viewport_height, 844);
+        assert_eq!(profile.scale, 1.0);
+
+        let profile = RenderProfile::Mobile414.defaults();
+        assert_eq!(profile.width, 414);
+        assert_eq!(profile.viewport_height, 896);
+        assert_eq!(profile.scale, 1.0);
+    }
+
+    #[test]
+    fn desktop_and_thumbnail_profiles_share_desktop_viewport() {
+        let desktop = RenderProfile::Desktop800.defaults();
+        let thumbnail = RenderProfile::Thumbnail.defaults();
+
+        assert_eq!(desktop.width, 800);
+        assert_eq!(desktop.viewport_height, 1200);
+        assert_eq!(desktop.scale, 1.0);
+        assert_eq!(thumbnail.width, desktop.width);
+        assert_eq!(thumbnail.viewport_height, desktop.viewport_height);
+        assert_eq!(thumbnail.scale, desktop.scale);
     }
 }

@@ -60,7 +60,7 @@ Common options:
   --width <px>              CSS viewport width, default ${DEFAULT_WIDTH}
   --viewport-height <px>    initial CSS viewport height, default ${DEFAULT_VIEWPORT_HEIGHT}
   --scale <n>               output device scale, default ${DEFAULT_SCALE}
-  --profile <name>          generic, desktop-800, mobile-375, thumbnail, gmail-ish, apple-mail-ish, outlook-ish, or images-blocked
+  --profile <name>          generic, desktop-800, mobile-375, mobile-390, mobile-414, thumbnail, gmail-ish, apple-mail-ish, outlook-ish, or images-blocked
   --font-dir <dir>          deterministic font directory, default fixtures/fonts
   --renderer <path>         mail-canvas binary path, default target/debug/mail-canvas
   --allow-remote            allow remote resources
@@ -145,7 +145,9 @@ function applyProfile(options, profile, explicit) {
   const profiles = {
     generic: { width: 600, viewportHeight: 800, scale: 1 },
     'desktop-800': { width: 800, viewportHeight: 1200, scale: 1 },
-    'mobile-375': { width: 375, viewportHeight: 900, scale: 1 },
+    'mobile-375': { width: 375, viewportHeight: 812, scale: 1 },
+    'mobile-390': { width: 390, viewportHeight: 844, scale: 1 },
+    'mobile-414': { width: 414, viewportHeight: 896, scale: 1 },
     thumbnail: { width: 800, viewportHeight: 1200, scale: 1 },
     'gmail-ish': { width: 600, viewportHeight: 800, scale: 1 },
     'apple-mail-ish': { width: 800, viewportHeight: 1200, scale: 1 },
@@ -664,6 +666,7 @@ async function ensureRenderer(renderer) {
 
 function renderHtml(htmlPath, outputPath, warningsJsonPath, options) {
   const args = [
+    'render',
     '--html',
     htmlPath,
     '--output',

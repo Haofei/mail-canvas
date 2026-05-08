@@ -90,6 +90,7 @@ async function main() {
       measureNativeCommand,
       renderer,
       [
+        'render',
         '--html',
         htmlPath,
         '--output',

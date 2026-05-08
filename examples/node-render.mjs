@@ -21,7 +21,7 @@ async function main() {
     );
     await execFileAsync(
       renderer,
-      ['--html', htmlPath, '--output', outputPath, '--width', '600'],
+      ['render', '--html', htmlPath, '--output', outputPath, '--width', '600'],
       { cwd: ROOT_DIR },
     );
     const png = await readFile(outputPath);
