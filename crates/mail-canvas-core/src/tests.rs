@@ -2690,7 +2690,7 @@ fn remote_images_are_blocked_by_default() {
 fn blocked_stylesheet_is_reported_in_assets() {
     let html = build_document(
         r#"<div>Hello</div>"#,
-        Some(r#"@import url("https://example.com/email.css");"#),
+        Some(r#"@IMPORT url("https://example.com/email.css");"#),
         None,
         200,
     );

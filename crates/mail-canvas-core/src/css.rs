@@ -129,7 +129,11 @@ fn sanitize_style_attributes(html: &str) -> String {
     out
 }
 
-fn find_ascii_case_insensitive_from(haystack: &str, needle: &str, offset: usize) -> Option<usize> {
+pub(crate) fn find_ascii_case_insensitive_from(
+    haystack: &str,
+    needle: &str,
+    offset: usize,
+) -> Option<usize> {
     let needle = needle.as_bytes();
     if needle.is_empty() {
         return Some(offset.min(haystack.len()));

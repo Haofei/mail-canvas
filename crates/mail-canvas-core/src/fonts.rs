@@ -12,8 +12,9 @@ use url::Url;
 
 use crate::api::{AssetKind, AssetStatus, RenderDiagnostics};
 use crate::css::{
-    css_format_hint, css_function_value, first_css_url, first_quoted_css_string,
-    font_face_declarations, next_css_segment_end, style_blocks, unquote_css_value,
+    css_format_hint, css_function_value, find_ascii_case_insensitive_from, first_css_url,
+    first_quoted_css_string, font_face_declarations, next_css_segment_end, style_blocks,
+    unquote_css_value,
 };
 #[cfg(test)]
 use crate::font_catalog::{
@@ -553,15 +554,13 @@ fn stylesheet_link_urls_from_document(document: &NodeRef) -> Vec<String> {
 }
 
 fn css_import_urls(css: &str) -> Vec<String> {
-    let lower = css.to_ascii_lowercase();
     let mut urls = Vec::new();
     let mut offset = 0usize;
 
-    while offset < lower.len() {
-        let Some(import_rel) = lower[offset..].find("@import") else {
+    while offset < css.len() {
+        let Some(import_start) = find_ascii_case_insensitive_from(css, "@import", offset) else {
             break;
         };
-        let import_start = offset + import_rel;
         let statement_start = import_start + "@import".len();
         let statement_end = css[statement_start..]
             .find(';')
