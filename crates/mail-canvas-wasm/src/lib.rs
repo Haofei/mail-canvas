@@ -270,28 +270,30 @@ impl RenderOutputBackend for WasmOutputBackend {
 
 #[derive(Debug, Clone, Default)]
 struct AssetRegistry {
-    entries: Arc<Mutex<HashMap<String, Arc<[u8]>>>>,
-    total_bytes: Arc<Mutex<usize>>,
+    inner: Arc<Mutex<AssetRegistryInner>>,
+}
+
+#[derive(Debug, Default)]
+struct AssetRegistryInner {
+    entries: HashMap<String, Arc<[u8]>>,
+    total_bytes: usize,
 }
 
 impl AssetRegistry {
     fn register(&self, url: &str, bytes: &[u8]) -> Result<()> {
         ensure_resource_size_with_limit(bytes.len(), DEFAULT_MAX_RESOURCE_BYTES)?;
         let key = normalize_registry_key(url)?;
-        let mut entries = self.entries.lock().expect("asset registry mutex poisoned");
-        let existing_len = entries.get(&key).map_or(0, |bytes| bytes.len());
-        if existing_len == 0 && entries.len() >= DEFAULT_MAX_RESOURCE_COUNT {
+        let mut inner = self.inner.lock().expect("asset registry mutex poisoned");
+        let existing_len = inner.entries.get(&key).map_or(0, |bytes| bytes.len());
+        if existing_len == 0 && inner.entries.len() >= DEFAULT_MAX_RESOURCE_COUNT {
             bail!(
                 "asset count exceeds max-resource-count: {} > {}",
-                entries.len() + 1,
+                inner.entries.len() + 1,
                 DEFAULT_MAX_RESOURCE_COUNT
             );
         }
-        let mut total = self
+        let next_total = inner
             .total_bytes
-            .lock()
-            .expect("asset registry bytes mutex poisoned");
-        let next_total = total
             .saturating_sub(existing_len)
             .saturating_add(bytes.len());
         if next_total > DEFAULT_MAX_TOTAL_RESOURCE_BYTES {
@@ -301,32 +303,28 @@ impl AssetRegistry {
                 DEFAULT_MAX_TOTAL_RESOURCE_BYTES
             );
         }
-        entries.insert(key, Arc::<[u8]>::from(bytes));
-        *total = next_total;
+        inner.entries.insert(key, Arc::<[u8]>::from(bytes));
+        inner.total_bytes = next_total;
         Ok(())
     }
 
     fn clear(&self) {
-        self.entries
-            .lock()
-            .expect("asset registry mutex poisoned")
-            .clear();
-        *self
-            .total_bytes
-            .lock()
-            .expect("asset registry bytes mutex poisoned") = 0;
+        let mut inner = self.inner.lock().expect("asset registry mutex poisoned");
+        inner.entries.clear();
+        inner.total_bytes = 0;
     }
 
     fn len(&self) -> usize {
-        self.entries
+        self.inner
             .lock()
             .expect("asset registry mutex poisoned")
+            .entries
             .len()
     }
 
     fn get(&self, src: &str, base_url: Option<&Url>) -> Option<RegisteredAsset> {
-        let entries = self.entries.lock().expect("asset registry mutex poisoned");
-        if let Some(bytes) = entries.get(src) {
+        let inner = self.inner.lock().expect("asset registry mutex poisoned");
+        if let Some(bytes) = inner.entries.get(src) {
             return Some(RegisteredAsset {
                 request_url: src.to_string(),
                 resolved_url: None,
@@ -334,7 +332,7 @@ impl AssetRegistry {
             });
         }
         let resolved = resolve_asset_url(src, base_url)?;
-        let bytes = Arc::clone(entries.get(resolved.as_str())?);
+        let bytes = Arc::clone(inner.entries.get(resolved.as_str())?);
         Some(RegisteredAsset {
             request_url: src.to_string(),
             resolved_url: Some(resolved.to_string()),
