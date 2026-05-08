@@ -72,12 +72,10 @@ fn strip_mso_declaration_attributes(html: &str) -> String {
 }
 
 fn sanitize_style_attributes(html: &str) -> String {
-    let lower = html.to_ascii_lowercase();
     let mut out = String::with_capacity(html.len());
     let mut offset = 0usize;
 
-    while let Some(style_rel) = lower[offset..].find("style=") {
-        let style_start = offset + style_rel;
+    while let Some(style_start) = find_ascii_case_insensitive_from(html, "style=", offset) {
         let value_start = style_start + "style=".len();
         if !is_attribute_name_boundary(html, style_start) || value_start >= html.len() {
             out.push_str(&html[offset..value_start]);
@@ -120,6 +118,20 @@ fn sanitize_style_attributes(html: &str) -> String {
 
     out.push_str(&html[offset..]);
     out
+}
+
+fn find_ascii_case_insensitive_from(haystack: &str, needle: &str, offset: usize) -> Option<usize> {
+    let needle = needle.as_bytes();
+    if needle.is_empty() {
+        return Some(offset.min(haystack.len()));
+    }
+    if offset > haystack.len().saturating_sub(needle.len()) {
+        return None;
+    }
+    haystack.as_bytes()[offset..]
+        .windows(needle.len())
+        .position(|candidate| candidate.eq_ignore_ascii_case(needle))
+        .map(|position| offset + position)
 }
 
 fn is_attribute_name_boundary(html: &str, start: usize) -> bool {
@@ -1177,6 +1189,19 @@ mod tests {
         let html = r#"
             <html><body>
               <table class="card" style=width:504px;><tr><td>Card</td></tr></table>
+            </body></html>
+        "#;
+
+        let inlined = inline_css(html, 800, 800).unwrap();
+
+        assert!(inlined.contains("width: 504px"));
+    }
+
+    #[test]
+    fn sanitizes_uppercase_inline_style_attributes_without_lowercase_copy() {
+        let html = r#"
+            <html><body>
+              <table class="card" STYLE="width:504px;"><tr><td>Card</td></tr></table>
             </body></html>
         "#;
 
