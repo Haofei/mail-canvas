@@ -67,8 +67,8 @@ impl TextRunStyle {
         }
     }
 
-    pub(crate) fn text_attrs(&self) -> Attrs<'_> {
-        text_style_attrs(
+    pub(crate) fn text_attrs_scaled(&self, scale: f32) -> Attrs<'_> {
+        let attrs = text_style_attrs(
             self.font_family.as_deref(),
             self.font_weight,
             self.font_face_weight,
@@ -76,7 +76,14 @@ impl TextRunStyle {
             self.font_hinting_disabled,
             self.letter_spacing,
             self.font_size,
-        )
+        );
+        if scale == 1.0 {
+            return attrs;
+        }
+        attrs.metrics(Metrics::new(
+            (self.font_size * scale).max(1.0),
+            (self.line_height * scale).max(1.0),
+        ))
     }
 
     pub(crate) fn text_attrs_for_span(
@@ -85,7 +92,7 @@ impl TextRunStyle {
         scale: f32,
         parent_style: &Style,
     ) -> Attrs<'_> {
-        let attrs = self.text_attrs().color(TextColor::rgba(
+        let attrs = self.text_attrs_scaled(scale).color(TextColor::rgba(
             self.color.r,
             self.color.g,
             self.color.b,

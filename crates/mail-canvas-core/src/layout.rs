@@ -2289,7 +2289,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         for run in buffer.layout_runs() {
             width = width.max(run.line_w);
         }
-        width.ceil()
+        (width + letter_spacing_preferred_width_padding(text, style.letter_spacing)).ceil()
     }
 
     fn measure_rich_text_width(&mut self, spans: &[TextSpan], style: &Style) -> f32 {
@@ -2311,7 +2311,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         for run in buffer.layout_runs() {
             width = width.max(run.line_w);
         }
-        width.ceil()
+        (width + rich_text_letter_spacing_preferred_width_padding(spans)).ceil()
     }
 
     fn preferred_content_width(
@@ -3100,6 +3100,23 @@ fn inline_flow_line_advance(
 fn layout_contains_line_box(layout: &LayoutBox) -> bool {
     matches!(layout.kind, LayoutKind::Text(_) | LayoutKind::RichText(_))
         || layout.children.iter().any(layout_contains_line_box)
+}
+fn letter_spacing_preferred_width_padding(text: &str, letter_spacing: f32) -> f32 {
+    if letter_spacing <= 0.0 || !text.chars().any(|ch| !ch.is_whitespace()) {
+        return 0.0;
+    }
+    // Blink's inline preferred width leaves a little room for positive tracking
+    // at fragment edges. Without this, tightly fitted email OTP blocks can wrap
+    // the final digit even though the browser keeps the tracked run on one line.
+    letter_spacing
+}
+fn rich_text_letter_spacing_preferred_width_padding(spans: &[TextSpan]) -> f32 {
+    spans
+        .iter()
+        .filter(|span| span.text.chars().any(|ch| !ch.is_whitespace()))
+        .map(|span| span.style.letter_spacing)
+        .fold(0.0_f32, f32::max)
+        .max(0.0)
 }
 fn inline_style_has_own_box(style: &Style) -> bool {
     style.background.is_some()

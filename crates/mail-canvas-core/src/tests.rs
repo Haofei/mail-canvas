@@ -411,6 +411,21 @@ fn parses_letter_spacing_against_current_font_size() {
 }
 
 #[test]
+fn positive_letter_spacing_keeps_inline_block_otp_on_one_line() {
+    let layout = layout_for_test(
+        r#"<div style="width:500px;text-align:center"><span style="font-family:monospace;font-size:43px;line-height:55px;letter-spacing:20px;display:inline-block;margin-left:20px">605050</span></div>"#,
+        600,
+    );
+    let text = find_text_layout(&layout).expect("otp text");
+
+    assert!(
+        text.rect.height <= 60.0,
+        "tracked OTP text should stay on one line, got {:?}",
+        text.rect
+    );
+}
+
+#[test]
 fn font_smoothing_antialiased_disables_hinting() {
     let mut style = Style::initial();
     style.apply_declaration("-webkit-font-smoothing", "antialiased");
