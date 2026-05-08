@@ -348,32 +348,36 @@ pub(super) fn rich_text_baseline_leading_offset(spans: &[TextSpan], style: &Styl
 }
 
 pub(crate) fn text_content(node: &NodeRef) -> String {
+    let mut out = String::new();
+    append_text_content(&mut out, node);
+    out
+}
+
+fn append_text_content(out: &mut String, node: &NodeRef) {
     if let Some(text) = node.as_text() {
-        return text.borrow().to_string();
+        out.push_str(&text.borrow());
+        return;
     }
 
     let Some(tag) = element_tag(node) else {
-        return String::new();
+        return;
     };
     if is_metadata_tag(&tag) {
-        return String::new();
+        return;
     }
     if tag == "br" {
-        return HARD_BREAK_STR.to_string();
+        out.push_str(HARD_BREAK_STR);
+        return;
     }
     if tag == "img" {
-        return String::new();
+        return;
     }
 
-    let mut out = String::new();
     for child in node.children() {
-        append_text(&mut out, &text_content(&child));
+        append_text_content(out, &child);
     }
-    out
 }
-fn append_text(out: &mut String, text: &str) {
-    out.push_str(text);
-}
+
 pub(crate) fn append_text_span(out: &mut Vec<TextSpan>, text: &str, style: &Style) {
     if !text.is_empty() {
         out.push(TextSpan::from_style(text.to_string(), style));
@@ -432,7 +436,7 @@ pub(crate) fn normalize_text(text: &str) -> String {
     )]))
 }
 pub(crate) fn normalize_text_spans(spans: &[TextSpan]) -> Vec<TextSpan> {
-    let mut out = Vec::new();
+    let mut out = Vec::with_capacity(spans.len());
     let mut pending_space_style: Option<TextRunStyle> = None;
 
     for span in spans {

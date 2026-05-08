@@ -2991,10 +2991,15 @@ fn block_allows_trailing_margin_collapse(style: &Style) -> bool {
 }
 fn table_cell_is_spacer(node: &NodeRef) -> bool {
     let text = text_content(node);
-    text.chars().any(|ch| ch == '\u{00a0}')
-        && text
-            .chars()
-            .all(|ch| ch == '\u{00a0}' || is_collapsible_whitespace(ch))
+    let mut has_nbsp = false;
+    for ch in text.chars() {
+        if ch == '\u{00a0}' {
+            has_nbsp = true;
+        } else if !is_collapsible_whitespace(ch) {
+            return false;
+        }
+    }
+    has_nbsp
 }
 fn cell_contains_only_intrinsic_fixed_replaced_content(node: &NodeRef, style: &Style) -> bool {
     let mut saw_replaced = false;
