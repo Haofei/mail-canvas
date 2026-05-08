@@ -894,6 +894,23 @@ pub(crate) fn background_tile_size(
             let ratio = (rect.width / natural_width).min(rect.height / natural_height);
             (natural_width * ratio, natural_height * ratio)
         }
+        BackgroundSize::Explicit { width, height } => {
+            match (
+                width.and_then(|width| width.resolve(rect.width)),
+                height.and_then(|height| height.resolve(rect.height)),
+            ) {
+                (Some(width), Some(height)) => (width.max(1.0), height.max(1.0)),
+                (Some(width), None) => {
+                    let ratio = width / natural_width.max(1.0);
+                    (width.max(1.0), (natural_height * ratio).max(1.0))
+                }
+                (None, Some(height)) => {
+                    let ratio = height / natural_height.max(1.0);
+                    ((natural_width * ratio).max(1.0), height.max(1.0))
+                }
+                (None, None) => (natural_width, natural_height),
+            }
+        }
     }
 }
 pub(crate) fn positioned_offset(origin: f32, available: f32, size: f32, axis: PositionAxis) -> f32 {

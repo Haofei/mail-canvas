@@ -458,6 +458,34 @@ fn headings_keep_browser_like_default_font_defaults() {
 }
 
 #[test]
+fn heading_font_size_em_uses_parent_font_size() {
+    let layout = layout_for_test(
+        r#"<div style="font-size:16px"><h2 style="font-size:4.5em;line-height:0.85em;margin:0">Title</h2></div>"#,
+        600,
+    );
+    let title = find_layout(&layout, |child| child.debug.tag == "h2").expect("heading");
+
+    assert!((title.style.font_size - 72.0).abs() < 0.1);
+    assert!((title.style.line_height - 61.2).abs() < 0.1);
+}
+
+#[test]
+fn entity_quoted_inline_font_family_preserves_following_declarations() {
+    let layout = layout_for_test(
+        r#"<table width="500"><tr><td style="font-size:0"><a style="display:block;font-family:&quot;Roboto Condensed&quot;, Helvetica, Arial, sans-serif;font-size:18px;line-height:100%;padding:18px 0;background:#231F20;color:#fff">CTA</a></td></tr></table>"#,
+        600,
+    );
+    let link = find_layout(&layout, |child| child.debug.tag == "a").expect("link");
+
+    assert!((link.style.font_size - 18.0).abs() < 0.1);
+    assert!(
+        link.rect.height >= 50.0,
+        "button link should keep text and vertical padding, got {}",
+        link.rect.height
+    );
+}
+
+#[test]
 fn inherited_font_weight_keeps_parent_weight() {
     let mut parent = Style::initial();
     parent.font_weight = FontWeight::BOLD;
@@ -1072,6 +1100,20 @@ fn parses_background_cover_position_and_repeat() {
 }
 
 #[test]
+fn parses_background_size_percent_width() {
+    let mut style = Style::initial();
+    style.apply_declaration("background-size", "100%");
+
+    assert_eq!(
+        style.background_size,
+        BackgroundSize::Explicit {
+            width: Some(Length::Percent(1.0)),
+            height: None,
+        }
+    );
+}
+
+#[test]
 fn parses_object_fit_cover() {
     let mut style = Style::initial();
     style.apply_declaration("object-fit", "COVER");
@@ -1170,8 +1212,27 @@ fn collapses_source_newlines_but_preserves_br_breaks() {
     let with_break = format!("Viewed by{HARD_BREAK}Someone");
     assert_eq!(normalize_text(&with_break), "Viewed by\nSomeone");
     assert_eq!(normalize_text(&HARD_BREAK.to_string()), "\n");
+    let with_trailing_break = format!("Viewed by{HARD_BREAK}");
+    assert_eq!(normalize_text(&with_trailing_break), "Viewed by");
+    let with_trailing_empty_line = format!("Viewed by{HARD_BREAK}{HARD_BREAK}");
+    assert_eq!(normalize_text(&with_trailing_empty_line), "Viewed by\n");
     let with_empty_line = format!("Viewed by{HARD_BREAK}{HARD_BREAK}Someone");
     assert_eq!(normalize_text(&with_empty_line), "Viewed by\n\nSomeone");
+}
+
+#[test]
+fn paragraph_with_single_br_uses_one_line_height() {
+    let layout = layout_for_test(
+        r#"<p style="margin:0;font-size:16px;line-height:24px"><br></p>"#,
+        300,
+    );
+    let paragraph = find_layout(&layout, |child| child.debug.tag == "p").expect("paragraph");
+
+    assert!(
+        (paragraph.rect.height - 24.0).abs() < 0.1,
+        "paragraph height: {}",
+        paragraph.rect.height
+    );
 }
 
 #[test]
@@ -1234,6 +1295,92 @@ fn explicit_auto_layout_tables_expand_for_fixed_image_grid_min_width() {
         (tables[1].rect.width - 600.0).abs() < 0.1,
         "inner table width: {}",
         tables[1].rect.width
+    );
+}
+
+#[test]
+fn declared_table_width_resolves_percentage_image_against_table_width() {
+    let layout = layout_for_test(
+        r#"<table align="center" style="width:700px" cellpadding="0" cellspacing="0">
+            <tr><td><img width="700" height="450" style="width:100%;height:auto" alt=""></td></tr>
+          </table>"#,
+        800,
+    );
+    let table =
+        find_layout(&layout, |child| matches!(child.kind, LayoutKind::Table)).expect("table");
+    let image =
+        find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_))).expect("image");
+
+    assert!(
+        (table.rect.width - 700.0).abs() < 0.1,
+        "table width: {}",
+        table.rect.width
+    );
+    assert!(
+        (table.rect.x - 50.0).abs() < 0.1,
+        "table x: {}",
+        table.rect.x
+    );
+    assert!(
+        (image.rect.width - 700.0).abs() < 0.1,
+        "image width: {}",
+        image.rect.width
+    );
+}
+
+#[test]
+fn declared_table_width_does_not_expand_for_plain_fixed_width_text_cell() {
+    let layout = layout_for_test(
+        r#"<table align="center" style="width:600px" cellpadding="0" cellspacing="0">
+            <tr><td style="padding:0 40px">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr><td width="570"><h1 style="margin:0;font-size:32px;line-height:38.4px">Choose a cruise that grows your faith</h1></td></tr>
+              </table>
+            </td></tr>
+          </table>"#,
+        800,
+    );
+    let tables: Vec<&LayoutBox> =
+        collect_layouts(&layout, &|child| matches!(child.kind, LayoutKind::Table));
+    let heading = find_layout(&layout, |child| child.debug.tag == "h1").expect("heading");
+
+    assert!(
+        (tables[0].rect.width - 600.0).abs() < 0.1,
+        "outer table width: {}",
+        tables[0].rect.width
+    );
+    assert!(
+        heading.rect.width <= 520.1,
+        "heading should use the padded cell content width, got {}",
+        heading.rect.width
+    );
+}
+
+#[test]
+fn inline_linked_images_participate_in_same_inline_row() {
+    let layout = layout_for_test(
+        r##"<table width="300" cellpadding="0" cellspacing="0"><tr><td style="font-size:20px;line-height:28px">
+            <a href="#"><img width="26" height="26" style="display:inline-block" alt="One"></a>&nbsp;&nbsp;
+            <a href="#"><img width="20" height="24" style="display:inline-block" alt="Two"></a>&nbsp;&nbsp;
+            <a href="#"><img width="26" height="26" style="display:inline-block" alt="Three"></a>
+          </td></tr></table>"##,
+        300,
+    );
+    let images: Vec<&LayoutBox> =
+        collect_layouts(&layout, &|child| matches!(child.kind, LayoutKind::Image(_)));
+
+    assert_eq!(images.len(), 3);
+    assert!(
+        (images[0].rect.y - images[1].rect.y).abs() < 0.1,
+        "first two images should share a row: {} vs {}",
+        images[0].rect.y,
+        images[1].rect.y
+    );
+    assert!(
+        (images[1].rect.y - images[2].rect.y).abs() < 0.1,
+        "last two images should share a row: {} vs {}",
+        images[1].rect.y,
+        images[2].rect.y
     );
 }
 

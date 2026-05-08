@@ -481,6 +481,7 @@ pub(crate) fn normalize_text_spans(spans: &[TextSpan]) -> Vec<TextSpan> {
 
     trim_leading_span_space(&mut out);
     trim_trailing_span_space(&mut out);
+    trim_trailing_span_break(&mut out);
     out
 }
 fn push_text_span_segment(out: &mut Vec<TextSpan>, text: String, style: &TextRunStyle) {
@@ -524,6 +525,25 @@ fn trim_trailing_span_space(spans: &mut Vec<TextSpan>) {
         } else {
             break;
         }
+    }
+}
+fn trim_trailing_span_break(spans: &mut Vec<TextSpan>) {
+    let has_non_break_content = spans
+        .iter()
+        .any(|span| span.text.chars().any(|ch| ch != '\n'));
+    if !has_non_break_content {
+        return;
+    }
+
+    let Some(last) = spans.last_mut() else {
+        return;
+    };
+    if !last.text.ends_with('\n') {
+        return;
+    }
+    last.text.pop();
+    if last.text.is_empty() {
+        spans.pop();
     }
 }
 fn rich_text_ends_with_newline(spans: &[TextSpan]) -> bool {

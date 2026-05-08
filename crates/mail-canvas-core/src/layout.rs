@@ -1026,12 +1026,9 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             if !can_expand_declared_table_width(&style) {
                 declared
             } else {
-                declared.max(self.fixed_replaced_table_min_outer_width(
-                    &grid,
-                    &style,
-                    declared.max(max_table_width),
-                    spacing,
-                )?)
+                declared.max(
+                    self.fixed_replaced_table_min_outer_width(&grid, &style, declared, spacing)?,
+                )
             }
         } else {
             self.preferred_table_outer_width(&grid, &style, max_table_width, spacing)?
@@ -2036,6 +2033,9 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
 
     fn measure_text_height(&mut self, text: &str, width: f32, style: &Style) -> Result<f32> {
         let line_height = resolved_line_height_from_db(self.font_system.db(), style);
+        if text.chars().all(|ch| ch == '\n') {
+            return Ok(line_height * text.chars().count().max(1) as f32);
+        }
         let effective_width =
             (width.max(1.0) * wrap_width_adjustment(style.font_family.as_deref())).max(1.0);
         let metrics = Metrics::new(style.font_size.max(1.0), line_height.max(1.0));
@@ -2064,6 +2064,10 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         style: &Style,
     ) -> Result<f32> {
         let line_height = resolved_line_height_from_db(self.font_system.db(), style);
+        let plain_text = spans_text(spans);
+        if plain_text.chars().all(|ch| ch == '\n') {
+            return Ok(line_height * plain_text.chars().count().max(1) as f32);
+        }
         let effective_width =
             (width.max(1.0) * wrap_width_adjustment(style.font_family.as_deref())).max(1.0);
         let metrics = Metrics::new(style.font_size.max(1.0), line_height.max(1.0));
@@ -2206,7 +2210,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                         self.fixed_replaced_table_min_outer_width(
                             &grid,
                             &child_style,
-                            declared.max(containing_width),
+                            declared,
                             spacing,
                         )?
                         .max(declared)
@@ -2284,12 +2288,18 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             {
                 let mut row_width: f32 = 0.0;
                 for (cell, cell_style) in styled_cells {
-                    let intrinsic = if let Some(width) = cell_style
+                    let intrinsic = if cell_style
                         .width
-                        .filter(length_is_intrinsic_fixed)
-                        .and_then(|width| width.resolve(available))
-                    {
-                        Some(cell_style.outer_width_for_declared(width))
+                        .as_ref()
+                        .is_some_and(length_is_intrinsic_fixed)
+                        && cell_contains_only_intrinsic_fixed_replaced_content(
+                            &cell.node,
+                            &cell_style,
+                        ) {
+                        cell_style
+                            .width
+                            .and_then(|width| width.resolve(available))
+                            .map(|width| cell_style.outer_width_for_declared(width))
                     } else {
                         self.fixed_replaced_content_min_width(&cell.node, &cell_style, available)?
                             .map(|width| {
@@ -2307,12 +2317,16 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             }
 
             for (cell, cell_style) in styled_cells {
-                let intrinsic = if let Some(width) = cell_style
+                let intrinsic = if cell_style
                     .width
-                    .filter(length_is_intrinsic_fixed)
-                    .and_then(|width| width.resolve(available))
+                    .as_ref()
+                    .is_some_and(length_is_intrinsic_fixed)
+                    && cell_contains_only_intrinsic_fixed_replaced_content(&cell.node, &cell_style)
                 {
-                    Some(cell_style.outer_width_for_declared(width))
+                    cell_style
+                        .width
+                        .and_then(|width| width.resolve(available))
+                        .map(|width| cell_style.outer_width_for_declared(width))
                 } else {
                     self.fixed_replaced_content_min_width(&cell.node, &cell_style, available)?
                         .map(|width| {
@@ -3099,11 +3113,14 @@ fn inline_needs_inline_block_container(node: &NodeRef, style: &Style) -> bool {
         let Some(tag) = element_tag(&child) else {
             continue;
         };
-        if is_metadata_tag(&tag) || tag == "br" || tag == "img" {
+        if is_metadata_tag(&tag) || tag == "br" {
             continue;
         }
-
         let child_style = style_for_node(&child, style);
+        if tag == "img" {
+            return matches!(child_style.display, Display::Inline | Display::InlineBlock);
+        }
+
         match child_style.display {
             Display::InlineBlock | Display::InlineTable => return true,
             Display::Inline => {

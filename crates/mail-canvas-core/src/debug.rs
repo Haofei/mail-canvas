@@ -451,6 +451,7 @@ fn background_size_name(size: BackgroundSize) -> String {
         BackgroundSize::Auto => "auto",
         BackgroundSize::Cover => "cover",
         BackgroundSize::Contain => "contain",
+        BackgroundSize::Explicit { .. } => "explicit",
     }
     .to_string()
 }

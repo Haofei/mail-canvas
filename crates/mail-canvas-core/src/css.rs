@@ -156,8 +156,9 @@ fn is_attribute_name_boundary(html: &str, start: usize) -> bool {
 }
 
 fn sanitize_style_attribute_value(value: &str) -> String {
+    let decoded = decode_html_attribute_entities(value);
     let mut out = String::with_capacity(value.len());
-    for (name, value) in css_declarations(value) {
+    for (name, value) in css_declarations(&decoded) {
         if name.is_empty() || value.is_empty() {
             continue;
         }
@@ -170,6 +171,48 @@ fn sanitize_style_attribute_value(value: &str) -> String {
         out.push(';');
     }
     out
+}
+
+fn decode_html_attribute_entities(value: &str) -> String {
+    if !value.contains('&') {
+        return value.to_string();
+    }
+
+    let mut out = String::with_capacity(value.len());
+    let mut rest = value;
+    while let Some(index) = rest.find('&') {
+        out.push_str(&rest[..index]);
+        let entity = &rest[index..];
+        if let Some(next) = strip_any_prefix(entity, &["&quot;", "&#34;", "&#x22;", "&#X22;"]) {
+            out.push('"');
+            rest = next;
+        } else if let Some(next) =
+            strip_any_prefix(entity, &["&apos;", "&#39;", "&#x27;", "&#X27;"])
+        {
+            out.push('\'');
+            rest = next;
+        } else if let Some(next) = entity.strip_prefix("&amp;") {
+            out.push('&');
+            rest = next;
+        } else if let Some(next) = entity.strip_prefix("&lt;") {
+            out.push('<');
+            rest = next;
+        } else if let Some(next) = entity.strip_prefix("&gt;") {
+            out.push('>');
+            rest = next;
+        } else {
+            out.push('&');
+            rest = &entity[1..];
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn strip_any_prefix<'a>(value: &'a str, prefixes: &[&str]) -> Option<&'a str> {
+    prefixes
+        .iter()
+        .find_map(|prefix| value.strip_prefix(prefix))
 }
 
 fn escape_style_attr(value: &str) -> String {
@@ -257,6 +300,9 @@ fn downlevel_revealed_content_start(html: &str, start: usize) -> Option<usize> {
         .take_while(u8::is_ascii_whitespace)
         .count();
     let marker_start = condition_end + marker_prefix_whitespace_len;
+    if html[marker_start..].starts_with("-->") {
+        return Some(marker_start + "-->".len());
+    }
     if let Some(marker) = html[marker_start..].strip_prefix("<!--") {
         let whitespace_len = marker.bytes().take_while(u8::is_ascii_whitespace).count();
         let marker_after_whitespace = &marker[whitespace_len..];
@@ -1131,6 +1177,19 @@ mod tests {
     }
 
     #[test]
+    fn keeps_downlevel_revealed_conditional_content_with_immediate_close_marker() {
+        let html = r#"<!--[if !mso]><style>.hidden { color: blue; }</style><![endif]--><!--[if !mso]>--><style>.x { color: red; }</style><!--<![endif]-->"#;
+
+        let stripped = strip_hidden_conditional_comments(html);
+
+        assert!(!stripped.contains(".hidden"));
+        assert_eq!(
+            style_blocks(&stripped).collect::<Vec<_>>(),
+            vec![".x { color: red; }"]
+        );
+    }
+
+    #[test]
     fn keeps_downlevel_revealed_conditional_content_with_bang_marker() {
         let html = r#"<!--[if !true]><! --><div class="modern">Modern</div><!-- <![endif]-->"#;
 
@@ -1187,6 +1246,21 @@ mod tests {
 
         assert!(inlined.contains("width: 320px"));
         assert!(!inlined.contains("@media"));
+    }
+
+    #[test]
+    fn sanitizes_inline_style_after_decoding_attribute_entities() {
+        let html = r#"
+            <html><body>
+              <a style="font-family:&quot;Roboto Condensed&quot;, Helvetica, Arial, sans-serif; font-size:18px; padding:18px 0; background:#231F20;">CTA</a>
+            </body></html>
+        "#;
+
+        let inlined = inline_css(html, 600, 800).unwrap();
+
+        assert!(inlined.contains("Roboto Condensed"));
+        assert!(inlined.contains("font-size: 18px"));
+        assert!(inlined.contains("padding: 18px 0"));
     }
 
     #[test]

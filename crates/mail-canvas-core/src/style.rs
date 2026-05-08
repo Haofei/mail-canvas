@@ -1262,11 +1262,15 @@ pub(crate) enum BackgroundRepeat {
     NoRepeat,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum BackgroundSize {
     Auto,
     Cover,
     Contain,
+    Explicit {
+        width: Option<Length>,
+        height: Option<Length>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1451,6 +1455,11 @@ pub(crate) fn style_for_node_with_fonts(
                 }
                 "font-style" if is_inherit_keyword(&value) => {
                     style.font_style = parent.font_style;
+                }
+                "font-size" => {
+                    if let Some(font_size) = parse_font_size(&value, parent.font_size) {
+                        style.set_font_size(font_size);
+                    }
                 }
                 _ => style.apply_declaration(&name, &value),
             }
@@ -2172,15 +2181,38 @@ pub(crate) fn parse_background_repeat(value: &str) -> Option<BackgroundRepeat> {
 
 pub(crate) fn parse_background_size(value: &str) -> Option<BackgroundSize> {
     let value = strip_important(value).trim();
-    let token = value.split_whitespace().next()?;
+    let mut tokens = value.split_whitespace();
+    let token = tokens.next()?;
     if token.eq_ignore_ascii_case("auto") {
-        Some(BackgroundSize::Auto)
+        let height = tokens.next().and_then(parse_background_size_length);
+        if height.is_some() {
+            Some(BackgroundSize::Explicit {
+                width: None,
+                height,
+            })
+        } else {
+            Some(BackgroundSize::Auto)
+        }
     } else if token.eq_ignore_ascii_case("cover") {
         Some(BackgroundSize::Cover)
     } else if token.eq_ignore_ascii_case("contain") {
         Some(BackgroundSize::Contain)
+    } else if let Some(width) = parse_background_size_length(token) {
+        let height = tokens.next().and_then(parse_background_size_length);
+        Some(BackgroundSize::Explicit {
+            width: Some(width),
+            height,
+        })
     } else {
         None
+    }
+}
+
+fn parse_background_size_length(value: &str) -> Option<Length> {
+    if value.eq_ignore_ascii_case("auto") {
+        None
+    } else {
+        parse_length(value)
     }
 }
 
