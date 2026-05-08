@@ -30,6 +30,7 @@
     "research:vendor-rge": "node scripts/vendor_reallygoodemails.mjs",
     "research:vendor-rge-all": "node scripts/vendor_reallygoodemails_all.mjs",
     "research:compare:local-rge": "node scripts/compare_local_rge_corpus.mjs",
+    "research:compare:local-rge-new": "node scripts/compare_local_rge_corpus.mjs --exclude-seen --update-seen-registry",
     "research:vendor-mjml": "node scripts/vendor_mjml_official_templates.mjs",
     "research:compare:golden": "node scripts/playwright_compare.mjs --expectations scripts/playwright_expectations.json --work-dir /tmp/mail-canvas-playwright-corpus --timeout-ms 30000 --all --no-remote --corpus-group golden",
     "research:compare:editors": "node scripts/playwright_compare.mjs --work-dir /tmp/mail-canvas-playwright-editors --timeout-ms 30000 --width 800 --all --no-remote --fixture-fonts --provider mjml --provider emailoctopus",

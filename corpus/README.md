@@ -58,6 +58,21 @@ npm run corpus:pipeline -- \
   --exclude-seen
 ```
 
+For a growing local Really Good Emails mirror under the gitignored
+`corpus/reallygoodemails/` directory, compare only templates whose HTML or
+mirrored assets changed since the last local run:
+
+```bash
+npm run research:compare:local-rge-new -- \
+  --work-dir /tmp/mail-canvas-rge-new
+```
+
+This writes `corpus/reallygoodemails/run-registry.json`, which is also
+gitignored. The registry uses a content MD5 over the HTML plus local asset
+manifest, so a template with the same name is rerun when its bytes change. Use
+`--clear-seen-registry` when intentionally starting the local RGE run history
+from scratch.
+
 By default the pipeline removes newly vendored research HTML/assets from
 `corpus/` after the run and leaves only the registry record. Pass
 `--keep-vendored` when intentionally promoting or inspecting the downloaded

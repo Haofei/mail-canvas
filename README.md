@@ -349,6 +349,18 @@ screenshots are cached by prepared HTML and width via `--browser-cache-dir` so
 unchanged templates avoid repeated Chromium screenshot work across pipeline
 runs.
 
+For a large local Really Good Emails mirror in the gitignored
+`corpus/reallygoodemails/` directory, use the incremental local comparer:
+
+```sh
+npm run research:compare:local-rge-new -- \
+  --work-dir /tmp/mail-canvas-rge-new
+```
+
+It records a local `run-registry.json` with content MD5s for each template and
+its mirrored assets, then skips unchanged templates on later runs. The local
+corpus can keep growing without committing the downloaded HTML/assets.
+
 Refresh deterministic font fixtures when the supported open-source font bundle
 changes:
 
