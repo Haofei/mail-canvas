@@ -35,7 +35,7 @@ pub(crate) fn build_table_grid(table: &NodeRef, max_table_cells: usize) -> Resul
         let mut col = 0usize;
         let mut cells = Vec::new();
 
-        for cell in collect_cells(&row) {
+        for cell in cell_children(&row) {
             while active_rowspans.get(col).copied().unwrap_or(0) > 0 {
                 col += 1;
             }
@@ -155,10 +155,9 @@ fn collect_rows_inner(node: &NodeRef, rows: &mut Vec<NodeRef>) {
     }
 }
 
-fn collect_cells(row: &NodeRef) -> Vec<NodeRef> {
+fn cell_children(row: &NodeRef) -> impl Iterator<Item = NodeRef> + '_ {
     row.children()
         .filter(|child| matches!(element_tag(child).as_deref(), Some("td" | "th")))
-        .collect()
 }
 
 fn collect_col_widths(table: &NodeRef) -> Vec<Option<Length>> {
