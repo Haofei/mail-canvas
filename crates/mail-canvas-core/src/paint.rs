@@ -496,21 +496,8 @@ fn fill_rounded_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, color: Rgba, r
         return;
     }
 
-    let x0 = x;
-    let y0 = y;
-    let x1 = x + width;
-    let y1 = y + height;
     let mut path = PathBuilder::new();
-    path.move_to(x0 + radius, y0);
-    path.line_to(x1 - radius, y0);
-    path.quad_to(x1, y0, x1, y0 + radius);
-    path.line_to(x1, y1 - radius);
-    path.quad_to(x1, y1, x1 - radius, y1);
-    path.line_to(x0 + radius, y1);
-    path.quad_to(x0, y1, x0, y1 - radius);
-    path.line_to(x0, y0 + radius);
-    path.quad_to(x0, y0, x0 + radius, y0);
-    path.close();
+    append_rounded_rect_path(&mut path, x, y, width, height, radius);
     let Some(path) = path.finish() else {
         return;
     };
@@ -524,6 +511,39 @@ fn fill_rounded_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, color: Rgba, r
         Transform::identity(),
         None,
     );
+}
+fn append_rounded_rect_path(
+    path: &mut PathBuilder,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    radius: f32,
+) {
+    let x0 = x;
+    let y0 = y;
+    let x1 = x + width;
+    let y1 = y + height;
+    let radius = radius.min(width / 2.0).min(height / 2.0).max(0.0);
+    if radius <= 0.0 {
+        path.move_to(x0, y0);
+        path.line_to(x1, y0);
+        path.line_to(x1, y1);
+        path.line_to(x0, y1);
+        path.close();
+        return;
+    }
+
+    path.move_to(x0 + radius, y0);
+    path.line_to(x1 - radius, y0);
+    path.quad_to(x1, y0, x1, y0 + radius);
+    path.line_to(x1, y1 - radius);
+    path.quad_to(x1, y1, x1 - radius, y1);
+    path.line_to(x0 + radius, y1);
+    path.quad_to(x0, y1, x0, y1 - radius);
+    path.line_to(x0, y0 + radius);
+    path.quad_to(x0, y0, x0 + radius, y0);
+    path.close();
 }
 pub(crate) fn fill_rect(pixmap: &mut Pixmap, scale: f32, rect: Rect, color: Rgba) {
     if color.a == 0 || rect.width <= 0.0 || rect.height <= 0.0 {
@@ -557,7 +577,7 @@ fn stroke_style_border(
     border: Edges,
     color: Rgba,
     style: BorderLineStyle,
-    _radius: f32,
+    radius: f32,
 ) {
     if style == BorderLineStyle::Dashed {
         stroke_dashed_border(pixmap, scale, rect, border, color);
@@ -573,6 +593,10 @@ fn stroke_style_border(
         && border.top == border.left
         && border.top > 0.0
     {
+        if radius > 0.0 {
+            stroke_rounded_border(pixmap, scale, rect, border.top, color, radius);
+            return;
+        }
         stroke_rect(pixmap, scale, rect, border.top, color);
         return;
     }
@@ -619,6 +643,73 @@ fn stroke_style_border(
             color,
         );
     }
+}
+fn stroke_rounded_border(
+    pixmap: &mut Pixmap,
+    scale: f32,
+    rect: Rect,
+    border_width: f32,
+    color: Rgba,
+    radius: f32,
+) {
+    if color.a == 0 || rect.width <= 0.0 || rect.height <= 0.0 || border_width <= 0.0 {
+        return;
+    }
+
+    let x = rect.x * scale;
+    let y = rect.y * scale;
+    let width = rect.width * scale;
+    let height = rect.height * scale;
+    let border_width = border_width * scale;
+    if !x.is_finite()
+        || !y.is_finite()
+        || !width.is_finite()
+        || !height.is_finite()
+        || !border_width.is_finite()
+    {
+        return;
+    }
+
+    let outer_radius = (radius * scale).min(width / 2.0).min(height / 2.0).max(0.0);
+    if outer_radius <= 0.0 {
+        stroke_rect(pixmap, scale, rect, border_width / scale, color);
+        return;
+    }
+
+    let mut path = PathBuilder::new();
+    append_rounded_rect_path(&mut path, x, y, width, height, outer_radius);
+
+    let inner_x = x + border_width;
+    let inner_y = y + border_width;
+    let inner_width = width - border_width * 2.0;
+    let inner_height = height - border_width * 2.0;
+    if inner_width > 0.0 && inner_height > 0.0 {
+        let inner_radius = (outer_radius - border_width)
+            .min(inner_width / 2.0)
+            .min(inner_height / 2.0)
+            .max(0.0);
+        append_rounded_rect_path(
+            &mut path,
+            inner_x,
+            inner_y,
+            inner_width,
+            inner_height,
+            inner_radius,
+        );
+    }
+
+    let Some(path) = path.finish() else {
+        return;
+    };
+    let mut paint = Paint::default();
+    paint.set_color_rgba8(color.r, color.g, color.b, color.a);
+    pixmap.fill_path(
+        &path,
+        &paint,
+        FillRule::EvenOdd,
+        Transform::identity(),
+        None,
+    );
 }
 fn stroke_inset_border(pixmap: &mut Pixmap, scale: f32, rect: Rect, border: Edges, color: Rgba) {
     let dark = inset_border_edge_color(color, true);
@@ -1314,6 +1405,34 @@ fn composite_pixel(dst: &mut [u8], r: u8, g: u8, b: u8, a: u8) {
 }
 fn premultiply(channel: u8, alpha: u8) -> u8 {
     ((u16::from(channel) * u16::from(alpha) + 127) / 255) as u8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn alpha_at(pixmap: &Pixmap, x: u32, y: u32) -> u8 {
+        let offset = ((y * pixmap.width() + x) * 4 + 3) as usize;
+        pixmap.data()[offset]
+    }
+
+    #[test]
+    fn rounded_border_does_not_paint_square_corners() {
+        let mut pixmap = Pixmap::new(80, 40).expect("pixmap");
+        stroke_rounded_border(
+            &mut pixmap,
+            1.0,
+            Rect::new(0.0, 0.0, 60.0, 30.0),
+            4.0,
+            Rgba::rgb(255, 0, 0),
+            15.0,
+        );
+
+        assert_eq!(alpha_at(&pixmap, 0, 0), 0);
+        assert_eq!(alpha_at(&pixmap, 59, 0), 0);
+        assert!(alpha_at(&pixmap, 30, 1) > 0);
+        assert_eq!(alpha_at(&pixmap, 30, 15), 0);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
