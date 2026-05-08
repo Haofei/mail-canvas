@@ -19,7 +19,7 @@ const FIXTURE_FONT_FILES = [
 function parseArgs(argv) {
   const args = {
     caseName: 'corpus',
-    template: 'colorlib-template-1',
+    template: 'waypoint-ecommerce-promo-code',
     width: 600,
     timeoutMs: 15000,
     out: null,

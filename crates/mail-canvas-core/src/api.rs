@@ -157,6 +157,21 @@ pub struct RenderedImage {
 }
 
 #[derive(Debug, Clone)]
+pub struct RenderedRgba {
+    pub rgba: Vec<u8>,
+    pub css_width: u32,
+    pub css_height: u32,
+    pub pixel_width: u32,
+    pub pixel_height: u32,
+    pub scale: f32,
+    pub content_css_width: u32,
+    pub console_messages: Vec<ConsoleMessage>,
+    pub warnings: Vec<RenderWarning>,
+    pub assets: Vec<AssetReport>,
+    pub debug: Option<RenderDebugSnapshot>,
+}
+
+#[derive(Debug, Clone)]
 pub struct RenderedPdf {
     pub pdf: Vec<u8>,
     pub css_width: u32,
@@ -178,6 +193,16 @@ pub struct RenderDiagnosticsReport {
 }
 
 impl RenderedImage {
+    pub fn diagnostics(&self) -> RenderDiagnosticsReport {
+        RenderDiagnosticsReport {
+            warnings: self.warnings.clone(),
+            assets: self.assets.clone(),
+            console_messages: self.console_messages.clone(),
+        }
+    }
+}
+
+impl RenderedRgba {
     pub fn diagnostics(&self) -> RenderDiagnosticsReport {
         RenderDiagnosticsReport {
             warnings: self.warnings.clone(),

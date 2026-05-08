@@ -32,7 +32,7 @@ use api::RenderDiagnostics;
 pub use api::{
     AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, EmailRenderer,
     RenderDebugOptions, RenderDiagnosticsReport, RenderRequest, RenderWarning, RenderWarningCode,
-    RenderedImage, RenderedPdf, ResourcePolicy,
+    RenderedImage, RenderedPdf, RenderedRgba, ResourcePolicy,
 };
 #[cfg(test)]
 use css::css_declarations;
@@ -86,6 +86,20 @@ pub struct RendererCore {
     swash_cache: SwashCache,
 }
 
+struct RenderedPixmap {
+    pixmap: Pixmap,
+    css_width: u32,
+    css_height: u32,
+    pixel_width: u32,
+    pixel_height: u32,
+    scale: f32,
+    content_css_width: u32,
+    console_messages: Vec<ConsoleMessage>,
+    warnings: Vec<RenderWarning>,
+    assets: Vec<AssetReport>,
+    debug: Option<RenderDebugSnapshot>,
+}
+
 impl RendererCore {
     pub fn new(font_system: FontSystem) -> Self {
         Self {
@@ -100,6 +114,52 @@ impl RendererCore {
         resource_factory: &F,
         output: &O,
     ) -> Result<RenderedImage> {
+        let rendered = self.render_pixmap_with(request, resource_factory)?;
+        let png = output.encode_png(&rendered.pixmap)?;
+
+        Ok(RenderedImage {
+            png,
+            css_width: rendered.css_width,
+            css_height: rendered.css_height,
+            pixel_width: rendered.pixel_width,
+            pixel_height: rendered.pixel_height,
+            scale: rendered.scale,
+            content_css_width: rendered.content_css_width,
+            console_messages: rendered.console_messages,
+            warnings: rendered.warnings,
+            assets: rendered.assets,
+            debug: rendered.debug,
+        })
+    }
+
+    pub fn render_rgba_with<F: ResourceProviderFactory>(
+        &mut self,
+        request: RenderRequest,
+        resource_factory: &F,
+    ) -> Result<RenderedRgba> {
+        let rendered = self.render_pixmap_with(request, resource_factory)?;
+        let rgba = rendered.pixmap.take();
+
+        Ok(RenderedRgba {
+            rgba,
+            css_width: rendered.css_width,
+            css_height: rendered.css_height,
+            pixel_width: rendered.pixel_width,
+            pixel_height: rendered.pixel_height,
+            scale: rendered.scale,
+            content_css_width: rendered.content_css_width,
+            console_messages: rendered.console_messages,
+            warnings: rendered.warnings,
+            assets: rendered.assets,
+            debug: rendered.debug,
+        })
+    }
+
+    fn render_pixmap_with<F: ResourceProviderFactory>(
+        &mut self,
+        request: RenderRequest,
+        resource_factory: &F,
+    ) -> Result<RenderedPixmap> {
         validate_request(&request)?;
 
         let render_html = strip_hidden_conditional_comments(&request.html);
@@ -171,10 +231,8 @@ impl RendererCore {
         };
         painter.paint(&layout);
 
-        let png = output.encode_png(&pixmap)?;
-
-        Ok(RenderedImage {
-            png,
+        Ok(RenderedPixmap {
+            pixmap,
             css_width: request.width,
             css_height,
             pixel_width,

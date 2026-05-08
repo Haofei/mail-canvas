@@ -1540,8 +1540,9 @@ fn anonymous_css_table_cells_flow_horizontally() {
         "#,
         600,
     );
-    let columns: Vec<&LayoutBox> =
-        collect_layouts(&layout, &|child| child.debug.class_name == Some("column".to_string()));
+    let columns: Vec<&LayoutBox> = collect_layouts(&layout, &|child| {
+        child.debug.class_name == Some("column".to_string())
+    });
     assert_eq!(columns.len(), 2);
     assert!(
         (columns[0].rect.y - columns[1].rect.y).abs() < 0.1,

@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -68,7 +67,7 @@ impl WasmRenderer {
         );
         Ok(Self {
             inner: RendererCore::new(font_system),
-            output: WasmOutputBackend::default(),
+            output: WasmOutputBackend,
             assets: AssetRegistry::default(),
             last_diagnostics_json: diagnostics_json(&DiagnosticsSnapshot::default()),
         })
@@ -166,22 +165,19 @@ impl WasmRenderer {
         scale: f32,
         base_url: &str,
     ) -> Result<RenderedRgba, JsValue> {
-        self.render_with_request(build_request(
-            html,
-            width,
-            viewport_height,
-            scale,
-            parse_optional_url(base_url)?,
-        ))
-        .map_err(js_error)?;
-        let snapshot = self
-            .output
-            .take_snapshot()
-            .ok_or_else(|| JsValue::from_str("missing RGBA snapshot"))?;
+        let rendered = self
+            .render_rgba_with_request(build_request(
+                html,
+                width,
+                viewport_height,
+                scale,
+                parse_optional_url(base_url)?,
+            ))
+            .map_err(js_error)?;
         Ok(RenderedRgba {
-            width: snapshot.width,
-            height: snapshot.height,
-            data: snapshot.rgba,
+            width: rendered.pixel_width,
+            height: rendered.pixel_height,
+            data: rendered.rgba,
         })
     }
 
@@ -198,6 +194,24 @@ impl WasmRenderer {
                 assets: self.assets.clone(),
             },
             &self.output,
+        )?;
+        self.last_diagnostics_json = diagnostics_json(&DiagnosticsSnapshot {
+            warnings: rendered.warnings.clone(),
+            assets: rendered.assets.clone(),
+            console_messages: rendered.console_messages.clone(),
+        });
+        Ok(rendered)
+    }
+
+    fn render_rgba_with_request(
+        &mut self,
+        request: RenderRequest,
+    ) -> Result<mail_canvas_core::RenderedRgba> {
+        let rendered = self.inner.render_rgba_with(
+            request,
+            &WasmResourceProviderFactory {
+                assets: self.assets.clone(),
+            },
         )?;
         self.last_diagnostics_json = diagnostics_json(&DiagnosticsSnapshot {
             warnings: rendered.warnings.clone(),
@@ -242,30 +256,10 @@ fn parse_optional_url(raw: &str) -> Result<Option<Url>, JsValue> {
 }
 
 #[derive(Default)]
-struct WasmOutputBackend {
-    snapshot: RefCell<Option<RgbaSnapshot>>,
-}
-
-#[derive(Clone)]
-struct RgbaSnapshot {
-    width: u32,
-    height: u32,
-    rgba: Vec<u8>,
-}
-
-impl WasmOutputBackend {
-    fn take_snapshot(&self) -> Option<RgbaSnapshot> {
-        self.snapshot.borrow_mut().take()
-    }
-}
+struct WasmOutputBackend;
 
 impl RenderOutputBackend for WasmOutputBackend {
     fn encode_png(&self, pixmap: &Pixmap) -> Result<Vec<u8>> {
-        self.snapshot.replace(Some(RgbaSnapshot {
-            width: pixmap.width(),
-            height: pixmap.height(),
-            rgba: pixmap.data().to_vec(),
-        }));
         pixmap.encode_png().map_err(Into::into)
     }
 
@@ -276,7 +270,7 @@ impl RenderOutputBackend for WasmOutputBackend {
 
 #[derive(Debug, Clone, Default)]
 struct AssetRegistry {
-    entries: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    entries: Arc<Mutex<HashMap<String, Arc<[u8]>>>>,
     total_bytes: Arc<Mutex<usize>>,
 }
 
@@ -285,7 +279,7 @@ impl AssetRegistry {
         ensure_resource_size_with_limit(bytes.len(), DEFAULT_MAX_RESOURCE_BYTES)?;
         let key = normalize_registry_key(url)?;
         let mut entries = self.entries.lock().expect("asset registry mutex poisoned");
-        let existing_len = entries.get(&key).map_or(0, Vec::len);
+        let existing_len = entries.get(&key).map_or(0, |bytes| bytes.len());
         if existing_len == 0 && entries.len() >= DEFAULT_MAX_RESOURCE_COUNT {
             bail!(
                 "asset count exceeds max-resource-count: {} > {}",
@@ -307,7 +301,7 @@ impl AssetRegistry {
                 DEFAULT_MAX_TOTAL_RESOURCE_BYTES
             );
         }
-        entries.insert(key, bytes.to_vec());
+        entries.insert(key, Arc::<[u8]>::from(bytes));
         *total = next_total;
         Ok(())
     }
@@ -336,11 +330,11 @@ impl AssetRegistry {
             return Some(RegisteredAsset {
                 request_url: src.to_string(),
                 resolved_url: None,
-                bytes: bytes.clone(),
+                bytes: Arc::clone(bytes),
             });
         }
         let resolved = resolve_asset_url(src, base_url)?;
-        let bytes = entries.get(resolved.as_str())?.clone();
+        let bytes = Arc::clone(entries.get(resolved.as_str())?);
         Some(RegisteredAsset {
             request_url: src.to_string(),
             resolved_url: Some(resolved.to_string()),
@@ -353,7 +347,7 @@ impl AssetRegistry {
 struct RegisteredAsset {
     request_url: String,
     resolved_url: Option<String>,
-    bytes: Vec<u8>,
+    bytes: Arc<[u8]>,
 }
 
 impl RegisteredAsset {
@@ -457,7 +451,7 @@ impl ResourceProvider for WasmResourceProvider {
                     .with_initiator(initiator)
                     .with_bytes(asset.bytes.len()),
             );
-            return Ok(asset.bytes);
+            return Ok(asset.bytes.to_vec());
         }
 
         if src.trim_start().starts_with("data:") {
@@ -705,7 +699,7 @@ mod tests {
             asset.resolved_url.as_deref(),
             Some("https://cdn.example.com/assets/logo.png")
         );
-        assert_eq!(asset.bytes, vec![1, 2, 3]);
+        assert_eq!(asset.bytes.as_ref(), &[1, 2, 3]);
     }
 
     #[test]
@@ -791,5 +785,29 @@ mod tests {
         let diagnostics: serde_json::Value =
             serde_json::from_str(&renderer.diagnostics_json()).expect("diagnostics json");
         assert_eq!(diagnostics["assets"][0]["status"], "loaded");
+    }
+
+    #[test]
+    fn render_rgba_returns_direct_pixel_buffer() {
+        let mut renderer = WasmRenderer::new().expect("renderer");
+        let rendered = renderer
+            .render_rgba_with_request(build_request(
+                "<div style=\"width:10px;height:8px;background:#336699\"></div>",
+                20,
+                20,
+                2.0,
+                None,
+            ))
+            .expect("render rgba");
+
+        assert_eq!(rendered.pixel_width, 40);
+        assert_eq!(rendered.pixel_height, 16);
+        assert_eq!(
+            rendered.rgba.len(),
+            (rendered.pixel_width * rendered.pixel_height * 4) as usize
+        );
+        let diagnostics: serde_json::Value =
+            serde_json::from_str(&renderer.diagnostics_json()).expect("diagnostics json");
+        assert_eq!(diagnostics["warnings"].as_array().unwrap().len(), 0);
     }
 }

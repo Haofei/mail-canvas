@@ -30,6 +30,9 @@ use crate::text::{
 };
 use crate::{HARD_BREAK, ImageData};
 
+type CssTableCell = (NodeRef, Style);
+type CssTableRow = (NodeRef, Style, Vec<CssTableCell>);
+
 pub(crate) struct RenderLimits {
     max_layout_depth: usize,
     max_table_cells: usize,
@@ -1317,7 +1320,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         &mut self,
         row_node: &NodeRef,
         row_style: &Style,
-    ) -> Option<Vec<(NodeRef, Style)>> {
+    ) -> Option<Vec<CssTableCell>> {
         let mut cells = Vec::new();
         for child in row_node.children() {
             if let Some(text_node) = child.as_text() {
@@ -2586,7 +2589,7 @@ pub(crate) fn taffy_align_items(align: AlignItems) -> TaffyAlignItems {
     }
 }
 
-fn css_table_cell_widths(cells: &[(NodeRef, Style)], content_width: f32) -> Vec<f32> {
+fn css_table_cell_widths(cells: &[CssTableCell], content_width: f32) -> Vec<f32> {
     let count = cells.len().max(1);
     let mut widths = vec![None; count];
     let mut fixed_total = 0.0_f32;
@@ -2635,10 +2638,7 @@ fn css_table_cell_widths(cells: &[(NodeRef, Style)], content_width: f32) -> Vec<
         .collect()
 }
 
-fn css_table_row_column_widths(
-    rows: &[(NodeRef, Style, Vec<(NodeRef, Style)>)],
-    content_width: f32,
-) -> Vec<f32> {
+fn css_table_row_column_widths(rows: &[CssTableRow], content_width: f32) -> Vec<f32> {
     let count = rows
         .iter()
         .map(|(_, _, cells)| cells.len())
