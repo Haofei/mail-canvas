@@ -109,6 +109,7 @@ impl RendererCore {
         let mut diagnostics = RenderDiagnostics::default();
         let web_font_faces = load_web_fonts_from_html(
             &render_html,
+            &source_document,
             document_base.as_ref(),
             &resources,
             self.font_system.db_mut(),

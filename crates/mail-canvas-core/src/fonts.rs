@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use cosmic_text::{Fallback, Style as FontStyle, Weight as FontWeight};
+use kuchiki::NodeRef;
+#[cfg(test)]
 use kuchiki::traits::TendrilSink as _;
 use unicode_script::Script;
 use url::Url;
@@ -265,6 +267,7 @@ struct FontCssBlock {
 
 pub(crate) fn load_web_fonts_from_html(
     html: &str,
+    document: &NodeRef,
     document_base_url: Option<&Url>,
     policy: &impl ResourceProvider,
     db: &mut fontdb::Database,
@@ -279,7 +282,7 @@ pub(crate) fn load_web_fonts_from_html(
         .collect();
     let mut imported_urls = Vec::new();
 
-    for stylesheet_url in stylesheet_link_urls(html) {
+    for stylesheet_url in stylesheet_link_urls_from_document(document) {
         let stylesheet_url =
             resolve_relative_stylesheet_url(&stylesheet_url, document_base_url.map(Url::as_str));
         if imported_urls.len() >= MAX_WEB_FONT_IMPORTS {
@@ -517,8 +520,13 @@ fn resolve_relative_stylesheet_url(url: &str, base_url: Option<&str>) -> String 
     }
 }
 
+#[cfg(test)]
 pub(crate) fn stylesheet_link_urls(html: &str) -> Vec<String> {
     let document = kuchiki::parse_html().one(html.to_string());
+    stylesheet_link_urls_from_document(&document)
+}
+
+fn stylesheet_link_urls_from_document(document: &NodeRef) -> Vec<String> {
     let Ok(links) = document.select("link") else {
         return Vec::new();
     };
