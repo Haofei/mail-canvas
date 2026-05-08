@@ -454,7 +454,7 @@ fn inherited_font_weight_keeps_parent_weight() {
     let mut parent = Style::initial();
     parent.font_weight = FontWeight::BOLD;
     let mut child = Style::from_parent_for_tag(&parent, "h2");
-    child.apply_declaration("font-weight", "inherit");
+    child.apply_declaration("font-weight", "INHERIT");
     assert_eq!(child.font_weight, FontWeight::BOLD);
 
     let layout = layout_for_test(
@@ -700,14 +700,14 @@ fn parses_asymmetric_border_widths() {
 #[test]
 fn parses_border_side_shorthand() {
     let mut style = Style::initial();
-    style.apply_declaration("border-top", "10px dashed #22BC66");
-    style.apply_declaration("border-right", "18px solid #22BC66");
+    style.apply_declaration("border-top", "10px DASHED #22BC66");
+    style.apply_declaration("border-right", "18px SOLID #22BC66");
     assert_eq!(style.border.top, 10.0);
     assert_eq!(style.border.right, 18.0);
     assert_eq!(style.border_color, Rgba::rgb(0x22, 0xbc, 0x66));
     assert_eq!(style.border_style, BorderLineStyle::Dashed);
 
-    style.apply_declaration("border-style", "inset");
+    style.apply_declaration("border-style", "INSET");
     assert_eq!(style.border_style, BorderLineStyle::Inset);
 }
 
@@ -1140,7 +1140,7 @@ fn body_inherits_from_html_style() {
 
 #[test]
 fn applies_text_transform_to_text_nodes() {
-    let layout = layout_for_test(r#"<p style="text-transform: uppercase">Confirm</p>"#, 200);
+    let layout = layout_for_test(r#"<p style="text-transform: UPPERCASE">Confirm</p>"#, 200);
     let text = find_layout(
         &layout,
         |child| matches!(child.kind, LayoutKind::Text(ref text) if text == "CONFIRM"),
@@ -2117,7 +2117,7 @@ fn auto_horizontal_margins_center_fixed_width_blocks() {
 #[test]
 fn content_box_table_cell_width_keeps_padding_outside_content() {
     let layout = layout_for_test(
-        r#"<table width="100"><tr><td style="width:32px;padding-left:12px;box-sizing:content-box;white-space:nowrap">4/5</td></tr></table>"#,
+        r#"<table width="100"><tr><td style="width:32px;padding-left:12px;box-sizing:CONTENT-BOX;white-space:nowrap">4/5</td></tr></table>"#,
         100,
     );
     let cell = find_layout(&layout, |child| matches!(child.kind, LayoutKind::Cell)).expect("cell");

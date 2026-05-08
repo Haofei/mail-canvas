@@ -2385,39 +2385,56 @@ pub(crate) fn parse_alpha_channel(value: &str) -> Option<u8> {
 }
 
 pub(crate) fn parse_text_align(value: &str) -> Option<TextAlign> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "left" | "start" => Some(TextAlign::Left),
-        "center" | "middle" => Some(TextAlign::Center),
-        "right" | "end" => Some(TextAlign::Right),
-        _ => None,
+    let value = value.trim();
+    if eq_ignore_ascii_case_any(value, &["left", "start"]) {
+        Some(TextAlign::Left)
+    } else if eq_ignore_ascii_case_any(value, &["center", "middle"]) {
+        Some(TextAlign::Center)
+    } else if eq_ignore_ascii_case_any(value, &["right", "end"]) {
+        Some(TextAlign::Right)
+    } else {
+        None
     }
 }
 
 pub(crate) fn parse_text_transform(value: &str) -> Option<TextTransform> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "none" => Some(TextTransform::None),
-        "uppercase" => Some(TextTransform::Uppercase),
-        "lowercase" => Some(TextTransform::Lowercase),
-        "capitalize" => Some(TextTransform::Capitalize),
-        _ => None,
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        Some(TextTransform::None)
+    } else if value.eq_ignore_ascii_case("uppercase") {
+        Some(TextTransform::Uppercase)
+    } else if value.eq_ignore_ascii_case("lowercase") {
+        Some(TextTransform::Lowercase)
+    } else if value.eq_ignore_ascii_case("capitalize") {
+        Some(TextTransform::Capitalize)
+    } else {
+        None
     }
 }
 
 pub(crate) fn parse_vertical_align(value: &str) -> Option<VerticalAlign> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "baseline" => Some(VerticalAlign::Baseline),
-        "top" | "text-top" => Some(VerticalAlign::Top),
-        "center" | "middle" => Some(VerticalAlign::Middle),
-        "bottom" | "text-bottom" => Some(VerticalAlign::Bottom),
-        _ => None,
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("baseline") {
+        Some(VerticalAlign::Baseline)
+    } else if eq_ignore_ascii_case_any(value, &["top", "text-top"]) {
+        Some(VerticalAlign::Top)
+    } else if eq_ignore_ascii_case_any(value, &["center", "middle"]) {
+        Some(VerticalAlign::Middle)
+    } else if eq_ignore_ascii_case_any(value, &["bottom", "text-bottom"]) {
+        Some(VerticalAlign::Bottom)
+    } else {
+        None
     }
 }
 
 pub(crate) fn parse_box_sizing(value: &str) -> Option<BoxSizing> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "border-box" => Some(BoxSizing::BorderBox),
-        "content-box" => Some(BoxSizing::ContentBox),
-        _ => None,
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("border-box") {
+        Some(BoxSizing::BorderBox)
+    } else if value.eq_ignore_ascii_case("content-box") {
+        Some(BoxSizing::ContentBox)
+    } else {
+        None
     }
 }
 
@@ -2582,22 +2599,28 @@ pub(crate) use crate::font_catalog::generic_font_family;
 pub(crate) use crate::font_catalog::is_safe_system_font;
 
 pub(crate) fn parse_font_weight(value: &str) -> FontWeight {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "bold" | "bolder" => FontWeight::BOLD,
-        "normal" | "lighter" => FontWeight::NORMAL,
-        raw => raw
+    let value = value.trim();
+    if eq_ignore_ascii_case_any(value, &["bold", "bolder"]) {
+        FontWeight::BOLD
+    } else if eq_ignore_ascii_case_any(value, &["normal", "lighter"]) {
+        FontWeight::NORMAL
+    } else {
+        value
             .parse::<u16>()
             .ok()
             .map(FontWeight)
-            .unwrap_or(FontWeight::NORMAL),
+            .unwrap_or(FontWeight::NORMAL)
     }
 }
 
 pub(crate) fn parse_font_style(value: &str) -> FontStyle {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "italic" => FontStyle::Italic,
-        "oblique" => FontStyle::Oblique,
-        _ => FontStyle::Normal,
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("italic") {
+        FontStyle::Italic
+    } else if value.eq_ignore_ascii_case("oblique") {
+        FontStyle::Oblique
+    } else {
+        FontStyle::Normal
     }
 }
 
@@ -2667,12 +2690,17 @@ pub(crate) fn apply_border_side(style: &mut Style, side: BorderSide, value: &str
 
 pub(crate) fn parse_border_line_style(value: &str) -> Option<BorderLineStyle> {
     for token in value.split_whitespace() {
-        match token.to_ascii_lowercase().as_str() {
-            "none" | "hidden" => return Some(BorderLineStyle::None),
-            "dashed" | "dotted" => return Some(BorderLineStyle::Dashed),
-            "inset" | "groove" => return Some(BorderLineStyle::Inset),
-            "solid" => return Some(BorderLineStyle::Solid),
-            _ => {}
+        if eq_ignore_ascii_case_any(token, &["none", "hidden"]) {
+            return Some(BorderLineStyle::None);
+        }
+        if eq_ignore_ascii_case_any(token, &["dashed", "dotted"]) {
+            return Some(BorderLineStyle::Dashed);
+        }
+        if eq_ignore_ascii_case_any(token, &["inset", "groove"]) {
+            return Some(BorderLineStyle::Inset);
+        }
+        if token.eq_ignore_ascii_case("solid") {
+            return Some(BorderLineStyle::Solid);
         }
     }
     None
