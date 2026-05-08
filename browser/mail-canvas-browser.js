@@ -21,7 +21,7 @@ export async function createMailCanvasRenderer(options = {}) {
   const fontAssets = await fetchFontAssets(options.fonts ?? [], options.baseUrl);
   const fontPayload = fontAssets.map((asset) => ({
     url: asset.url,
-    bytes: transferableBytes(asset.bytes),
+    bytes: transferableBytes(asset.bytes, asset.canTransfer),
   }));
 
   await client.call(
@@ -270,7 +270,7 @@ export class MailCanvasBrowserRenderer {
         const fontAssets = await fetchFontAssets([this.defaultEmojiFont], baseUrl);
         const fontPayload = fontAssets.map((asset) => ({
           url: asset.url,
-          bytes: transferableBytes(asset.bytes),
+          bytes: transferableBytes(asset.bytes, asset.canTransfer),
         }));
         await this.client.call(
           {
@@ -401,6 +401,7 @@ async function fetchFontAssets(fonts, baseUrl) {
       assets.push({
         url: font.url ?? "",
         bytes: asUint8Array(font.bytes),
+        canTransfer: false,
       });
       continue;
     }
@@ -411,7 +412,7 @@ async function fetchFontAssets(fonts, baseUrl) {
       throw new Error(`failed to fetch font ${url}: ${response.status} ${response.statusText}`);
     }
     const bytes = new Uint8Array(await response.arrayBuffer());
-    assets.push({ url, bytes });
+    assets.push({ url, bytes, canTransfer: true });
   }
   return assets;
 }
@@ -493,7 +494,14 @@ function asUint8Array(bytes) {
   return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
 
-function transferableBytes(bytes) {
+function transferableBytes(bytes, canTransfer = false) {
   const source = asUint8Array(bytes);
+  if (
+    canTransfer &&
+    source.byteOffset === 0 &&
+    source.byteLength === source.buffer.byteLength
+  ) {
+    return source.buffer;
+  }
   return source.slice().buffer;
 }
