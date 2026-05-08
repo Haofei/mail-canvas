@@ -810,28 +810,29 @@ fn media_condition_matches_fallback(condition: &str, viewport_width: u32) -> boo
 }
 
 fn single_media_query_matches_fallback(query: &str, viewport_width: u32) -> bool {
-    let query = query.to_ascii_lowercase();
     let query = query.trim();
     if query.is_empty()
-        || query.contains("not screen")
-        || query.contains("prefers-color-scheme")
-        || (query.contains("print") && !query.contains("screen") && !query.contains("all"))
+        || contains_ascii_case_insensitive(query, "not screen")
+        || contains_ascii_case_insensitive(query, "prefers-color-scheme")
+        || (contains_ascii_case_insensitive(query, "print")
+            && !contains_ascii_case_insensitive(query, "screen")
+            && !contains_ascii_case_insensitive(query, "all"))
     {
         return false;
     }
 
     let width = viewport_width as f32;
-    for max_width in media_width_constraints(query, "max-width") {
-        if width > max_width {
-            return false;
-        }
+    if !media_width_constraints_satisfy(query, "max-width", |max_width| width <= max_width) {
+        return false;
     }
-    for min_width in media_width_constraints(query, "min-width") {
-        if width < min_width {
-            return false;
-        }
+    if !media_width_constraints_satisfy(query, "min-width", |min_width| width >= min_width) {
+        return false;
     }
     true
+}
+
+fn contains_ascii_case_insensitive(value: &str, needle: &str) -> bool {
+    find_ascii_case_insensitive_from(value, needle, 0).is_some()
 }
 
 fn media_list_matches(list: &MediaList<'_>, viewport: CssViewport) -> bool {
@@ -998,22 +999,27 @@ fn viewport_orientation(viewport: CssViewport) -> &'static str {
     }
 }
 
-fn media_width_constraints(query: &str, name: &str) -> Vec<f32> {
-    let mut values = Vec::new();
+fn media_width_constraints_satisfy(
+    query: &str,
+    name: &str,
+    predicate: impl Fn(f32) -> bool,
+) -> bool {
     let mut offset = 0;
-    while let Some(index_rel) = query[offset..].find(name) {
-        let index = offset + index_rel + name.len();
+    while let Some(name_start) = find_ascii_case_insensitive_from(query, name, offset) {
+        let index = name_start + name.len();
         if let Some(colon_rel) = query[index..].find(':') {
             let value_start = index + colon_rel + 1;
             if let Some(value) = parse_leading_css_number(&query[value_start..]) {
-                values.push(value);
+                if !predicate(value) {
+                    return false;
+                }
             }
             offset = value_start;
         } else {
             break;
         }
     }
-    values
+    true
 }
 
 fn parse_leading_css_number(value: &str) -> Option<f32> {
@@ -1192,6 +1198,22 @@ mod tests {
         assert!(active.contains("padding: 8px"));
         assert!(inactive.contains("padding: 4px"));
         assert!(!inactive.contains("padding: 8px"));
+    }
+
+    #[test]
+    fn fallback_media_query_matching_is_case_insensitive_without_normalizing() {
+        assert!(single_media_query_matches_fallback(
+            "SCREEN and (MAX-WIDTH: 720px)",
+            600
+        ));
+        assert!(!single_media_query_matches_fallback(
+            "SCREEN and (MIN-WIDTH: 720px)",
+            600
+        ));
+        assert!(!single_media_query_matches_fallback(
+            "PRINT and (MAX-WIDTH: 720px)",
+            600
+        ));
     }
 
     #[test]
