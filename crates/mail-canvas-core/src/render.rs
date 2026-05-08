@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow, bail};
 use cosmic_text::{FontSystem, SwashCache};
 use kuchiki::traits::TendrilSink as _;
-use tiny_skia::Pixmap;
+use tiny_skia::{Color, Pixmap};
 
 use crate::api::{RenderDiagnostics, RenderRequest};
 use crate::css::{inline_css_from_stripped_html, strip_hidden_conditional_comments};
@@ -10,9 +10,9 @@ use crate::dom::{document_base_url, ensure_dom_node_limit};
 use crate::fonts::{font_database_families, load_web_fonts_from_html};
 use crate::layout::{LayoutEngine, RenderLimits};
 use crate::output::OutputBackend;
-use crate::paint::{LayoutPainter, fill_rect};
+use crate::paint::LayoutPainter;
 use crate::resource::{ResourceProvider, ResourceProviderFactory};
-use crate::{ConsoleMessage, Rect, RenderWarning, RenderedImage, RenderedPdf, RenderedRgba, Rgba};
+use crate::{ConsoleMessage, RenderWarning, RenderedImage, RenderedPdf, RenderedRgba};
 
 const MAX_RENDER_PIXELS_PER_AXIS: u32 = 16_384;
 
@@ -153,12 +153,7 @@ impl RendererCore {
         let mut pixmap = Pixmap::new(pixel_width, pixel_height)
             .ok_or_else(|| anyhow!("failed to allocate {pixel_width}x{pixel_height} pixmap"))?;
 
-        fill_rect(
-            &mut pixmap,
-            request.scale,
-            Rect::new(0.0, 0.0, request.width as f32, css_height as f32),
-            Rgba::WHITE,
-        );
+        pixmap.fill(Color::WHITE);
 
         let mut painter = LayoutPainter {
             pixmap: &mut pixmap,

@@ -68,9 +68,10 @@ use style::BackgroundPosition;
 #[cfg(test)]
 use style::{
     BackgroundImagePaint, BackgroundRepeat, BackgroundSize, BorderLineStyle, Display, Edges,
-    ObjectFit, ObjectPosition, PositionAxis, Style, TextAlign, TextSpan, style_for_node,
+    ObjectFit, ObjectPosition, PositionAxis, Rect, Rgba, Style, TextAlign, TextSpan,
+    style_for_node,
 };
-pub(crate) use style::{Length, Rect, Rgba, parse_font_style, parse_length};
+pub(crate) use style::{Length, parse_font_style, parse_length};
 #[cfg(test)]
 use test_support::{MailCanvasRenderer, layout_for_test, resource_policy_for_test};
 #[cfg(test)]
