@@ -8,14 +8,18 @@ use fontdb::Database;
 use image::{DynamicImage, ImageDecoder, ImageReader, Limits};
 use js_sys::Uint8Array;
 use mail_canvas_core::{
-    AssetKind, AssetReport, AssetSource, AssetStatus, ConsoleMessage, MailCanvasFontFallback,
-    RenderOutputBackend, RenderRequest, RenderWarning, RenderedImage, RendererCore, ResourcePolicy,
-    ResourceProvider, ResourceProviderFactory, repair_png_chunk_crcs,
+    AssetKind, AssetReport, AssetSource, AssetStatus, MailCanvasFontFallback, RenderRequest,
+    RenderedImage, RendererCore, ResourcePolicy, ResourceProvider, ResourceProviderFactory,
+    repair_png_chunk_crcs,
 };
-use serde::Serialize;
-use tiny_skia::Pixmap;
 use url::Url;
 use wasm_bindgen::prelude::*;
+
+mod diagnostics;
+mod output;
+
+use diagnostics::{DiagnosticsSnapshot, diagnostics_json, diagnostics_json_from_parts};
+use output::WasmOutputBackend;
 
 const DEFAULT_MAX_RESOURCE_BYTES: usize = 10 * 1024 * 1024;
 const DEFAULT_MAX_DECODED_PIXELS: u64 = 16_000_000;
@@ -253,19 +257,6 @@ fn parse_optional_url(raw: &str) -> Result<Option<Url>, JsValue> {
     Url::parse(trimmed)
         .map(Some)
         .map_err(|error| JsValue::from_str(&format!("invalid base URL: {error}")))
-}
-
-#[derive(Default)]
-struct WasmOutputBackend;
-
-impl RenderOutputBackend for WasmOutputBackend {
-    fn encode_png(&self, pixmap: &Pixmap) -> Result<Vec<u8>> {
-        pixmap.encode_png().map_err(Into::into)
-    }
-
-    fn encode_pdf(&self, _rendered: &mail_canvas_core::RenderedRgba) -> Result<Vec<u8>> {
-        bail!("PDF is not supported in wasm")
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -655,38 +646,6 @@ fn ensure_resource_size_with_limit(bytes: usize, max_bytes: usize) -> Result<()>
     Ok(())
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
-struct DiagnosticsSnapshot {
-    warnings: Vec<RenderWarning>,
-    assets: Vec<AssetReport>,
-    console_messages: Vec<ConsoleMessage>,
-}
-
-#[derive(Serialize)]
-struct DiagnosticsSnapshotRef<'a> {
-    warnings: &'a [RenderWarning],
-    assets: &'a [AssetReport],
-    console_messages: &'a [ConsoleMessage],
-}
-
-fn diagnostics_json(snapshot: &DiagnosticsSnapshot) -> String {
-    serde_json::to_string(snapshot)
-        .unwrap_or_else(|_| "{\"warnings\":[],\"assets\":[],\"console_messages\":[]}".to_string())
-}
-
-fn diagnostics_json_from_parts(
-    warnings: &[RenderWarning],
-    assets: &[AssetReport],
-    console_messages: &[ConsoleMessage],
-) -> String {
-    serde_json::to_string(&DiagnosticsSnapshotRef {
-        warnings,
-        assets,
-        console_messages,
-    })
-    .unwrap_or_else(|_| "{\"warnings\":[],\"assets\":[],\"console_messages\":[]}".to_string())
-}
-
 fn js_error(error: anyhow::Error) -> JsValue {
     JsValue::from_str(&error.to_string())
 }
@@ -754,14 +713,6 @@ mod tests {
             ),
             AssetSource::Remote
         );
-    }
-
-    #[test]
-    fn diagnostics_json_contains_render_sections() {
-        let json = diagnostics_json(&DiagnosticsSnapshot::default());
-        assert!(json.contains("\"warnings\""));
-        assert!(json.contains("\"assets\""));
-        assert!(json.contains("\"console_messages\""));
     }
 
     #[test]
