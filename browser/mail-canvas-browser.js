@@ -269,9 +269,10 @@ function extractCssUrls(cssText) {
 }
 
 function rewriteCssUrls(cssText, baseUrl) {
-  return cssText.replace(
-    /url\(\s*(['"]?)([^'")]+)\1\s*\)|@import\s+(?:url\(\s*)?(['"]?)([^'")\s]+)\3\s*\)?/gi,
-    (match, urlQuote, urlValue, importQuote, importValue) => {
+  assetPattern.lastIndex = 0;
+  const rewritten = cssText.replace(
+    assetPattern,
+    (match, _urlQuote, urlValue, _importQuote, importValue) => {
       const value = urlValue || importValue || "";
       if (!value || value.startsWith("data:") || value.startsWith("#")) {
         return match;
@@ -283,6 +284,8 @@ function rewriteCssUrls(cssText, baseUrl) {
       return `@import "${resolved}"`;
     },
   );
+  assetPattern.lastIndex = 0;
+  return rewritten;
 }
 
 function uniquePush(set, value) {
