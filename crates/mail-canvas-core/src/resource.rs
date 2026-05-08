@@ -19,28 +19,27 @@ pub fn repair_png_chunk_crcs(bytes: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
 
-    let mut repaired = bytes.to_vec();
+    let mut repaired = None;
     let mut offset = PNG_SIGNATURE.len();
-    let mut changed = false;
-    while offset.checked_add(12)? <= repaired.len() {
-        let length = u32::from_be_bytes(repaired[offset..offset + 4].try_into().ok()?) as usize;
+    while offset.checked_add(12)? <= bytes.len() {
+        let length = u32::from_be_bytes(bytes[offset..offset + 4].try_into().ok()?) as usize;
         let chunk_type_start = offset + 4;
         let chunk_data_start = offset + 8;
         let chunk_crc_start = chunk_data_start.checked_add(length)?;
         let next = chunk_crc_start.checked_add(4)?;
-        if next > repaired.len() {
+        if next > bytes.len() {
             return None;
         }
 
-        let expected = crc32fast::hash(&repaired[chunk_type_start..chunk_crc_start]);
-        let actual = u32::from_be_bytes(repaired[chunk_crc_start..next].try_into().ok()?);
+        let expected = crc32fast::hash(&bytes[chunk_type_start..chunk_crc_start]);
+        let actual = u32::from_be_bytes(bytes[chunk_crc_start..next].try_into().ok()?);
         if expected != actual {
+            let repaired = repaired.get_or_insert_with(|| bytes.to_vec());
             repaired[chunk_crc_start..next].copy_from_slice(&expected.to_be_bytes());
-            changed = true;
         }
 
-        if &repaired[chunk_type_start..chunk_data_start] == b"IEND" {
-            return changed.then_some(repaired);
+        if &bytes[chunk_type_start..chunk_data_start] == b"IEND" {
+            return repaired;
         }
         offset = next;
     }
