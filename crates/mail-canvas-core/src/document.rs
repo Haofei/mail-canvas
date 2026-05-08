@@ -13,11 +13,10 @@ pub fn build_document(
     width: u32,
 ) -> String {
     let head = build_head_markup(css, base_url, width);
-    let lower = source_html.to_ascii_lowercase();
-    let looks_like_document = lower.contains("<!doctype")
-        || lower.contains("<html")
-        || lower.contains("<body")
-        || lower.contains("<head");
+    let looks_like_document = contains_ascii_case_insensitive(source_html, "<!doctype")
+        || contains_ascii_case_insensitive(source_html, "<html")
+        || contains_ascii_case_insensitive(source_html, "<body")
+        || contains_ascii_case_insensitive(source_html, "<head");
 
     if !looks_like_document {
         return format!(
@@ -54,9 +53,7 @@ fn build_head_markup(css: Option<&str>, base_url: Option<&Url>, width: u32) -> S
 }
 
 pub(crate) fn inject_head_markup(source_html: &str, head: &str) -> String {
-    let lower = source_html.to_ascii_lowercase();
-
-    if let Some(open_head_index) = lower.find("<head") {
+    if let Some(open_head_index) = find_ascii_case_insensitive(source_html, "<head") {
         if let Some(close_offset) = source_html[open_head_index..].find('>') {
             let insert_at = open_head_index + close_offset + 1;
             let mut out = String::with_capacity(source_html.len() + head.len());
@@ -67,7 +64,7 @@ pub(crate) fn inject_head_markup(source_html: &str, head: &str) -> String {
         }
     }
 
-    if let Some(index) = lower.find("</head>") {
+    if let Some(index) = find_ascii_case_insensitive(source_html, "</head>") {
         let mut out = String::with_capacity(source_html.len() + head.len());
         out.push_str(&source_html[..index]);
         out.push_str(head);
@@ -75,7 +72,7 @@ pub(crate) fn inject_head_markup(source_html: &str, head: &str) -> String {
         return out;
     }
 
-    if let Some(index) = lower.find("<html") {
+    if let Some(index) = find_ascii_case_insensitive(source_html, "<html") {
         if let Some(close_offset) = source_html[index..].find('>') {
             let insert_at = index + close_offset + 1;
             let mut out = String::with_capacity(source_html.len() + head.len() + 13);
@@ -89,6 +86,21 @@ pub(crate) fn inject_head_markup(source_html: &str, head: &str) -> String {
     }
 
     format!("<!doctype html><html><head>{head}</head>{source_html}</html>")
+}
+
+fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
+    find_ascii_case_insensitive(haystack, needle).is_some()
+}
+
+fn find_ascii_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
+    let needle = needle.as_bytes();
+    if needle.is_empty() {
+        return Some(0);
+    }
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .position(|candidate| candidate.eq_ignore_ascii_case(needle))
 }
 
 fn escape_attr(value: &str) -> String {

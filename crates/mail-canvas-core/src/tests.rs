@@ -69,6 +69,19 @@ fn injects_existing_head() {
 }
 
 #[test]
+fn injects_uppercase_document_head_without_lowercase_copy() {
+    let html = build_document(
+        "<HTML><HEAD><title>x</title></HEAD><BODY>Hi</BODY></HTML>",
+        None,
+        None,
+        640,
+    );
+    assert!(html.contains("<title>x</title>"));
+    assert!(html.contains("email-render-defaults"));
+    assert!(html.find("email-render-defaults") < html.find("<title>x</title>"));
+}
+
+#[test]
 fn renderer_defaults_precede_author_head_styles() {
     let html = build_document(
         "<html><head><style>img { display:inline }</style></head><body><img></body></html>",
