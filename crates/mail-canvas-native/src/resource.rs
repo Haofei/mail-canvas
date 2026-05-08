@@ -30,6 +30,7 @@ pub struct ResourcePolicy {
     pub(crate) resource_count: Arc<Mutex<usize>>,
     pub(crate) asset_reports: Arc<Mutex<Vec<AssetReport>>>,
     image_cache: Arc<Mutex<HashMap<String, ImageData>>>,
+    byte_cache: Arc<Mutex<HashMap<String, Arc<[u8]>>>>,
     agent: ureq::Agent,
 }
 
@@ -43,6 +44,7 @@ impl ResourcePolicy {
             resource_count: Arc::new(Mutex::new(0)),
             asset_reports: Arc::new(Mutex::new(Vec::new())),
             image_cache: Arc::new(Mutex::new(HashMap::new())),
+            byte_cache: Arc::new(Mutex::new(HashMap::new())),
             agent,
         }
     }
@@ -316,10 +318,37 @@ fn load_resource_bytes_inner(
         }
     };
     let resolved_url = Some(url.to_string());
+    let source = asset_source_for_url(&url);
+
+    if kind != AssetKind::Image {
+        if let Some(bytes) = policy
+            .byte_cache
+            .lock()
+            .expect("byte cache mutex poisoned")
+            .get(url.as_str())
+            .cloned()
+        {
+            if record_loaded {
+                policy.push_asset_report(
+                    asset_report(kind, AssetStatus::Loaded, src)
+                        .with_source(source)
+                        .with_initiator(initiator)
+                        .with_bytes(bytes.len())
+                        .with_optional_resolved_url(resolved_url.clone()),
+                );
+            }
+            return Ok(LoadedResourceBytes {
+                resolved_url,
+                source,
+                bytes: bytes.to_vec(),
+            });
+        }
+    }
 
     match url.scheme() {
         "file" => match load_file_url(&url, policy) {
             Ok(bytes) => {
+                cache_resource_bytes(&url, kind, policy, &bytes);
                 if record_loaded {
                     policy.push_asset_report(
                         asset_report(kind, AssetStatus::Loaded, src)
@@ -348,6 +377,7 @@ fn load_resource_bytes_inner(
         },
         "https" | "http" => match load_remote_url(&url, policy) {
             Ok(bytes) => {
+                cache_resource_bytes(&url, kind, policy, &bytes);
                 if record_loaded {
                     policy.push_asset_report(
                         asset_report(kind, AssetStatus::Loaded, src)
@@ -384,6 +414,25 @@ fn load_resource_bytes_inner(
             );
             Err(error)
         }
+    }
+}
+
+fn cache_resource_bytes(url: &Url, kind: AssetKind, policy: &ResourcePolicy, bytes: &[u8]) {
+    if kind == AssetKind::Image {
+        return;
+    }
+    policy
+        .byte_cache
+        .lock()
+        .expect("byte cache mutex poisoned")
+        .insert(url.to_string(), Arc::<[u8]>::from(bytes));
+}
+
+fn asset_source_for_url(url: &Url) -> AssetSource {
+    if url.scheme() == "file" {
+        AssetSource::File
+    } else {
+        AssetSource::Remote
     }
 }
 
@@ -646,6 +695,7 @@ mod tests {
             resource_count: Arc::new(Mutex::new(0)),
             asset_reports: Arc::new(Mutex::new(Vec::new())),
             image_cache: Arc::new(Mutex::new(HashMap::new())),
+            byte_cache: Arc::new(Mutex::new(HashMap::new())),
             agent,
         }
     }
@@ -704,6 +754,38 @@ mod tests {
         );
 
         let _ = fs::remove_file(image_path);
+        let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn load_bytes_reuses_file_stylesheets_within_render() {
+        let dir =
+            std::env::temp_dir().join(format!("mail-canvas-byte-cache-{}", std::process::id()));
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let css_path = dir.join("style.css");
+        fs::write(&css_path, b".hero { color: red }").expect("write css");
+
+        let mut policy = test_policy();
+        policy.base_url = Some(Url::from_directory_path(&dir).expect("file base url"));
+
+        let first = policy
+            .load_bytes("style.css", AssetKind::Stylesheet, "link")
+            .expect("first load");
+        let second = policy
+            .load_bytes("style.css", AssetKind::Stylesheet, "link")
+            .expect("second load");
+
+        assert_eq!(first, second);
+        assert_eq!(
+            *policy.resource_count.lock().expect("resource count mutex"),
+            1
+        );
+        assert_eq!(
+            *policy.total_bytes.lock().expect("resource bytes mutex"),
+            first.len()
+        );
+
+        let _ = fs::remove_file(css_path);
         let _ = fs::remove_dir(dir);
     }
 
