@@ -140,6 +140,7 @@ async function runInBrowser(baseUrl) {
             },
           });
           let cacheLimitSurvives = false;
+          let cacheLimitRegisteredAssets = 0;
           try {
             await cacheLimitRenderer.renderThumbnail({
               html: `<img src="${firstTinyUrl}" width="1" alt="">`,
@@ -147,12 +148,13 @@ async function runInBrowser(baseUrl) {
               height: 120,
               baseUrl: window.location.href,
             });
-            await cacheLimitRenderer.renderThumbnail({
+            const secondCacheLimitResult = await cacheLimitRenderer.renderThumbnail({
               html: `<img src="${secondTinyUrl}" width="1" alt="">`,
               width: 120,
               height: 120,
               baseUrl: window.location.href,
             });
+            cacheLimitRegisteredAssets = secondCacheLimitResult.assets.registered;
             cacheLimitSurvives = true;
           } finally {
             URL.revokeObjectURL(firstTinyUrl);
@@ -196,6 +198,7 @@ async function runInBrowser(baseUrl) {
               limitRejects,
               defaultEmojiLoads: emojiFontFetches === 1,
               cacheLimitSurvives,
+              cacheLimitRegisteredAssets,
             },
           };
         } finally {

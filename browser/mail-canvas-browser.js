@@ -56,6 +56,7 @@ export class MailCanvasBrowserRenderer {
     this.stylesheetRewriteCache = new Map();
     this.preparedHtmlCache = null;
     this.registeredAssetUrls = new Set();
+    this.registeredAssetBytes = 0;
     this.destroyed = false;
   }
 
@@ -72,9 +73,14 @@ export class MailCanvasBrowserRenderer {
     const assets = await this.#fetchAssetGraph(prepared.assetUrls, baseUrl, prepared.assets);
     const fetchedAt = performance.now();
     let newAssets = assets.filter((asset) => !this.registeredAssetUrls.has(asset.url));
-    if (this.registeredAssetUrls.size + newAssets.length > this.limits.maxAssetCount) {
+    const newAssetBytes = totalByteLength(newAssets);
+    if (
+      this.registeredAssetUrls.size + newAssets.length > this.limits.maxAssetCount ||
+      this.registeredAssetBytes + newAssetBytes > this.limits.maxTotalAssetBytes
+    ) {
       await this.client.call({ type: "clear" });
       this.registeredAssetUrls.clear();
+      this.registeredAssetBytes = 0;
       newAssets = assets;
     }
     const assetPayload = newAssets.map((asset) => ({
@@ -97,6 +103,7 @@ export class MailCanvasBrowserRenderer {
     for (const asset of newAssets) {
       this.registeredAssetUrls.add(asset.url);
     }
+    this.registeredAssetBytes += totalByteLength(newAssets);
     const renderedAt = performance.now();
     const png = new Uint8Array(response.png);
     let blob = null;
@@ -122,6 +129,7 @@ export class MailCanvasBrowserRenderer {
   async clearCache() {
     this.#clearLocalCaches();
     this.registeredAssetUrls.clear();
+    this.registeredAssetBytes = 0;
     if (!this.destroyed) {
       await this.client.call({ type: "clear" });
     }
@@ -133,6 +141,7 @@ export class MailCanvasBrowserRenderer {
     }
     this.#clearLocalCaches();
     this.registeredAssetUrls.clear();
+    this.registeredAssetBytes = 0;
     this.client.destroy();
     this.destroyed = true;
   }
@@ -459,6 +468,10 @@ function positiveNumber(value, label) {
     throw new Error(`${label} must be a finite positive number`);
   }
   return parsed;
+}
+
+function totalByteLength(assets) {
+  return assets.reduce((sum, asset) => sum + asset.bytes.byteLength, 0);
 }
 
 function htmlNeedsEmoji(html) {

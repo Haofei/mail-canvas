@@ -31,6 +31,7 @@ async function main() {
   assert.equal(report.wrapperChecks.limitRejects, true);
   assert.equal(report.wrapperChecks.defaultEmojiLoads, true);
   assert.equal(report.wrapperChecks.cacheLimitSurvives, true);
+  assert.equal(report.wrapperChecks.cacheLimitRegisteredAssets, 1);
   console.log(JSON.stringify(report, null, 2));
 }
 
