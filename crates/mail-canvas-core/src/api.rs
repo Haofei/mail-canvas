@@ -313,6 +313,17 @@ mod tests {
             Some("https://example.com/image.png")
         );
     }
+
+    #[test]
+    fn asset_report_compacts_large_data_urls() {
+        let data_url = format!("data:image/png;base64,{}", "a".repeat(512));
+        let report = AssetReport::new(AssetKind::Image, AssetStatus::Loaded, data_url);
+
+        assert!(report.request_url.starts_with("data:image/png;base64,..."));
+        assert!(report.request_url.contains("chars"));
+        assert!(report.request_url.contains("crc32"));
+        assert!(report.request_url.len() < 128);
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -379,7 +390,7 @@ impl AssetReport {
         Self {
             kind,
             status,
-            request_url: request_url.into(),
+            request_url: compact_asset_request_url(request_url.into()),
             resolved_url: None,
             source: None,
             initiator: None,
@@ -431,6 +442,30 @@ impl AssetReport {
             self.resolved_url = newer.resolved_url;
         }
     }
+}
+
+fn compact_asset_request_url(request_url: String) -> String {
+    const MAX_DATA_URL_REPORT_CHARS: usize = 128;
+    if request_url.len() <= MAX_DATA_URL_REPORT_CHARS
+        || !request_url.trim_start().starts_with("data:")
+    {
+        return request_url;
+    }
+    let header = request_url
+        .split_once(',')
+        .map_or(request_url.as_str(), |(header, _)| header);
+    let mut compact_header = String::new();
+    for ch in header.chars().take(80) {
+        compact_header.push(ch);
+    }
+    if header.chars().count() > 80 {
+        compact_header.push_str("...");
+    }
+    format!(
+        "{compact_header},... ({} chars, crc32 {:08x})",
+        request_url.len(),
+        crc32fast::hash(request_url.as_bytes())
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
