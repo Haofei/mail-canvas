@@ -31,6 +31,7 @@ function parseArgs(argv) {
     only: [],
     random: false,
     excludeExisting: true,
+    excludeSeen: true,
     login: false,
     headful: false,
     skipVendor: false,
@@ -41,6 +42,8 @@ function parseArgs(argv) {
     maxImageBytes: DEFAULT_MAX_IMAGE_BYTES,
     maxDecodedPixels: DEFAULT_MAX_DECODED_PIXELS,
     maxTotalResourceBytes: DEFAULT_MAX_TOTAL_RESOURCE_BYTES,
+    registryPath: path.join(ROOT_DIR, 'corpus', 'registry.json'),
+    updateRegistry: true,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -87,6 +90,12 @@ function parseArgs(argv) {
       case '--include-existing':
         args.excludeExisting = false;
         break;
+      case '--exclude-seen':
+        args.excludeSeen = true;
+        break;
+      case '--include-seen':
+        args.excludeSeen = false;
+        break;
       case '--login':
         args.login = true;
         break;
@@ -117,6 +126,12 @@ function parseArgs(argv) {
       case '--max-total-resource-bytes':
         args.maxTotalResourceBytes = positiveInt(next(), '--max-total-resource-bytes');
         break;
+      case '--registry':
+        args.registryPath = path.resolve(next());
+        break;
+      case '--no-registry':
+        args.updateRegistry = false;
+        break;
       default:
         throw new Error(`unknown argument: ${arg}`);
     }
@@ -138,8 +153,10 @@ async function main() {
   const steps = [];
   const beforeCatalog = await readCatalog();
   let vendoredNames = [];
+  let collectAttempted = false;
 
   if (!args.skipVendor && args.provider === 'reallygoodemails' && args.only.length === 0) {
+    collectAttempted = true;
     const vendorArgs = [
       'scripts/vendor_reallygoodemails.mjs',
       '--limit',
@@ -154,6 +171,7 @@ async function main() {
     }
     if (args.random) vendorArgs.push('--random');
     if (args.excludeExisting) vendorArgs.push('--exclude-existing');
+    if (args.excludeSeen) vendorArgs.push('--exclude-seen', '--registry', args.registryPath);
     if (args.login) vendorArgs.push('--login');
     if (args.headful) vendorArgs.push('--headful');
 
@@ -174,6 +192,25 @@ async function main() {
   }
 
   const targets = selectTargets(args, vendoredNames);
+  if (collectAttempted && vendoredNames.length === 0) {
+    const pipelineJson = path.join(args.workDir, 'pipeline.json');
+    const summary = {
+      generatedAt: new Date().toISOString(),
+      durationSeconds: Math.round((Date.now() - startedAt) / 1000),
+      args: safeArgs(args),
+      targets: [],
+      steps,
+      audit: { issues: [] },
+      compare: null,
+      triage: [],
+      note: 'No new templates were selected after corpus registry filtering.',
+    };
+    await writeJson(pipelineJson, summary);
+    await writeJson(path.join(args.workDir, 'manifest.json'), { targets: [] });
+    console.log(`pipeline: ${pipelineJson}`);
+    console.log(summary.note);
+    return;
+  }
   if (targets.length === 0) {
     throw new Error('no target templates selected');
   }
@@ -207,6 +244,16 @@ async function main() {
   const pipelineJson = path.join(args.workDir, 'pipeline.json');
   await writeJson(pipelineJson, summary);
   await writeManifest(args, targets);
+  if (args.updateRegistry) {
+    await runStep(steps, 'registry', 'node', [
+      'scripts/corpus_registry.mjs',
+      'record-run',
+      '--registry',
+      args.registryPath,
+      '--pipeline',
+      pipelineJson,
+    ]);
+  }
 
   console.log(`pipeline: ${pipelineJson}`);
   if (compare) {

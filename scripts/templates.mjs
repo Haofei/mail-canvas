@@ -417,34 +417,6 @@ const REMOTE_TEMPLATES = [
   ],
 ];
 
-const OFFICIAL_MJML_FIXTURES = [
-  'alert',
-  'arturia',
-  'austin',
-  'basic',
-  'black-friday',
-  'card',
-  'christmas',
-  'delivery',
-  'happy-new-year',
-  'loyalty-client',
-  'newsletter',
-  'onepage',
-  'proof',
-  'reactivation-email',
-  'real-estate',
-  'referral-email',
-  'tech-geek',
-  'welcome-email',
-];
-
-const GENERATED_FIXTURES = OFFICIAL_MJML_FIXTURES.map((name) => ({
-  name: `mjml-${name}`,
-  url: `https://github.com/mjmlio/email-templates/blob/master/templates/${name}.mjml`,
-  sourcePath: `corpus/mjml/mjml-${name}.html`,
-  preserveLocal: true,
-}));
-
 const TEMPLATE_METADATA = {
   'sendgrid-dynamic-receipt': {
     status: 'known-warning',
@@ -536,42 +508,17 @@ const TEMPLATE_METADATA = {
 
 const VENDORED_INDEX = new Map(vendoredCatalog.map((entry) => [entry.name, entry]));
 
-const BEEFREE_FIXTURES = vendoredCatalog
-  .filter((entry) => entry.name.startsWith('beefree-'))
-  .map((entry) => ({
-    name: entry.name,
-    url: entry.url,
-    sourcePath: entry.sourcePath,
-  }));
-
-const REALLY_GOOD_EMAILS_FIXTURES = vendoredCatalog
-  .filter((entry) => entry.name.startsWith('reallygoodemails-'))
-  .map((entry) => ({
-    name: entry.name,
-    url: entry.url,
-    sourcePath: entry.sourcePath,
-    preserveLocal: true,
-  }));
-
-const PRESERVED_FIXTURES = [
-  ...BEEFREE_FIXTURES,
-  ...REALLY_GOOD_EMAILS_FIXTURES,
-  ...GENERATED_FIXTURES.map((entry) => ({
-    ...entry,
-    ...(VENDORED_INDEX.get(entry.name) ?? {}),
-    preserveLocal: true,
-  })),
-];
+const VENDORED_FIXTURES = vendoredCatalog.map((entry) => ({
+  ...entry,
+  preserveLocal: true,
+}));
 
 export const TEMPLATES = [
   ...REMOTE_TEMPLATES,
-  ...PRESERVED_FIXTURES.map((entry) => [entry.name, entry.url]),
+  ...VENDORED_FIXTURES.map((entry) => [entry.name, entry.url]),
 ];
 
-export const TEMPLATE_CORPUS = [
-  ...REMOTE_TEMPLATES.map(([name, url]) => ({ name, url })),
-  ...PRESERVED_FIXTURES,
-].map((template) => ({
+export const TEMPLATE_CORPUS = VENDORED_FIXTURES.map((template) => ({
   ...template,
   ...(VENDORED_INDEX.get(template.name) ?? {}),
   provider: templateProvider(template.name),

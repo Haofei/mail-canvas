@@ -257,20 +257,20 @@ npm run test:visual
 This gate uses Chromium as the reference with semantic tolerances (content
 presence, layout stability, media regions) rather than strict pixel equality.
 
-Run the full golden corpus comparison for diagnostics:
+Run the committed golden corpus comparison for diagnostics:
 
 ```sh
 npm run compare:corpus
 ```
 
-Run only the modern editor/generated marketing corpus:
+Run only the committed editor/generated samples:
 
 ```sh
 npm run compare:editors
 ```
 
-Run the fixed corpus pipeline for large template intake, audit, comparison, and
-triage:
+Run the corpus pipeline for temporary large-template intake, audit, comparison,
+triage, and registry updates:
 
 ```sh
 npm run corpus:pipeline -- \
@@ -278,7 +278,7 @@ npm run corpus:pipeline -- \
   --category saas \
   --limit 10 \
   --random \
-  --exclude-existing \
+  --exclude-seen \
   --work-dir runs/rge-saas
 ```
 
@@ -290,6 +290,10 @@ The pipeline writes stable artifacts under the run directory:
   dumps, diagnostics, full side-by-side images, and pixel diff images.
 - `first-bad-crops/` — browser/Rust/diff crops around the first divergent
   vertical band.
+
+Committed corpus files are intentionally small. Bulk downloads are tracked by
+`corpus/registry.json` with HTML and asset MD5 fingerprints, but only promoted
+golden templates stay in git.
 - `triage.json` and `triage.md` — prioritized failures grouped as `P0` to
   `P3` by likely fix value.
 - `pipeline.json` — commands, targets, timings, and output paths for the run.
@@ -540,10 +544,10 @@ docker run --rm -p 8787:8787 mail-canvas
 # 固定 Playwright 语义回归集
 npm run test:visual
 
-# 完整 golden corpus 对比（诊断用）
+# 已提交 golden corpus 对比（诊断用）
 npm run compare:corpus
 
-# 现代编辑器模板对比
+# 已提交的编辑器/生成器样例对比
 npm run compare:editors
 
 # 本地 HTML 对比
@@ -552,6 +556,10 @@ npm run compare:local -- --html ./cnn.html --name cnn-local
 
 `test:visual` 使用 Chromium 作为参考，通过语义容差（内容存在、布局稳定、
 媒体区域）而非严格像素一致性来判定。
+
+仓库只保留少量 golden 模板。批量下载的研究模板通过
+`corpus/registry.json` 记录 HTML 和 asset MD5 指纹，不把整批 HTML/图片
+提交进 git。
 
 ### CSS 支持矩阵
 

@@ -74,6 +74,7 @@ jobs:
           path: |
             corpus/reallygoodemails
             corpus/catalog.json
+            corpus/registry.json
             /tmp/mail-canvas-rge-pipeline/pipeline.json
             /tmp/mail-canvas-rge-pipeline/manifest.json
             /tmp/mail-canvas-rge-pipeline/audit.json

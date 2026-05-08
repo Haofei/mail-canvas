@@ -14,6 +14,7 @@ const RGE_ORIGIN = 'https://reallygoodemails.com';
 const PROVIDER = 'reallygoodemails';
 const CORPUS_DIR = path.join(ROOT_DIR, 'corpus', PROVIDER);
 const CATALOG_PATH = path.join(ROOT_DIR, 'corpus', 'catalog.json');
+const REGISTRY_PATH = path.join(ROOT_DIR, 'corpus', 'registry.json');
 const DEFAULT_STORAGE_STATE = path.join(ROOT_DIR, '.rge-auth', 'storage-state.json');
 
 function parseArgs(argv) {
@@ -30,6 +31,8 @@ function parseArgs(argv) {
     timeoutMs: 30000,
     random: false,
     excludeExisting: false,
+    excludeSeen: false,
+    registryPath: REGISTRY_PATH,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -76,6 +79,12 @@ function parseArgs(argv) {
       case '--exclude-existing':
         args.excludeExisting = true;
         break;
+      case '--exclude-seen':
+        args.excludeSeen = true;
+        break;
+      case '--registry':
+        args.registryPath = path.resolve(next());
+        break;
       default:
         throw new Error(`unknown argument: ${arg}`);
     }
@@ -103,6 +112,10 @@ async function main() {
       const existing = await existingReallyGoodEmailsSlugs(args.catalogPath);
       slugs = slugs.filter((slug) => !existing.has(slug));
     }
+    if (args.excludeSeen) {
+      const seen = await seenReallyGoodEmailsSlugs(args.registryPath);
+      slugs = slugs.filter((slug) => !seen.has(slug));
+    }
     if (args.random) {
       shuffle(slugs);
     }
@@ -122,8 +135,12 @@ async function main() {
       }
       await wait(500);
     }
-    if (catalogEntries.length < args.limit) {
+    if (catalogEntries.length === 0 && args.excludeSeen) {
+      console.log('no new Really Good Emails templates');
+    } else if (catalogEntries.length < args.limit && !args.excludeSeen) {
       throw new Error(`vendored ${catalogEntries.length} templates, expected ${args.limit}`);
+    } else if (catalogEntries.length < args.limit) {
+      console.warn(`vendored ${catalogEntries.length} new templates, requested ${args.limit}`);
     }
     await updateCatalog(args.catalogPath, catalogEntries, args.replaceProvider);
     console.log(args.catalogPath);
@@ -208,6 +225,24 @@ async function existingReallyGoodEmailsSlugs(catalogPath) {
       continue;
     }
     slugs.add(entry.name.slice(`${PROVIDER}-`.length));
+  }
+  return slugs;
+}
+
+async function seenReallyGoodEmailsSlugs(registryPath) {
+  const registry = await readJson(registryPath).catch(() => ({ templates: [] }));
+  const slugs = new Set();
+  for (const entry of registry.templates ?? []) {
+    if (entry.provider !== PROVIDER && !entry.name?.startsWith(`${PROVIDER}-`)) {
+      continue;
+    }
+    if (entry.name?.startsWith(`${PROVIDER}-`)) {
+      slugs.add(entry.name.slice(`${PROVIDER}-`.length));
+    }
+    const match = entry.url?.match(/\/emails\/([^/?#]+)/);
+    if (match) {
+      slugs.add(match[1].replace(/\.png$/i, ''));
+    }
   }
   return slugs;
 }
