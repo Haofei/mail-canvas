@@ -546,17 +546,18 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             return Ok(false);
         }
 
-        let plain_text = spans_text(&normalized);
         let matches_parent_style = text_spans_match_style(&normalized, style);
-        let height = if matches_parent_style {
-            self.measure_text_height(&plain_text, width, style)?
+        let (height, kind) = if matches_parent_style {
+            let plain_text = spans_text(&normalized);
+            (
+                self.measure_text_height(&plain_text, width, style)?,
+                LayoutKind::Text(plain_text),
+            )
         } else {
-            self.measure_rich_text_height(&normalized, width, style)?
-        };
-        let kind = if matches_parent_style {
-            LayoutKind::Text(plain_text)
-        } else {
-            LayoutKind::RichText(normalized)
+            (
+                self.measure_rich_text_height(&normalized, width, style)?,
+                LayoutKind::RichText(normalized),
+            )
         };
         let debug = match &kind {
             LayoutKind::Text(text) => self.debug_for_text(text),
@@ -594,14 +595,31 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             return Ok(false);
         }
 
-        let plain_text = spans_text(&normalized);
         let matches_parent_style = text_spans_match_style(&normalized, style);
-        let text_width = if matches_parent_style {
-            self.measure_text_width(&plain_text, style)
+        let (text_width, height, kind) = if matches_parent_style {
+            let plain_text = spans_text(&normalized);
+            (
+                self.measure_text_width(&plain_text, style)
+                    .min(width.max(1.0)),
+                resolved_line_height_from_db(self.font_system.db(), style),
+                LayoutKind::Text(plain_text),
+            )
         } else {
-            self.measure_rich_text_width(&normalized, style)
-        }
-        .min(width.max(1.0));
+            (
+                self.measure_rich_text_width(&normalized, style)
+                    .min(width.max(1.0)),
+                normalized
+                    .iter()
+                    .map(|span| {
+                        resolved_line_height_from_run_db(self.font_system.db(), &span.style)
+                    })
+                    .fold(
+                        resolved_line_height_from_db(self.font_system.db(), style),
+                        f32::max,
+                    ),
+                LayoutKind::RichText(normalized),
+            )
+        };
         if *inline_row_width > 0.0 && *inline_row_width + text_width > width + f32::EPSILON {
             flush_inline_row(
                 inline_row,
@@ -614,22 +632,6 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             );
         }
 
-        let height = if matches_parent_style {
-            resolved_line_height_from_db(self.font_system.db(), style)
-        } else {
-            normalized
-                .iter()
-                .map(|span| resolved_line_height_from_run_db(self.font_system.db(), &span.style))
-                .fold(
-                    resolved_line_height_from_db(self.font_system.db(), style),
-                    f32::max,
-                )
-        };
-        let kind = if matches_parent_style {
-            LayoutKind::Text(plain_text)
-        } else {
-            LayoutKind::RichText(normalized)
-        };
         let debug = match &kind {
             LayoutKind::Text(text) => self.debug_for_text(text),
             LayoutKind::RichText(spans) => self.debug_for_text_spans(spans),
