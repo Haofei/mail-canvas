@@ -60,7 +60,24 @@ async function main() {
       continue;
     }
     const htmlPath = path.resolve(ROOT_DIR, template.sourcePath);
-    const html = await readFile(htmlPath, 'utf8');
+    let html;
+    try {
+      html = await readFile(htmlPath, 'utf8');
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        throw error;
+      }
+      results.push({
+        name: template.name,
+        provider: template.provider,
+        corpusGroup: template.corpusGroup,
+        supportTier: template.supportTier,
+        missingHtml: path.relative(process.cwd(), htmlPath),
+        invalidStyleUrlQuotes: 0,
+        emptyLinkedStylesheets: [],
+      });
+      continue;
+    }
     const invalidStyleUrlQuotes = countInvalidStyleUrlQuotes(html);
     const emptyLinkedStylesheets = await emptyStylesheetLinks(html, htmlPath);
     if (invalidStyleUrlQuotes === 0 && emptyLinkedStylesheets.length === 0) {
@@ -88,6 +105,9 @@ async function main() {
 
   for (const result of results) {
     const parts = [];
+    if (result.missingHtml) {
+      parts.push(`missing HTML: ${result.missingHtml}`);
+    }
     if (result.invalidStyleUrlQuotes > 0) {
       parts.push(`invalid style url quotes: ${result.invalidStyleUrlQuotes}`);
     }
