@@ -346,6 +346,9 @@ fn blink_web_standard_ascent_adjustment_matches_web_standard_families() {
     assert!(blink_web_standard_ascent_adjustment_applies(Some(
         "Helvetica"
     )));
+    assert!(blink_web_standard_ascent_adjustment_applies(Some(
+        "SANS-SERIF"
+    )));
     assert!(blink_web_standard_ascent_adjustment_applies(Some("serif")));
     assert!(blink_web_standard_ascent_adjustment_applies(None));
     assert!(!blink_web_standard_ascent_adjustment_applies(Some(

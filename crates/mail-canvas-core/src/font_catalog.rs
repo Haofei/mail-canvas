@@ -70,10 +70,6 @@ const SAFE_SANS_SYSTEM_FONTS: &[&str] = &[
 const SAFE_SERIF_SYSTEM_FONTS: &[&str] = &["georgia", "times", "times new roman", "cambria"];
 const SAFE_MONO_SYSTEM_FONTS: &[&str] = &["courier", "courier new"];
 
-pub(crate) fn normalized_font_family(font_family: Option<&str>) -> Option<String> {
-    font_family.map(|family| family.trim().trim_matches(['"', '\'']).to_ascii_lowercase())
-}
-
 pub(crate) fn generic_font_family(value: &str) -> Option<&'static str> {
     if eq_ignore_ascii_case_any(value, SANS_GENERIC_NAMES) {
         Some("sans-serif")

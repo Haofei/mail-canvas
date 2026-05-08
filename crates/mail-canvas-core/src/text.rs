@@ -12,9 +12,7 @@ use kuchiki::NodeRef;
 
 use crate::HARD_BREAK;
 use crate::dom::{attr, element_tag, is_metadata_tag};
-use crate::font_catalog::{
-    generic_font_family as generic_font_family_name, normalized_font_family,
-};
+use crate::font_catalog::generic_font_family as generic_font_family_name;
 use crate::style::{
     Display, Style, TextRunStyle, TextSpan, TextTransform, parse_css_length, style_for_node,
 };
@@ -272,7 +270,7 @@ pub(super) fn wrap_width_adjustment(font_family: Option<&str>) -> f32 {
 }
 
 fn text_compatibility_profile(font_family: Option<&str>) -> TextCompatibilityProfile {
-    let Some(family) = normalized_font_family(font_family) else {
+    let Some(family) = font_family.map(|family| family.trim().trim_matches(['"', '\''])) else {
         return TextCompatibilityProfile {
             generic_family: Some(BlinkGenericFamily::Serif),
             apply_web_standard_ascent_adjustment: true,
@@ -280,11 +278,12 @@ fn text_compatibility_profile(font_family: Option<&str>) -> TextCompatibilityPro
         };
     };
 
-    let canonical_family = generic_font_family_name(&family).unwrap_or(family.as_str());
-    if let Some(rule) = TEXT_COMPATIBILITY_RULES
-        .iter()
-        .find(|rule| rule.families.iter().any(|name| *name == canonical_family))
-    {
+    let canonical_family = generic_font_family_name(family).unwrap_or(family);
+    if let Some(rule) = TEXT_COMPATIBILITY_RULES.iter().find(|rule| {
+        rule.families
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(canonical_family))
+    }) {
         return TextCompatibilityProfile {
             generic_family: rule.generic_family,
             apply_web_standard_ascent_adjustment: rule.apply_web_standard_ascent_adjustment,
