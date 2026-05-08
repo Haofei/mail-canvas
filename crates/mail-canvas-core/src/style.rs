@@ -1620,11 +1620,16 @@ pub(crate) fn apply_flex(style: &mut Style, value: &str) {
         return;
     }
 
-    let mut numbers = Vec::new();
+    let mut grow = None;
+    let mut shrink = None;
     let mut basis = None;
     for token in value.split_whitespace() {
         if let Some(factor) = parse_flex_factor(token) {
-            numbers.push(factor);
+            if grow.is_none() {
+                grow = Some(factor);
+            } else if shrink.is_none() {
+                shrink = Some(factor);
+            }
         } else if token.eq_ignore_ascii_case("auto") {
             basis = None;
         } else if let Some(length) = parse_length(token) {
@@ -1632,9 +1637,9 @@ pub(crate) fn apply_flex(style: &mut Style, value: &str) {
         }
     }
 
-    if let Some(grow) = numbers.first().copied() {
+    if let Some(grow) = grow {
         style.flex_grow = grow;
-        style.flex_shrink = numbers.get(1).copied().unwrap_or(1.0);
+        style.flex_shrink = shrink.unwrap_or(1.0);
         style.flex_basis = basis.or(Some(Length::Percent(0.0)));
     } else if basis.is_some() {
         style.flex_basis = basis;
