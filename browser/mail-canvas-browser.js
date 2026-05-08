@@ -99,9 +99,13 @@ export class MailCanvasBrowserRenderer {
     }
     const renderedAt = performance.now();
     const png = new Uint8Array(response.png);
+    let blob = null;
     return {
       png,
-      blob: new Blob([png], { type: "image/png" }),
+      get blob() {
+        blob ??= new Blob([png], { type: "image/png" });
+        return blob;
+      },
       width,
       height,
       scale,
