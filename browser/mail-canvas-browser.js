@@ -53,6 +53,7 @@ export class MailCanvasBrowserRenderer {
     this.assetCache = new Map();
     this.cssDependencyCache = new Map();
     this.stylesheetRewriteCache = new Map();
+    this.preparedHtmlCache = null;
     this.registeredAssetUrls = new Set();
     this.destroyed = false;
   }
@@ -66,7 +67,7 @@ export class MailCanvasBrowserRenderer {
     const baseUrl = resolveBaseUrl(options.baseUrl ?? this.defaultBaseUrl);
     const started = performance.now();
     await this.#ensureDefaultEmojiFont(html, baseUrl);
-    const prepared = await this.#inlineStylesheetLinks(html, baseUrl);
+    const prepared = await this.#prepareHtml(html, baseUrl);
     const assets = await this.#fetchAssetGraph(prepared.assetUrls, baseUrl, prepared.assets);
     const fetchedAt = performance.now();
     let newAssets = assets.filter((asset) => !this.registeredAssetUrls.has(asset.url));
@@ -117,6 +118,7 @@ export class MailCanvasBrowserRenderer {
     this.assetCache.clear();
     this.cssDependencyCache.clear();
     this.stylesheetRewriteCache.clear();
+    this.preparedHtmlCache = null;
     this.registeredAssetUrls.clear();
     if (!this.destroyed) {
       await this.client.call({ type: "clear" });
@@ -130,6 +132,7 @@ export class MailCanvasBrowserRenderer {
     this.assetCache.clear();
     this.cssDependencyCache.clear();
     this.stylesheetRewriteCache.clear();
+    this.preparedHtmlCache = null;
     this.registeredAssetUrls.clear();
     this.client.destroy();
     this.destroyed = true;
@@ -175,6 +178,16 @@ export class MailCanvasBrowserRenderer {
     }
 
     return assets;
+  }
+
+  async #prepareHtml(html, baseUrl) {
+    const cached = this.preparedHtmlCache;
+    if (cached?.html === html && cached.baseUrl === baseUrl) {
+      return cached.prepared;
+    }
+    const prepared = await this.#inlineStylesheetLinks(html, baseUrl);
+    this.preparedHtmlCache = { html, baseUrl, prepared };
+    return prepared;
   }
 
   async #inlineStylesheetLinks(html, baseUrl) {
