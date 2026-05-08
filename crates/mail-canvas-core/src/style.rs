@@ -6,7 +6,7 @@ use kuchiki::NodeRef;
 
 use crate::ImageData;
 use crate::css::{css_declarations, first_css_url, unquote_css_value};
-use crate::fonts::WebFontFace;
+use crate::fonts::{FontFamilyIndex, WebFontFace};
 use crate::text::{
     normal_line_height_fallback, parse_line_height_declaration, resolved_line_height_from_db,
     resolved_line_height_from_run_db, text_style_attrs,
@@ -1351,13 +1351,13 @@ impl Rect {
 }
 
 pub(crate) fn style_for_node(node: &NodeRef, parent: &Style) -> Style {
-    style_for_node_with_fonts(node, parent, &[], &[])
+    style_for_node_with_fonts(node, parent, &FontFamilyIndex::default(), &[])
 }
 
 pub(crate) fn style_for_node_with_fonts(
     node: &NodeRef,
     parent: &Style,
-    available_font_families: &[String],
+    available_font_families: &FontFamilyIndex,
     web_font_faces: &[WebFontFace],
 ) -> Style {
     let Some(element) = node.as_element() else {
@@ -2342,12 +2342,12 @@ pub(crate) fn parse_box_sizing(value: &str) -> Option<BoxSizing> {
 }
 
 pub(crate) fn parse_font_family(value: &str) -> Option<String> {
-    parse_font_family_with_available(value, &[])
+    parse_font_family_with_available(value, &FontFamilyIndex::default())
 }
 
 pub(crate) fn parse_font_family_with_available(
     value: &str,
-    available_font_families: &[String],
+    available_font_families: &FontFamilyIndex,
 ) -> Option<String> {
     parse_font_family_selection(value, available_font_families, &[])
         .map(|selection| selection.family)
@@ -2361,7 +2361,7 @@ pub(crate) struct FontFamilySelection {
 
 pub(crate) fn parse_font_family_selection(
     value: &str,
-    available_font_families: &[String],
+    available_font_families: &FontFamilyIndex,
     web_font_faces: &[WebFontFace],
 ) -> Option<FontFamilySelection> {
     if font_family_value_has_invalid_unquoted_colon(value) {
@@ -2383,10 +2383,7 @@ pub(crate) fn parse_font_family_selection(
         if let Some(selection) = web_font_selection_for_family(family, web_font_faces) {
             return Some(selection);
         }
-        if available_font_families
-            .iter()
-            .any(|available| available.eq_ignore_ascii_case(family))
-        {
+        if available_font_families.contains(family) {
             return Some(FontFamilySelection {
                 family: family.clone(),
                 forced_weight: None,

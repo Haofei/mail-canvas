@@ -468,7 +468,7 @@ fn selects_safe_fallback_font_from_web_font_stack() {
 
 #[test]
 fn selects_loaded_web_font_before_safe_fallback() {
-    let available = vec!["Nunito Sans".to_string()];
+    let available = FontFamilyIndex::from_families(["Nunito Sans"]);
     let family = parse_font_family_with_available(
         r#""Nunito Sans", Helvetica, Arial, sans-serif"#,
         &available,
@@ -479,7 +479,7 @@ fn selects_loaded_web_font_before_safe_fallback() {
 
 #[test]
 fn unavailable_safe_system_font_uses_declared_generic_fallback() {
-    let available = vec!["Arimo".to_string(), "Noto Sans".to_string()];
+    let available = FontFamilyIndex::from_families(["Arimo", "Noto Sans"]);
     let family =
         parse_font_family_with_available("Arial, Helvetica, sans-serif", &available).unwrap();
     assert_eq!(family, "sans-serif");
@@ -509,8 +509,12 @@ fn web_font_alias_preserves_actual_face_weight() {
         actual_family: "Merriweather".to_string(),
         weight: FontWeight(250),
     }];
-    let selection = parse_font_family_selection(r#""Merriweather", Georgia, serif"#, &[], &faces)
-        .expect("font family");
+    let selection = parse_font_family_selection(
+        r#""Merriweather", Georgia, serif"#,
+        &FontFamilyIndex::default(),
+        &faces,
+    )
+    .expect("font family");
     assert_eq!(selection.family, "Merriweather");
     assert_eq!(selection.forced_weight, Some(FontWeight(250)));
 }
@@ -529,8 +533,12 @@ fn repeated_web_font_descriptors_keep_family_weight_matching_open() {
             weight: FontWeight(700),
         },
     ];
-    let selection = parse_font_family_selection(r#""Work Sans", Arial, sans-serif"#, &[], &faces)
-        .expect("font family");
+    let selection = parse_font_family_selection(
+        r#""Work Sans", Arial, sans-serif"#,
+        &FontFamilyIndex::default(),
+        &faces,
+    )
+    .expect("font family");
     assert_eq!(selection.family, "Work Sans");
     assert_eq!(selection.forced_weight, None);
 }
@@ -561,7 +569,7 @@ fn skips_non_latin_web_font_unicode_ranges() {
 
 #[test]
 fn generic_first_font_family_stays_generic_with_available_fallbacks() {
-    let available = vec!["Georgia".to_string()];
+    let available = FontFamilyIndex::from_families(["Georgia"]);
     let family = parse_font_family_with_available("ui-serif, Georgia, serif", &available)
         .expect("font family");
     assert_eq!(family, "serif");
@@ -1091,7 +1099,7 @@ fn body_color_inherits_to_paragraph_text() {
     let mut engine = LayoutEngine::new(
         &mut font_system,
         resource_policy_for_test(),
-        Vec::new(),
+        FontFamilyIndex::default(),
         Vec::new(),
         RenderLimits::default(),
     );

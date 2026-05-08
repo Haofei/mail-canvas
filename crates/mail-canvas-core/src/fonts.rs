@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -181,24 +182,51 @@ fn font_family_available(db: &fontdb::Database, candidate: &str) -> bool {
     })
 }
 
-pub(crate) fn font_database_families(db: &fontdb::Database) -> Vec<String> {
-    let mut families = Vec::new();
-    for family in db
-        .faces()
-        .flat_map(|face| face.families.iter().map(|(family, _)| family.clone()))
-    {
-        push_unique_case_insensitive(&mut families, family);
-    }
-    families
+#[derive(Debug, Clone, Default)]
+pub(crate) struct FontFamilyIndex {
+    families: HashSet<String>,
 }
 
-fn push_unique_case_insensitive(values: &mut Vec<String>, value: String) {
-    if !values
-        .iter()
-        .any(|existing| existing.eq_ignore_ascii_case(&value))
-    {
-        values.push(value);
+impl FontFamilyIndex {
+    pub(crate) fn from_database(db: &fontdb::Database) -> Self {
+        let mut index = Self::default();
+        for family in db
+            .faces()
+            .flat_map(|face| face.families.iter().map(|(family, _)| family.as_str()))
+        {
+            index.insert(family);
+        }
+        index
     }
+
+    #[cfg(test)]
+    pub(crate) fn from_families(families: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
+        let mut index = Self::default();
+        for family in families {
+            index.insert(family.as_ref());
+        }
+        index
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.families.is_empty()
+    }
+
+    pub(crate) fn contains(&self, family: &str) -> bool {
+        self.families.contains(&normalize_font_family_key(family))
+    }
+
+    fn insert(&mut self, family: &str) {
+        self.families.insert(normalize_font_family_key(family));
+    }
+}
+
+fn normalize_font_family_key(family: &str) -> String {
+    family.to_ascii_lowercase()
+}
+
+pub(crate) fn font_database_families(db: &fontdb::Database) -> FontFamilyIndex {
+    FontFamilyIndex::from_database(db)
 }
 
 #[derive(Debug, Clone)]

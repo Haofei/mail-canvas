@@ -13,7 +13,7 @@ use crate::api::{
 };
 use crate::css::inline_css;
 use crate::document::build_document;
-use crate::fonts::{font_database_from_paths, system_font_database};
+use crate::fonts::{FontFamilyIndex, font_database_from_paths, system_font_database};
 use crate::layout::{LayoutBox, LayoutEngine, RenderLimits};
 use crate::output::OutputBackend;
 use crate::render::{scaled_dimension, validate_scale};
@@ -154,7 +154,7 @@ pub(crate) fn layout_for_test(html: &str, width: u32) -> LayoutBox {
     let mut engine = LayoutEngine::new(
         &mut font_system,
         resource_policy_for_test(),
-        Vec::new(),
+        FontFamilyIndex::default(),
         Vec::new(),
         RenderLimits::default(),
     );

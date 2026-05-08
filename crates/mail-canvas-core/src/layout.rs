@@ -11,7 +11,7 @@ use taffy::style_helpers::{auto as taffy_auto, length as taffy_length, percent a
 
 use crate::api::{self, RenderRequest, RenderWarning, RenderWarningCode};
 use crate::dom::{attr, element_tag, find_first_tag, is_metadata_tag};
-use crate::fonts::WebFontFace;
+use crate::fonts::{FontFamilyIndex, WebFontFace};
 use crate::resource::ResourceProvider;
 use crate::style::{
     AlignItems, BorderCollapse, BoxSizing, Clear, Display, FlexDirection, FlexWrap, FloatSide,
@@ -61,7 +61,7 @@ pub(crate) struct LayoutEngine<'a, R: ResourceProvider> {
     font_system: &'a mut FontSystem,
     resources: R,
     limits: RenderLimits,
-    available_font_families: Vec<String>,
+    available_font_families: FontFamilyIndex,
     web_font_faces: Vec<WebFontFace>,
     pub(crate) warnings: Vec<RenderWarning>,
 }
@@ -70,7 +70,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
     pub(crate) fn new(
         font_system: &'a mut FontSystem,
         resources: R,
-        available_font_families: Vec<String>,
+        available_font_families: FontFamilyIndex,
         web_font_faces: Vec<WebFontFace>,
         limits: RenderLimits,
     ) -> Self {

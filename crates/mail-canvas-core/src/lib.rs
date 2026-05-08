@@ -48,7 +48,8 @@ use dom::{document_base_url, ensure_dom_node_limit};
 pub use fonts::MailCanvasFontFallback;
 #[cfg(test)]
 use fonts::{
-    WebFontFace, font_face_covers_basic_latin, stylesheet_link_urls, system_font_database,
+    FontFamilyIndex, WebFontFace, font_face_covers_basic_latin, stylesheet_link_urls,
+    system_font_database,
 };
 use fonts::{font_database_families, load_web_fonts_from_html};
 #[cfg(test)]
