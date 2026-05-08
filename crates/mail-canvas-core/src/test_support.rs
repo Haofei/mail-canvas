@@ -41,7 +41,7 @@ impl MailCanvasRenderer {
         let font_db = if font_paths.is_empty() {
             system_font_database()
         } else {
-            font_database_from_paths(&font_paths)?
+            font_database_from_paths(font_paths)?
         };
         let font_system = FontSystem::new_with_locale_and_db_and_fallback(
             "en-US".to_string(),

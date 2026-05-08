@@ -42,7 +42,7 @@ impl MailCanvasRenderer {
         let font_db = if font_paths.is_empty() {
             system_font_database()
         } else {
-            font_database_from_paths(&font_paths)?
+            font_database_from_paths(font_paths)?
         };
         let font_system = FontSystem::new_with_locale_and_db_and_fallback(
             "en-US".to_string(),
@@ -156,13 +156,13 @@ fn system_font_database() -> Database {
     db
 }
 
-fn font_database_from_paths(paths: &[PathBuf]) -> Result<Database> {
+fn font_database_from_paths(paths: Vec<PathBuf>) -> Result<Database> {
     let mut db = Database::new();
     for path in paths {
         if !path.is_file() {
             bail!("font path is not a file: {}", path.display());
         }
-        db.load_font_source(fontdb::Source::File(path.clone()));
+        db.load_font_source(fontdb::Source::File(path));
     }
     if db.is_empty() {
         bail!("no valid font faces found in supplied font files");

@@ -92,13 +92,13 @@ pub(crate) fn system_font_database() -> fontdb::Database {
 }
 
 #[cfg(test)]
-pub(crate) fn font_database_from_paths(paths: &[std::path::PathBuf]) -> Result<fontdb::Database> {
+pub(crate) fn font_database_from_paths(paths: Vec<std::path::PathBuf>) -> Result<fontdb::Database> {
     let mut db = fontdb::Database::new();
     for path in paths {
         if !path.is_file() {
             bail!("font path is not a file: {}", path.display());
         }
-        db.load_font_source(fontdb::Source::File(path.clone()));
+        db.load_font_source(fontdb::Source::File(path));
     }
     if db.is_empty() {
         bail!("no valid font faces found in supplied font files");
@@ -133,7 +133,7 @@ fn fixture_font_database() -> Result<fontdb::Database> {
     {
         bail!("fixture fonts missing: {}", root.display());
     }
-    font_database_from_paths(&[
+    font_database_from_paths(vec![
         arimo_regular,
         arimo_bold,
         tinos_regular,
