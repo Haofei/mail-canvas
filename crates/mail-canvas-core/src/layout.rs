@@ -1863,7 +1863,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         max_outer_width: f32,
         spacing: f32,
     ) -> Result<f32> {
-        if table_style.float_side != FloatSide::None {
+        if table_style.float_side != FloatSide::None && !table_grid_has_non_spacer_text(grid) {
             let intrinsic = self.fixed_replaced_table_min_outer_width(
                 grid,
                 table_style,
@@ -3229,6 +3229,16 @@ fn table_cell_is_spacer(node: &NodeRef) -> bool {
         }
     }
     has_nbsp
+}
+fn table_grid_has_non_spacer_text(grid: &TableGrid) -> bool {
+    grid.rows.iter().any(|row| {
+        row.cells.iter().any(|cell| {
+            !table_cell_is_spacer(&cell.node)
+                && text_content(&cell.node)
+                    .chars()
+                    .any(|ch| !is_collapsible_whitespace(ch))
+        })
+    })
 }
 fn cell_contains_only_intrinsic_fixed_replaced_content(node: &NodeRef, style: &Style) -> bool {
     let mut saw_replaced = false;

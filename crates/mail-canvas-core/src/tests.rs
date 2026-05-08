@@ -1701,6 +1701,42 @@ fn aligned_auto_tables_shrink_to_fixed_intrinsic_content() {
 }
 
 #[test]
+fn aligned_auto_tables_include_text_cell_intrinsic_width() {
+    let layout = layout_for_test(
+        r#"<table width="600" cellpadding="0" cellspacing="0">
+            <tr><td align="right">
+              <table align="right" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td><img width="16" height="16" alt=""></td>
+                  <td width="5">&nbsp;</td>
+                  <td style="font-size:14px;line-height:18px;white-space:nowrap">Gold Rewards Balance</td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>"#,
+        800,
+    );
+    let tables: Vec<&LayoutBox> =
+        collect_layouts(&layout, &|child| matches!(child.kind, LayoutKind::Table));
+    let rewards_table = tables
+        .iter()
+        .copied()
+        .find(|table| table.rect.width > 100.0 && table.rect.width < 220.0)
+        .unwrap_or_else(|| {
+            panic!(
+                "table widths: {:?}",
+                tables.iter().map(|table| table.rect).collect::<Vec<_>>()
+            )
+        });
+
+    assert!(
+        rewards_table.rect.x > 430.0,
+        "right aligned table: {:?}",
+        rewards_table.rect
+    );
+}
+
+#[test]
 fn single_cell_spacer_row_does_not_freeze_later_multicolumn_content() {
     let layout = layout_for_test(
         r#"<table width="360" cellpadding="0" cellspacing="0">
