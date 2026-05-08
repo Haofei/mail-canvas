@@ -1498,6 +1498,70 @@ fn inline_block_flow_does_not_double_count_padding() {
 }
 
 #[test]
+fn inline_anchor_wrapping_inline_block_child_stays_inline_flow() {
+    let layout = layout_for_test(
+        r#"
+        <div style="width:570px;text-align:center;font-size:14px;line-height:24px">
+          <a style="text-decoration:none;color:#666"><span style="width:165px;display:inline-block;padding:8px 3px;border:1px solid #ccc;margin:10px;vertical-align:top">Follow Lower Haight</span></a>
+          <a style="text-decoration:none;color:#666"><span style="width:165px;display:inline-block;padding:8px 3px;border:1px solid #ccc;margin:10px;vertical-align:top">Follow Mission</span></a>
+          <a style="text-decoration:none;color:#666"><span style="width:165px;display:inline-block;padding:8px 3px;border:1px solid #ccc;margin:10px;vertical-align:top">Follow Hayes Valley</span></a>
+        </div>
+        "#,
+        570,
+    );
+    let anchors: Vec<&LayoutBox> = collect_layouts(&layout, &|child| child.debug.tag == "a");
+    assert_eq!(anchors.len(), 3);
+    assert!(
+        (anchors[0].rect.y - anchors[1].rect.y).abs() < 0.1,
+        "first two inline anchors should share a row: {:?}",
+        anchors
+            .iter()
+            .map(|anchor| (anchor.debug.text.as_str(), anchor.rect))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        anchors[1].rect.x > anchors[0].rect.x + 100.0,
+        "second anchor should be placed to the right of the first: {:?}",
+        anchors
+            .iter()
+            .map(|anchor| (anchor.debug.text.as_str(), anchor.rect))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn anonymous_css_table_cells_flow_horizontally() {
+    let layout = layout_for_test(
+        r#"
+        <div style="width:600px">
+          <div class="column" style="display:table-cell;width:300px;vertical-align:top">Left</div>
+          <div class="column" style="display:table-cell;width:300px;vertical-align:top">Right</div>
+        </div>
+        "#,
+        600,
+    );
+    let columns: Vec<&LayoutBox> =
+        collect_layouts(&layout, &|child| child.debug.class_name == Some("column".to_string()));
+    assert_eq!(columns.len(), 2);
+    assert!(
+        (columns[0].rect.y - columns[1].rect.y).abs() < 0.1,
+        "anonymous table cells should share a row: {:?}",
+        columns
+            .iter()
+            .map(|column| (column.debug.text.as_str(), column.rect))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        columns[1].rect.x > columns[0].rect.x + 250.0,
+        "second cell should be to the right of the first: {:?}",
+        columns
+            .iter()
+            .map(|column| (column.debug.text.as_str(), column.rect))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn percentage_width_table_cells_do_not_shrink_single_column_tables() {
     let layout = layout_for_test(
         r#"<table width="600" border="0" cellpadding="0" cellspacing="0"><tr><td style="padding-left:6.25%;padding-right:6.25%;width:87.5%">Header</td></tr></table>"#,

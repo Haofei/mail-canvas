@@ -226,6 +226,11 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 && tag != "img"
                 && !inline_style_has_own_box(&child_style)
                 && !inline_can_flatten(&child, &child_style);
+            if child_is_inline_block_fallback
+                && inline_needs_inline_block_container(&child, &child_style)
+            {
+                child_style.display = Display::InlineBlock;
+            }
 
             if child_style.display == Display::Inline
                 && tag != "img"
@@ -714,6 +719,12 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         containing_width: f32,
         depth: usize,
     ) -> Result<Option<FlowBox>> {
+        if let Some(flow) =
+            self.layout_css_table_cells(node, style.clone(), x, y, containing_width, depth)?
+        {
+            return Ok(Some(flow));
+        }
+
         let outer_width = style
             .resolve_width(containing_width)
             .map(|width| style.outer_width_for_declared(width))
@@ -3001,4 +3012,35 @@ fn inline_can_flatten(node: &NodeRef, style: &Style) -> bool {
         }
     }
     true
+}
+fn inline_needs_inline_block_container(node: &NodeRef, style: &Style) -> bool {
+    for child in node.children() {
+        if child.as_text().is_some() {
+            continue;
+        }
+
+        let Some(tag) = element_tag(&child) else {
+            continue;
+        };
+        if is_metadata_tag(&tag) || tag == "br" || tag == "img" {
+            continue;
+        }
+
+        let child_style = style_for_node(&child, style);
+        match child_style.display {
+            Display::InlineBlock | Display::InlineTable => return true,
+            Display::Inline => {
+                if inline_needs_inline_block_container(&child, &child_style) {
+                    return true;
+                }
+            }
+            Display::None
+            | Display::Block
+            | Display::Flex
+            | Display::Table
+            | Display::TableRow
+            | Display::TableCell => {}
+        }
+    }
+    false
 }

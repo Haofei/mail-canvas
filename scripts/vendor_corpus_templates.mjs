@@ -13,6 +13,10 @@ const FALLBACK_FONT_PATH = path.join(ROOT_DIR, 'fixtures', 'fonts', 'NotoSans-Re
 const IGNORED_PROVIDERS = new Set(['README.md', 'manifest.json', 'catalog.json']);
 let fallbackFontBytes = null;
 
+function unavailableStylesheetPlaceholder() {
+  return '/* mail-canvas: external stylesheet unavailable or empty during corpus vendoring. */\n';
+}
+
 async function main() {
   const manifest = JSON.parse(await readFile(MANIFEST_PATH, 'utf8'));
   const templates = manifest.templates ?? [];
@@ -240,8 +244,7 @@ async function mirrorUrlAsset(rawUrl, sourceUrl, assetDir, cache, options = {}) 
       const localPath = fileURLToPath(resolved);
       if (options.css || ext === '.css') {
         const cssText = await readFile(localPath, 'utf8');
-        const rewrittenCss = await mirrorCssText(cssText, resolved, assetDir, cache);
-        await writeFile(assetPath, rewrittenCss, 'utf8');
+        await writeMirroredCssAsset(assetPath, cssText, resolved, assetDir, cache);
       } else {
         const bytes = await readFile(localPath);
         await writeFile(assetPath, bytes);
@@ -273,8 +276,7 @@ async function mirrorUrlAsset(rawUrl, sourceUrl, assetDir, cache, options = {}) 
 
   if (options.css || contentType.includes('text/css')) {
     const cssText = await response.text();
-    const rewrittenCss = await mirrorCssText(cssText, resolved, assetDir, cache);
-    await writeFile(assetPath, rewrittenCss, 'utf8');
+    await writeMirroredCssAsset(assetPath, cssText, resolved, assetDir, cache);
   } else {
     const bytes = Buffer.from(await response.arrayBuffer());
     await writeFile(assetPath, bytes);
@@ -283,9 +285,22 @@ async function mirrorUrlAsset(rawUrl, sourceUrl, assetDir, cache, options = {}) 
   return entry;
 }
 
+async function writeMirroredCssAsset(assetPath, cssText, sourceUrl, assetDir, cache) {
+  if (cssText.trim().length === 0) {
+    await writeFile(assetPath, unavailableStylesheetPlaceholder(), 'utf8');
+    return;
+  }
+  const rewrittenCss = await mirrorCssText(cssText, sourceUrl, assetDir, cache);
+  await writeFile(
+    assetPath,
+    rewrittenCss.trim().length === 0 ? unavailableStylesheetPlaceholder() : rewrittenCss,
+    'utf8',
+  );
+}
+
 async function writePlaceholderAsset(assetPath, ext, options = {}) {
   if (options.css || ext === '.css') {
-    await writeFile(assetPath, '', 'utf8');
+    await writeFile(assetPath, unavailableStylesheetPlaceholder(), 'utf8');
     return;
   }
   if (ext === '.svg') {

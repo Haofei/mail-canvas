@@ -1,31 +1,309 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-08T02:49:17.849Z",
+  "updatedAt": "2026-05-08T03:18:39.342Z",
   "summary": {
-    "pendingCount": 5,
+    "pendingCount": 22,
     "fixedCount": 0,
     "byType": [
       {
         "type": "text_coverage_mismatch",
+        "pendingTemplates": 11,
+        "fixedTemplates": 0,
+        "totalTemplates": 11,
+        "totalOccurrences": 11,
+        "currentRunOccurrences": 5,
+        "latestSeenAt": "2026-05-08T03:18:39.342Z"
+      },
+      {
+        "type": "media_rect_mismatch",
         "pendingTemplates": 4,
         "fixedTemplates": 0,
         "totalTemplates": 4,
         "totalOccurrences": 4,
         "currentRunOccurrences": 2,
-        "latestSeenAt": "2026-05-08T02:49:17.849Z"
+        "latestSeenAt": "2026-05-08T03:18:39.342Z"
       },
       {
         "type": "text_position_wrap_mismatch",
+        "pendingTemplates": 3,
+        "fixedTemplates": 0,
+        "totalTemplates": 3,
+        "totalOccurrences": 3,
+        "currentRunOccurrences": 0,
+        "latestSeenAt": "2026-05-08T03:04:14.372Z"
+      },
+      {
+        "type": "large_height_delta",
+        "pendingTemplates": 2,
+        "fixedTemplates": 0,
+        "totalTemplates": 2,
+        "totalOccurrences": 2,
+        "currentRunOccurrences": 2,
+        "latestSeenAt": "2026-05-08T03:18:39.342Z"
+      },
+      {
+        "type": "media_pixel_mismatch",
         "pendingTemplates": 1,
         "fixedTemplates": 0,
         "totalTemplates": 1,
         "totalOccurrences": 1,
         "currentRunOccurrences": 0,
-        "latestSeenAt": "2026-05-08T02:39:48.395Z"
+        "latestSeenAt": "2026-05-08T03:04:14.372Z"
+      },
+      {
+        "type": "web_font_failed",
+        "pendingTemplates": 1,
+        "fixedTemplates": 0,
+        "totalTemplates": 1,
+        "totalOccurrences": 1,
+        "currentRunOccurrences": 0,
+        "latestSeenAt": "2026-05-08T03:04:14.372Z"
       }
     ]
   },
   "issues": [
+    {
+      "key": "reallygoodemails-20-off-the-latest-in-modern-living:web_font_failed",
+      "name": "reallygoodemails-20-off-the-latest-in-modern-living",
+      "type": "web_font_failed",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:04:14.372Z",
+      "lastSeenAt": "2026-05-08T03:04:14.372Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:04:14.372Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P2",
+        "reason": "web font failed; using fallback font",
+        "diffPercent": "7.16%",
+        "heightDelta": 30,
+        "firstBadRegion": {
+          "y0": 1200,
+          "y1": 1300,
+          "diffPixels": 20080,
+          "diffRatio": 0.251
+        },
+        "nonMediaNonTextPercent": "3.59%",
+        "mediaPercent": "4.25%",
+        "mediaRectDeltaPercent": "10.27%",
+        "textCoverageDeltaPercent": "0.34%",
+        "textRectDeltaPercent": "50.40%",
+        "warnings": 1,
+        "assets": {
+          "total": 51,
+          "loaded": 50,
+          "blocked": 0,
+          "failed": 1,
+          "failedByKind": {
+            "web_font": 1
+          }
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-2023-franchises-forecast-get-the-latest-consumer-trends:large_height_delta",
+      "name": "reallygoodemails-2023-franchises-forecast-get-the-latest-consumer-trends",
+      "type": "large_height_delta",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:18:39.342Z",
+      "lastSeenAt": "2026-05-08T03:18:39.342Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:18:39.342Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P0",
+        "reason": "large height delta (485px)",
+        "diffPercent": "34.77%",
+        "heightDelta": 485,
+        "firstBadRegion": {
+          "y0": 200,
+          "y1": 300,
+          "diffPixels": 12424,
+          "diffRatio": 0.1553
+        },
+        "nonMediaNonTextPercent": "24.91%",
+        "mediaPercent": "70.09%",
+        "mediaRectDeltaPercent": "98.63%",
+        "textCoverageDeltaPercent": "20.45%",
+        "textRectDeltaPercent": "63.35%",
+        "warnings": 0,
+        "assets": {
+          "total": 7,
+          "loaded": 7,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-a-deeper-look-at-our-latest-eyewear:media_rect_mismatch",
+      "name": "reallygoodemails-a-deeper-look-at-our-latest-eyewear",
+      "type": "media_rect_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:18:39.342Z",
+      "lastSeenAt": "2026-05-08T03:18:39.342Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:18:39.342Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P1",
+        "reason": "media rectangle mismatch",
+        "diffPercent": "12.48%",
+        "heightDelta": -183,
+        "firstBadRegion": {
+          "y0": 700,
+          "y1": 800,
+          "diffPixels": 12687,
+          "diffRatio": 0.1585875
+        },
+        "nonMediaNonTextPercent": "2.62%",
+        "mediaPercent": "19.09%",
+        "mediaRectDeltaPercent": "35.54%",
+        "textCoverageDeltaPercent": "16.32%",
+        "textRectDeltaPercent": "137.98%",
+        "warnings": 0,
+        "assets": {
+          "total": 15,
+          "loaded": 15,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-back-to-school-latest-gear-for-home-office-and-school:text_position_wrap_mismatch",
+      "name": "reallygoodemails-back-to-school-latest-gear-for-home-office-and-school",
+      "type": "text_position_wrap_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:04:14.372Z",
+      "lastSeenAt": "2026-05-08T03:04:14.372Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:04:14.372Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P2",
+        "reason": "text position/wrap mismatch",
+        "diffPercent": "10.90%",
+        "heightDelta": 14,
+        "firstBadRegion": {
+          "y0": 100,
+          "y1": 200,
+          "diffPixels": 8319,
+          "diffRatio": 0.1039875
+        },
+        "nonMediaNonTextPercent": "1.05%",
+        "mediaPercent": "19.48%",
+        "mediaRectDeltaPercent": "3.40%",
+        "textCoverageDeltaPercent": "6.73%",
+        "textRectDeltaPercent": "69.13%",
+        "warnings": 0,
+        "assets": {
+          "total": 27,
+          "loaded": 27,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-celebrate-international-dog-day-with-our-latest-gear:text_coverage_mismatch",
+      "name": "reallygoodemails-celebrate-international-dog-day-with-our-latest-gear",
+      "type": "text_coverage_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:18:39.342Z",
+      "lastSeenAt": "2026-05-08T03:18:39.342Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:18:39.342Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "7.24%",
+        "heightDelta": 9,
+        "firstBadRegion": {
+          "y0": 500,
+          "y1": 600,
+          "diffPixels": 10855,
+          "diffRatio": 0.1356875
+        },
+        "nonMediaNonTextPercent": "0.45%",
+        "mediaPercent": "11.17%",
+        "mediaRectDeltaPercent": "2.28%",
+        "textCoverageDeltaPercent": "11.29%",
+        "textRectDeltaPercent": "95.90%",
+        "warnings": 0,
+        "assets": {
+          "total": 20,
+          "loaded": 20,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-counter-print-latest-books:text_coverage_mismatch",
+      "name": "reallygoodemails-counter-print-latest-books",
+      "type": "text_coverage_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:18:39.342Z",
+      "lastSeenAt": "2026-05-08T03:18:39.342Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:18:39.342Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "8.54%",
+        "heightDelta": 11,
+        "firstBadRegion": {
+          "y0": 1300,
+          "y1": 1400,
+          "diffPixels": 8543,
+          "diffRatio": 0.1067875
+        },
+        "nonMediaNonTextPercent": "1.61%",
+        "mediaPercent": "12.63%",
+        "mediaRectDeltaPercent": "5.65%",
+        "textCoverageDeltaPercent": "12.68%",
+        "textRectDeltaPercent": "9.15%",
+        "warnings": 0,
+        "assets": {
+          "total": 23,
+          "loaded": 23,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
     {
       "key": "reallygoodemails-counter-print-latest-books-designers-republic:text_coverage_mismatch",
       "name": "reallygoodemails-counter-print-latest-books-designers-republic",
@@ -60,6 +338,46 @@
         "assets": {
           "total": 14,
           "loaded": 14,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-counter-print-latest-books-neubad-plakat:text_coverage_mismatch",
+      "name": "reallygoodemails-counter-print-latest-books-neubad-plakat",
+      "type": "text_coverage_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:18:39.342Z",
+      "lastSeenAt": "2026-05-08T03:18:39.342Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:18:39.342Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "10.70%",
+        "heightDelta": 10,
+        "firstBadRegion": {
+          "y0": 200,
+          "y1": 300,
+          "diffPixels": 10180,
+          "diffRatio": 0.12725
+        },
+        "nonMediaNonTextPercent": "1.55%",
+        "mediaPercent": "17.18%",
+        "mediaRectDeltaPercent": "4.39%",
+        "textCoverageDeltaPercent": "12.64%",
+        "textRectDeltaPercent": "6.54%",
+        "warnings": 0,
+        "assets": {
+          "total": 17,
+          "loaded": 17,
           "blocked": 0,
           "failed": 0,
           "failedByKind": {}
@@ -107,6 +425,126 @@
       }
     },
     {
+      "key": "reallygoodemails-did-someone-say-latest-snapdragon:text_coverage_mismatch",
+      "name": "reallygoodemails-did-someone-say-latest-snapdragon",
+      "type": "text_coverage_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:18:39.342Z",
+      "lastSeenAt": "2026-05-08T03:18:39.342Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:18:39.342Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "15.01%",
+        "heightDelta": -46,
+        "firstBadRegion": {
+          "y0": 500,
+          "y1": 600,
+          "diffPixels": 10006,
+          "diffRatio": 0.125075
+        },
+        "nonMediaNonTextPercent": "0.00%",
+        "mediaPercent": "15.01%",
+        "mediaRectDeltaPercent": "4.49%",
+        "textCoverageDeltaPercent": "8.12%",
+        "textRectDeltaPercent": "89.81%",
+        "warnings": 0,
+        "assets": {
+          "total": 4,
+          "loaded": 4,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-dont-miss-our-latest-must-try-features-and-tools:media_pixel_mismatch",
+      "name": "reallygoodemails-dont-miss-our-latest-must-try-features-and-tools",
+      "type": "media_pixel_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:04:14.372Z",
+      "lastSeenAt": "2026-05-08T03:04:14.372Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:04:14.372Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P2",
+        "reason": "media pixel mismatch",
+        "diffPercent": "13.79%",
+        "heightDelta": 24,
+        "firstBadRegion": {
+          "y0": 700,
+          "y1": 800,
+          "diffPixels": 20010,
+          "diffRatio": 0.250125
+        },
+        "nonMediaNonTextPercent": "2.49%",
+        "mediaPercent": "26.33%",
+        "mediaRectDeltaPercent": "9.42%",
+        "textCoverageDeltaPercent": "2.71%",
+        "textRectDeltaPercent": "96.64%",
+        "warnings": 0,
+        "assets": {
+          "total": 29,
+          "loaded": 29,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-follow-ando-for-the-latest-contests-sweepstakes-and-climate-action-news:text_position_wrap_mismatch",
+      "name": "reallygoodemails-follow-ando-for-the-latest-contests-sweepstakes-and-climate-action-news",
+      "type": "text_position_wrap_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:04:14.372Z",
+      "lastSeenAt": "2026-05-08T03:04:14.372Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:04:14.372Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P2",
+        "reason": "text position/wrap mismatch",
+        "diffPercent": "8.69%",
+        "heightDelta": -1,
+        "firstBadRegion": {
+          "y0": 200,
+          "y1": 300,
+          "diffPixels": 15457,
+          "diffRatio": 0.1932125
+        },
+        "nonMediaNonTextPercent": "0.23%",
+        "mediaPercent": "18.77%",
+        "mediaRectDeltaPercent": "5.84%",
+        "textCoverageDeltaPercent": "0.02%",
+        "textRectDeltaPercent": "271.51%",
+        "warnings": 0,
+        "assets": {
+          "total": 16,
+          "loaded": 16,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
       "key": "reallygoodemails-have-you-seen-buffers-latest-features:text_coverage_mismatch",
       "name": "reallygoodemails-have-you-seen-buffers-latest-features",
       "type": "text_coverage_mismatch",
@@ -140,6 +578,86 @@
         "assets": {
           "total": 7,
           "loaded": 7,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-meet-the-latest-bethell:media_rect_mismatch",
+      "name": "reallygoodemails-meet-the-latest-bethell",
+      "type": "media_rect_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:04:14.372Z",
+      "lastSeenAt": "2026-05-08T03:04:14.372Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:04:14.372Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P1",
+        "reason": "media rectangle mismatch",
+        "diffPercent": "12.04%",
+        "heightDelta": 121,
+        "firstBadRegion": {
+          "y0": 1100,
+          "y1": 1200,
+          "diffPixels": 8146,
+          "diffRatio": 0.101825
+        },
+        "nonMediaNonTextPercent": "3.62%",
+        "mediaPercent": "20.99%",
+        "mediaRectDeltaPercent": "11.46%",
+        "textCoverageDeltaPercent": "15.58%",
+        "textRectDeltaPercent": "86.30%",
+        "warnings": 0,
+        "assets": {
+          "total": 6,
+          "loaded": 6,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-new-in-desert-dawn-our-latest-fragrance:media_rect_mismatch",
+      "name": "reallygoodemails-new-in-desert-dawn-our-latest-fragrance",
+      "type": "media_rect_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:18:39.342Z",
+      "lastSeenAt": "2026-05-08T03:18:39.342Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:18:39.342Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P1",
+        "reason": "media rectangle mismatch",
+        "diffPercent": "15.52%",
+        "heightDelta": 19,
+        "firstBadRegion": {
+          "y0": 1000,
+          "y1": 1100,
+          "diffPixels": 10527,
+          "diffRatio": 0.1315875
+        },
+        "nonMediaNonTextPercent": "0.60%",
+        "mediaPercent": "29.57%",
+        "mediaRectDeltaPercent": "27.22%",
+        "textCoverageDeltaPercent": "5.90%",
+        "textRectDeltaPercent": "131.12%",
+        "warnings": 0,
+        "assets": {
+          "total": 10,
+          "loaded": 10,
           "blocked": 0,
           "failed": 0,
           "failedByKind": {}
@@ -187,6 +705,46 @@
       }
     },
     {
+      "key": "reallygoodemails-our-latest-slip-on-is-here-just-in-time-for-social-distancing:text_coverage_mismatch",
+      "name": "reallygoodemails-our-latest-slip-on-is-here-just-in-time-for-social-distancing",
+      "type": "text_coverage_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:04:14.372Z",
+      "lastSeenAt": "2026-05-08T03:04:14.372Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:04:14.372Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "13.85%",
+        "heightDelta": -22,
+        "firstBadRegion": {
+          "y0": 400,
+          "y1": 500,
+          "diffPixels": 10701,
+          "diffRatio": 0.1337625
+        },
+        "nonMediaNonTextPercent": "0.11%",
+        "mediaPercent": "19.54%",
+        "mediaRectDeltaPercent": "8.64%",
+        "textCoverageDeltaPercent": "30.96%",
+        "textRectDeltaPercent": "69.35%",
+        "warnings": 0,
+        "assets": {
+          "total": 17,
+          "loaded": 17,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
       "key": "reallygoodemails-our-latest-snack-fave-whats-new-in-our-store:text_coverage_mismatch",
       "name": "reallygoodemails-our-latest-snack-fave-whats-new-in-our-store",
       "type": "text_coverage_mismatch",
@@ -220,6 +778,166 @@
         "assets": {
           "total": 21,
           "loaded": 21,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-shop-our-latest-women-led-gear-collection:text_coverage_mismatch",
+      "name": "reallygoodemails-shop-our-latest-women-led-gear-collection",
+      "type": "text_coverage_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:18:39.342Z",
+      "lastSeenAt": "2026-05-08T03:18:39.342Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:18:39.342Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "6.69%",
+        "heightDelta": 7,
+        "firstBadRegion": {
+          "y0": 300,
+          "y1": 400,
+          "diffPixels": 8661,
+          "diffRatio": 0.1082625
+        },
+        "nonMediaNonTextPercent": "0.06%",
+        "mediaPercent": "11.31%",
+        "mediaRectDeltaPercent": "2.99%",
+        "textCoverageDeltaPercent": "11.72%",
+        "textRectDeltaPercent": "78.20%",
+        "warnings": 0,
+        "assets": {
+          "total": 24,
+          "loaded": 24,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-the-latest-news-from-kaiy-panera-bread-kombu-sushi-sake:media_rect_mismatch",
+      "name": "reallygoodemails-the-latest-news-from-kaiy-panera-bread-kombu-sushi-sake",
+      "type": "media_rect_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:04:14.372Z",
+      "lastSeenAt": "2026-05-08T03:04:14.372Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:04:14.372Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P1",
+        "reason": "media rectangle mismatch",
+        "diffPercent": "16.86%",
+        "heightDelta": 130,
+        "firstBadRegion": {
+          "y0": 400,
+          "y1": 500,
+          "diffPixels": 24851,
+          "diffRatio": 0.3106375
+        },
+        "nonMediaNonTextPercent": "1.29%",
+        "mediaPercent": "58.64%",
+        "mediaRectDeltaPercent": "34.36%",
+        "textCoverageDeltaPercent": "9.22%",
+        "textRectDeltaPercent": "91.75%",
+        "warnings": 0,
+        "assets": {
+          "total": 6,
+          "loaded": 6,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-the-latest-software-update-from-rivian:large_height_delta",
+      "name": "reallygoodemails-the-latest-software-update-from-rivian",
+      "type": "large_height_delta",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:18:39.342Z",
+      "lastSeenAt": "2026-05-08T03:18:39.342Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:18:39.342Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P0",
+        "reason": "large height delta (700px)",
+        "diffPercent": "16.28%",
+        "heightDelta": 700,
+        "firstBadRegion": {
+          "y0": 0,
+          "y1": 100,
+          "diffPixels": 12010,
+          "diffRatio": 0.150125
+        },
+        "nonMediaNonTextPercent": "35.69%",
+        "mediaPercent": "7.50%",
+        "mediaRectDeltaPercent": "66.27%",
+        "textCoverageDeltaPercent": "43.98%",
+        "textRectDeltaPercent": "204.93%",
+        "warnings": 0,
+        "assets": {
+          "total": 14,
+          "loaded": 14,
+          "blocked": 0,
+          "failed": 0,
+          "failedByKind": {}
+        }
+      }
+    },
+    {
+      "key": "reallygoodemails-watch-our-latest-film:text_coverage_mismatch",
+      "name": "reallygoodemails-watch-our-latest-film",
+      "type": "text_coverage_mismatch",
+      "status": "pending",
+      "firstSeenAt": "2026-05-08T03:04:14.372Z",
+      "lastSeenAt": "2026-05-08T03:04:14.372Z",
+      "fixedAt": null,
+      "fixCommit": null,
+      "fixedInRun": null,
+      "occurrences": 1,
+      "latest": {
+        "runAt": "2026-05-08T03:04:14.372Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "6.79%",
+        "heightDelta": 117,
+        "firstBadRegion": {
+          "y0": 600,
+          "y1": 700,
+          "diffPixels": 14491,
+          "diffRatio": 0.1811375
+        },
+        "nonMediaNonTextPercent": "0.35%",
+        "mediaPercent": "11.18%",
+        "mediaRectDeltaPercent": "6.88%",
+        "textCoverageDeltaPercent": "30.87%",
+        "textRectDeltaPercent": "63.45%",
+        "warnings": 0,
+        "assets": {
+          "total": 5,
+          "loaded": 5,
           "blocked": 0,
           "failed": 0,
           "failedByKind": {}

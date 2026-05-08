@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-08T02:49:18.005Z",
+  "updatedAt": "2026-05-08T03:18:39.634Z",
   "templates": [
     {
       "name": "beefree-confirm-and-you-are-official",
@@ -1319,6 +1319,72 @@
       "lastRun": null
     },
     {
+      "name": "reallygoodemails-20-off-the-latest-in-modern-living",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/20-off-the-latest-in-modern-living",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-20-off-the-latest-in-modern-living.html",
+      "htmlMd5": "c899819a39b08adbea8103de304c8a6d",
+      "htmlBytes": 108249,
+      "assetCount": 80,
+      "assetBytes": 4878120,
+      "assetManifestMd5": "0ca91afeefacfbe19fabe91d5be12d95",
+      "contentMd5": "7b2118214daafeaad14c69e63d5614f9",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:04:14.368Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P2",
+        "reason": "web font failed; using fallback font",
+        "diffPercent": "7.16%",
+        "heightDelta": 30
+      }
+    },
+    {
+      "name": "reallygoodemails-2023-franchises-forecast-get-the-latest-consumer-trends",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/2023-franchises-forecast-get-the-latest-consumer-trends",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-2023-franchises-forecast-get-the-latest-consumer-trends.html",
+      "htmlMd5": "8365e116f0d8674e81b7522618dcafad",
+      "htmlBytes": 56727,
+      "assetCount": 17,
+      "assetBytes": 1288118,
+      "assetManifestMd5": "f4884f33badd7776cf3e522486dfd366",
+      "contentMd5": "a2cd3dfd2b76bfa6bff34f25d447b85e",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:18:39.339Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P0",
+        "reason": "large height delta (485px)",
+        "diffPercent": "34.77%",
+        "heightDelta": 485
+      }
+    },
+    {
+      "name": "reallygoodemails-a-deeper-look-at-our-latest-eyewear",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/a-deeper-look-at-our-latest-eyewear",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-a-deeper-look-at-our-latest-eyewear.html",
+      "htmlMd5": "c406ae026a992eea5e4e579c98c745ec",
+      "htmlBytes": 61849,
+      "assetCount": 15,
+      "assetBytes": 1752336,
+      "assetManifestMd5": "6922315d85016c1df4b85db0e090deb4",
+      "contentMd5": "ce0ec0ce7e3b55aa0d43e1ccca0df534",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:18:39.339Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P1",
+        "reason": "media rectangle mismatch",
+        "diffPercent": "12.48%",
+        "heightDelta": -183
+      }
+    },
+    {
       "name": "reallygoodemails-accurate",
       "provider": "reallygoodemails",
       "url": "https://reallygoodemails.com/emails/accurate",
@@ -1331,6 +1397,28 @@
       "contentMd5": "d6a79e6796dfc7fbf30179949c773057",
       "retainedInRepo": false,
       "lastRun": null
+    },
+    {
+      "name": "reallygoodemails-back-to-school-latest-gear-for-home-office-and-school",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/back-to-school-latest-gear-for-home-office-and-school",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-back-to-school-latest-gear-for-home-office-and-school.html",
+      "htmlMd5": "c970e054e38d40eece2a66e9ca522a69",
+      "htmlBytes": 191769,
+      "assetCount": 30,
+      "assetBytes": 15428167,
+      "assetManifestMd5": "7f00ee1afd25e2ea7d56ed3fb6e42b78",
+      "contentMd5": "5fe7d9ca67ce4b77745c8541512e667f",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:04:14.368Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P2",
+        "reason": "text position/wrap mismatch",
+        "diffPercent": "10.90%",
+        "heightDelta": 14
+      }
     },
     {
       "name": "reallygoodemails-beefree-email-support-group-5-recap",
@@ -1359,6 +1447,50 @@
       "contentMd5": "6f8f02a359a188dbc66ac8b5514ec12b",
       "retainedInRepo": false,
       "lastRun": null
+    },
+    {
+      "name": "reallygoodemails-celebrate-international-dog-day-with-our-latest-gear",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/celebrate-international-dog-day-with-our-latest-gear",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-celebrate-international-dog-day-with-our-latest-gear.html",
+      "htmlMd5": "68daac082f2dc513c3744926dfa8f752",
+      "htmlBytes": 80802,
+      "assetCount": 25,
+      "assetBytes": 2846536,
+      "assetManifestMd5": "1c7f53f2dc825c701ab9b51259f35e6d",
+      "contentMd5": "86868c882c63eeddc15bee882938f2e5",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:18:39.339Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "7.24%",
+        "heightDelta": 9
+      }
+    },
+    {
+      "name": "reallygoodemails-counter-print-latest-books",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/counter-print-latest-books",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-counter-print-latest-books.html",
+      "htmlMd5": "cfbbef9d61ddee4ce2e3ddce744e83c0",
+      "htmlBytes": 171328,
+      "assetCount": 23,
+      "assetBytes": 1690382,
+      "assetManifestMd5": "a82dc54d0e277f3f3460afa7cf52aa2d",
+      "contentMd5": "a931c5b007bbda2731cc9d2fe4091649",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:18:39.339Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "8.54%",
+        "heightDelta": 11
+      }
     },
     {
       "name": "reallygoodemails-counter-print-latest-books-and-magazines",
@@ -1394,6 +1526,28 @@
         "reason": "text coverage mismatch",
         "diffPercent": "7.40%",
         "heightDelta": 3
+      }
+    },
+    {
+      "name": "reallygoodemails-counter-print-latest-books-neubad-plakat",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/counter-print-latest-books-neubad-plakat",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-counter-print-latest-books-neubad-plakat.html",
+      "htmlMd5": "13c8f325f52da73e3112aa9c22c8f2f3",
+      "htmlBytes": 130504,
+      "assetCount": 17,
+      "assetBytes": 581240,
+      "assetManifestMd5": "97bc6b2652df93bd1d2d27c813395efd",
+      "contentMd5": "ea5fa6475b3981549f81615d5ba4d977",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:18:39.339Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "10.70%",
+        "heightDelta": 10
       }
     },
     {
@@ -1433,6 +1587,28 @@
       "lastRun": null
     },
     {
+      "name": "reallygoodemails-did-someone-say-latest-snapdragon",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/did-someone-say-latest-snapdragon",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-did-someone-say-latest-snapdragon.html",
+      "htmlMd5": "5e43dd79c1a206061074ea5260fff912",
+      "htmlBytes": 67328,
+      "assetCount": 5,
+      "assetBytes": 251505,
+      "assetManifestMd5": "1cf33fed866868b19655d72d76fca20c",
+      "contentMd5": "cf851cd215cb1cf0605634a3cf76079b",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:18:39.339Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "15.01%",
+        "heightDelta": -46
+      }
+    },
+    {
       "name": "reallygoodemails-discover-our-latest-bedroom-collection",
       "provider": "reallygoodemails",
       "url": "https://reallygoodemails.com/emails/discover-our-latest-bedroom-collection",
@@ -1461,6 +1637,50 @@
       "lastRun": null
     },
     {
+      "name": "reallygoodemails-dont-miss-our-latest-must-try-features-and-tools",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/dont-miss-our-latest-must-try-features-and-tools",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-dont-miss-our-latest-must-try-features-and-tools.html",
+      "htmlMd5": "79740bfc0b2516e26e6f05a14c62816e",
+      "htmlBytes": 82903,
+      "assetCount": 29,
+      "assetBytes": 6378772,
+      "assetManifestMd5": "9f28467aab25754b09c1a411cf8f852d",
+      "contentMd5": "e9bcffcc45b5b8e13c8dd90cb3959b27",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:04:14.368Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P2",
+        "reason": "media pixel mismatch",
+        "diffPercent": "13.79%",
+        "heightDelta": 24
+      }
+    },
+    {
+      "name": "reallygoodemails-driven-by-impact-latest-fisker-esg-report-inside",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/driven-by-impact-latest-fisker-esg-report-inside",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-driven-by-impact-latest-fisker-esg-report-inside.html",
+      "htmlMd5": "9c542bb0d69b81b7c0c2d52d6bee6887",
+      "htmlBytes": 44390,
+      "assetCount": 21,
+      "assetBytes": 3483596,
+      "assetManifestMd5": "d938631955afe8de875dbb318f4c8589",
+      "contentMd5": "374f417b71e8fc3d34dbf6ec65fb1ace",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:18:39.339Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P3",
+        "reason": "low-risk pixel/raster difference",
+        "diffPercent": "2.57%",
+        "heightDelta": 20
+      }
+    },
+    {
       "name": "reallygoodemails-fall-in-love-with-feeling-good",
       "provider": "reallygoodemails",
       "url": "https://reallygoodemails.com/emails/fall-in-love-with-feeling-good",
@@ -1487,6 +1707,28 @@
       "contentMd5": "0f1fee0d34e078832d6bdbf969c9f920",
       "retainedInRepo": false,
       "lastRun": null
+    },
+    {
+      "name": "reallygoodemails-follow-ando-for-the-latest-contests-sweepstakes-and-climate-action-news",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/follow-ando-for-the-latest-contests-sweepstakes-and-climate-action-news",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-follow-ando-for-the-latest-contests-sweepstakes-and-climate-action-news.html",
+      "htmlMd5": "747577a2fa4cbce6a0d2b9d8cef63808",
+      "htmlBytes": 39199,
+      "assetCount": 16,
+      "assetBytes": 1920121,
+      "assetManifestMd5": "fcf5deab7f52108d374201ac20e852f3",
+      "contentMd5": "cc2982acffead15eb0b4a3767d3e4539",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:04:14.368Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P2",
+        "reason": "text position/wrap mismatch",
+        "diffPercent": "8.69%",
+        "heightDelta": -1
+      }
     },
     {
       "name": "reallygoodemails-from-hormone-health-to-sexual-wellness",
@@ -1757,6 +1999,28 @@
       "lastRun": null
     },
     {
+      "name": "reallygoodemails-meet-the-latest-bethell",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/meet-the-latest-bethell",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-meet-the-latest-bethell.html",
+      "htmlMd5": "3026b54d18b10e1661a1e9329fd530dc",
+      "htmlBytes": 89059,
+      "assetCount": 6,
+      "assetBytes": 4498901,
+      "assetManifestMd5": "e122c67574d597600ad372c3d9e39a2e",
+      "contentMd5": "f91b35ffaded55c4429d013a91cd6a78",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:04:14.368Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P1",
+        "reason": "media rectangle mismatch",
+        "diffPercent": "12.04%",
+        "heightDelta": 121
+      }
+    },
+    {
       "name": "reallygoodemails-meet-tracking-that-fits-real-life",
       "provider": "reallygoodemails",
       "url": "https://reallygoodemails.com/emails/meet-tracking-that-fits-real-life",
@@ -1769,6 +2033,28 @@
       "contentMd5": "64fc974c55551b911a317ca5f964553b",
       "retainedInRepo": false,
       "lastRun": null
+    },
+    {
+      "name": "reallygoodemails-new-in-desert-dawn-our-latest-fragrance",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/new-in-desert-dawn-our-latest-fragrance",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-new-in-desert-dawn-our-latest-fragrance.html",
+      "htmlMd5": "6bfac9e6ae336475b51baf094735904b",
+      "htmlBytes": 47047,
+      "assetCount": 10,
+      "assetBytes": 831954,
+      "assetManifestMd5": "d9d4246c9e4e6fa146a2645ffb49137e",
+      "contentMd5": "06a9b55950ee4938724b772c34046d29",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:18:39.339Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P1",
+        "reason": "media rectangle mismatch",
+        "diffPercent": "15.52%",
+        "heightDelta": 19
+      }
     },
     {
       "name": "reallygoodemails-new-our-latest-picks-for-you",
@@ -1804,6 +2090,28 @@
         "reason": "text position/wrap mismatch",
         "diffPercent": "5.08%",
         "heightDelta": 3
+      }
+    },
+    {
+      "name": "reallygoodemails-our-latest-slip-on-is-here-just-in-time-for-social-distancing",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/our-latest-slip-on-is-here-just-in-time-for-social-distancing",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-our-latest-slip-on-is-here-just-in-time-for-social-distancing.html",
+      "htmlMd5": "82c66f6c415f1a59fd216d8d9e5d16f7",
+      "htmlBytes": 79635,
+      "assetCount": 17,
+      "assetBytes": 952409,
+      "assetManifestMd5": "7581af6484be3dba0a31549bedf242e6",
+      "contentMd5": "eb93a02550c30265bd74589b0ba24545",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:04:14.368Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "13.85%",
+        "heightDelta": -22
       }
     },
     {
@@ -1857,6 +2165,50 @@
       "lastRun": null
     },
     {
+      "name": "reallygoodemails-shop-our-latest-women-led-gear-collection",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/shop-our-latest-women-led-gear-collection",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-shop-our-latest-women-led-gear-collection.html",
+      "htmlMd5": "2e96117479f3cfd9e20d09d1a698ee4c",
+      "htmlBytes": 84542,
+      "assetCount": 29,
+      "assetBytes": 1850648,
+      "assetManifestMd5": "12feb6eaa61ec9f6df0cabd2d5083cd1",
+      "contentMd5": "95926c6b0ff2da71d9b84d64a6ade3a7",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:18:39.339Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "6.69%",
+        "heightDelta": 7
+      }
+    },
+    {
+      "name": "reallygoodemails-show-your-support-for-rad-race-with-the-latest-team-jersey",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/show-your-support-for-rad-race-with-the-latest-team-jersey",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-show-your-support-for-rad-race-with-the-latest-team-jersey.html",
+      "htmlMd5": "0b01a7ea4bc6ef61740901c1ff1d75d1",
+      "htmlBytes": 62619,
+      "assetCount": 24,
+      "assetBytes": 2951453,
+      "assetManifestMd5": "d67821c5031fea66827c2643fa9be6d4",
+      "contentMd5": "d9f11c41727fb28439bfcd3aedb5ac67",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:04:14.368Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P3",
+        "reason": "low-risk pixel/raster difference",
+        "diffPercent": "2.04%",
+        "heightDelta": -3
+      }
+    },
+    {
       "name": "reallygoodemails-sneak-away-for-the-day",
       "provider": "reallygoodemails",
       "url": "https://reallygoodemails.com/emails/sneak-away-for-the-day",
@@ -1897,6 +2249,72 @@
       "contentMd5": "df928488c0c92a81ed7791dcccd30f5c",
       "retainedInRepo": false,
       "lastRun": null
+    },
+    {
+      "name": "reallygoodemails-the-latest-from-vidangel",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/the-latest-from-vidangel",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-the-latest-from-vidangel.html",
+      "htmlMd5": "0dd98551b37722229faf4a798ebf183a",
+      "htmlBytes": 57418,
+      "assetCount": 20,
+      "assetBytes": 17345444,
+      "assetManifestMd5": "7026cae48c8cec9d0f18ab705ed0398b",
+      "contentMd5": "108805d3e45e366259527585c5269cf5",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:04:14.368Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P3",
+        "reason": "low-risk pixel/raster difference",
+        "diffPercent": "9.50%",
+        "heightDelta": -10
+      }
+    },
+    {
+      "name": "reallygoodemails-the-latest-news-from-kaiy-panera-bread-kombu-sushi-sake",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/the-latest-news-from-kaiy-panera-bread-kombu-sushi-sake",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-the-latest-news-from-kaiy-panera-bread-kombu-sushi-sake.html",
+      "htmlMd5": "0e1949686ab51517b6b2a1c981b39dff",
+      "htmlBytes": 99546,
+      "assetCount": 9,
+      "assetBytes": 499183,
+      "assetManifestMd5": "ed6159a176eab6e85d73daa36f06c394",
+      "contentMd5": "7ef2f0191a66de33c95de2eee223484a",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:04:14.368Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P1",
+        "reason": "media rectangle mismatch",
+        "diffPercent": "16.86%",
+        "heightDelta": 130
+      }
+    },
+    {
+      "name": "reallygoodemails-the-latest-software-update-from-rivian",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/the-latest-software-update-from-rivian",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-the-latest-software-update-from-rivian.html",
+      "htmlMd5": "cd028feb324fa0c1db788591a327e246",
+      "htmlBytes": 70702,
+      "assetCount": 14,
+      "assetBytes": 161782,
+      "assetManifestMd5": "25a74ae4ce4797975e66f1ece6177a3c",
+      "contentMd5": "47602c469826407869ae163f3e9c1e11",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:18:39.339Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-rerun-20260507-201619",
+        "priority": "P0",
+        "reason": "large height delta (700px)",
+        "diffPercent": "16.28%",
+        "heightDelta": 700
+      }
     },
     {
       "name": "reallygoodemails-the-latest-updates-from-loops",
@@ -1997,6 +2415,28 @@
       "contentMd5": "adad8de66d7b02eda81a18d595c6e357",
       "retainedInRepo": false,
       "lastRun": null
+    },
+    {
+      "name": "reallygoodemails-watch-our-latest-film",
+      "provider": "reallygoodemails",
+      "url": "https://reallygoodemails.com/emails/watch-our-latest-film",
+      "sourcePath": "corpus/reallygoodemails/reallygoodemails-watch-our-latest-film.html",
+      "htmlMd5": "8b31251afb64af812be017b4c99a0b63",
+      "htmlBytes": 47476,
+      "assetCount": 6,
+      "assetBytes": 667854,
+      "assetManifestMd5": "5b7211aee8ae4038eb1658e62eb2e6bd",
+      "contentMd5": "af8d93d143900043ef645f98eebd6d84",
+      "retainedInRepo": false,
+      "lastRun": {
+        "at": "2026-05-08T03:04:14.368Z",
+        "commit": "aa7598e",
+        "workDir": "runs/pipeline-ten-new-20260507-200046",
+        "priority": "P2",
+        "reason": "text coverage mismatch",
+        "diffPercent": "6.79%",
+        "heightDelta": 117
+      }
     },
     {
       "name": "reallygoodemails-webflow-welcome-email",
