@@ -1414,6 +1414,40 @@ fn declared_table_width_resolves_percentage_image_against_table_width() {
 }
 
 #[test]
+fn percentage_image_does_not_expand_declared_table_width() {
+    let layout = layout_for_test(
+        r#"<table align="center" width="600" cellpadding="0" cellspacing="0">
+            <tr><td>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-left:30px solid #700;border-right:30px solid #700">
+                <tr><td><img width="600" height="300" style="display:block;width:100%;height:auto" alt=""></td></tr>
+              </table>
+            </td></tr>
+          </table>"#,
+        800,
+    );
+    let tables: Vec<&LayoutBox> =
+        collect_layouts(&layout, &|child| matches!(child.kind, LayoutKind::Table));
+    let image =
+        find_layout(&layout, |child| matches!(child.kind, LayoutKind::Image(_))).expect("image");
+
+    assert!(
+        (tables[0].rect.width - 600.0).abs() < 0.1,
+        "outer table width: {}",
+        tables[0].rect.width
+    );
+    assert!(
+        (tables[1].rect.width - 600.0).abs() < 0.1,
+        "inner table width: {}",
+        tables[1].rect.width
+    );
+    assert!(
+        (image.rect.width - 540.0).abs() < 0.1,
+        "image width: {}",
+        image.rect.width
+    );
+}
+
+#[test]
 fn declared_table_width_does_not_expand_for_plain_fixed_width_text_cell() {
     let layout = layout_for_test(
         r#"<table align="center" style="width:600px" cellpadding="0" cellspacing="0">

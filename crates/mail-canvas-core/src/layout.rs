@@ -1114,7 +1114,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             style.cell_spacing.max(0.0)
         };
         let table_width = if let Some(width) = style.resolve_width(containing_width) {
-            let declared = style.outer_width_for_declared(width);
+            let declared = table_outer_width_for_declared(&style, width);
             if !can_expand_declared_table_width(&style) {
                 declared
             } else {
@@ -1404,7 +1404,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         let max_table_width = (containing_width - style.margin.horizontal()).max(1.0);
         let table_width = style
             .resolve_width(containing_width)
-            .map(|width| style.outer_width_for_declared(width))
+            .map(|width| table_outer_width_for_declared(&style, width))
             .unwrap_or(max_table_width);
         let table_width = style
             .constrain_outer_width(table_width, containing_width)
@@ -1606,7 +1606,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
         let max_table_width = (containing_width - style.margin.horizontal()).max(1.0);
         let table_width = style
             .resolve_width(containing_width)
-            .map(|width| style.outer_width_for_declared(width))
+            .map(|width| table_outer_width_for_declared(&style, width))
             .unwrap_or(max_table_width);
         let table_width = style
             .constrain_outer_width(table_width, containing_width)
@@ -2384,7 +2384,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                     child_style.cell_spacing.max(0.0)
                 };
                 if let Some(width) = child_style.resolve_width(containing_width) {
-                    let declared = child_style.outer_width_for_declared(width);
+                    let declared = table_outer_width_for_declared(&child_style, width);
                     if !can_expand_declared_table_width(&child_style) {
                         declared
                     } else {
@@ -2561,7 +2561,14 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
             }
 
             let width = if tag == "img" {
-                Some(self.preferred_image_width(&child, &child_style, containing_width))
+                if child_style
+                    .width
+                    .is_some_and(|width| matches!(width, Length::Percent(_)))
+                {
+                    None
+                } else {
+                    Some(self.preferred_image_width(&child, &child_style, containing_width))
+                }
             } else if matches!(child_style.display, Display::Table | Display::InlineTable) {
                 let grid = build_table_grid(&child, self.limits.max_table_cells)?;
                 let spacing = if child_style.border_collapse == BorderCollapse::Collapse {
@@ -2577,7 +2584,7 @@ impl<'a, R: ResourceProvider> LayoutEngine<'a, R> {
                 )?;
                 let declared = child_style
                     .resolve_width(containing_width)
-                    .map(|width| child_style.outer_width_for_declared(width));
+                    .map(|width| table_outer_width_for_declared(&child_style, width));
                 if child_style.width.is_some_and(is_px_length) {
                     Some(declared.map_or(intrinsic, |declared| declared.max(intrinsic)))
                 } else {
@@ -2632,6 +2639,13 @@ fn can_expand_declared_table_width(style: &Style) -> bool {
     !style.table_layout_fixed
         && style.box_sizing == BoxSizing::ContentBox
         && style.width.is_some_and(is_px_length)
+}
+
+fn table_outer_width_for_declared(style: &Style, width: f32) -> f32 {
+    match style.box_sizing {
+        BoxSizing::BorderBox => width,
+        BoxSizing::ContentBox => width.max(style.padding.horizontal() + style.border.horizontal()),
+    }
 }
 
 fn is_px_length(length: Length) -> bool {
