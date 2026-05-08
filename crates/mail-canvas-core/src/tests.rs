@@ -1082,6 +1082,7 @@ fn parses_object_fit_cover() {
 
 #[test]
 fn parses_alpha_color_serializations() {
+    assert_eq!(parse_color("#ABC"), Some(Rgba::rgb(0xaa, 0xbb, 0xcc)));
     assert_eq!(parse_color("#000c"), Some(Rgba::with_alpha(0, 0, 0, 0xcc)));
     assert_eq!(
         parse_color("#11223380"),

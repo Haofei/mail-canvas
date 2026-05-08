@@ -2289,33 +2289,47 @@ pub(crate) fn parse_color_token(value: &str) -> Option<Rgba> {
 }
 
 pub(crate) fn parse_hex_color(hex: &str) -> Option<Rgba> {
+    let bytes = hex.as_bytes();
     match hex.len() {
         3 => {
-            let r = u8::from_str_radix(&hex[0..1].repeat(2), 16).ok()?;
-            let g = u8::from_str_radix(&hex[1..2].repeat(2), 16).ok()?;
-            let b = u8::from_str_radix(&hex[2..3].repeat(2), 16).ok()?;
+            let r = hex_nibble(bytes[0])? * 17;
+            let g = hex_nibble(bytes[1])? * 17;
+            let b = hex_nibble(bytes[2])? * 17;
             Some(Rgba::rgb(r, g, b))
         }
         4 => {
-            let r = u8::from_str_radix(&hex[0..1].repeat(2), 16).ok()?;
-            let g = u8::from_str_radix(&hex[1..2].repeat(2), 16).ok()?;
-            let b = u8::from_str_radix(&hex[2..3].repeat(2), 16).ok()?;
-            let a = u8::from_str_radix(&hex[3..4].repeat(2), 16).ok()?;
+            let r = hex_nibble(bytes[0])? * 17;
+            let g = hex_nibble(bytes[1])? * 17;
+            let b = hex_nibble(bytes[2])? * 17;
+            let a = hex_nibble(bytes[3])? * 17;
             Some(Rgba::with_alpha(r, g, b, a))
         }
         6 => {
-            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+            let r = hex_byte(bytes[0], bytes[1])?;
+            let g = hex_byte(bytes[2], bytes[3])?;
+            let b = hex_byte(bytes[4], bytes[5])?;
             Some(Rgba::rgb(r, g, b))
         }
         8 => {
-            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-            let a = u8::from_str_radix(&hex[6..8], 16).ok()?;
+            let r = hex_byte(bytes[0], bytes[1])?;
+            let g = hex_byte(bytes[2], bytes[3])?;
+            let b = hex_byte(bytes[4], bytes[5])?;
+            let a = hex_byte(bytes[6], bytes[7])?;
             Some(Rgba::with_alpha(r, g, b, a))
         }
+        _ => None,
+    }
+}
+
+fn hex_byte(high: u8, low: u8) -> Option<u8> {
+    Some((hex_nibble(high)? << 4) | hex_nibble(low)?)
+}
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
         _ => None,
     }
 }
@@ -2325,17 +2339,11 @@ pub(crate) fn parse_rgb_function(value: &str) -> Option<Rgba> {
     let end = value.rfind(')')?;
     let body = value[start + 1..end].trim();
     if body.contains(',') {
-        let channels: Vec<&str> = body.split(',').collect();
-        if channels.len() < 3 {
-            return None;
-        }
-        let r = parse_rgb_channel(channels[0])?;
-        let g = parse_rgb_channel(channels[1])?;
-        let b = parse_rgb_channel(channels[2])?;
-        let a = channels
-            .get(3)
-            .and_then(|alpha| parse_alpha_channel(alpha))
-            .unwrap_or(255);
+        let mut channels = body.split(',');
+        let r = parse_rgb_channel(channels.next()?)?;
+        let g = parse_rgb_channel(channels.next()?)?;
+        let b = parse_rgb_channel(channels.next()?)?;
+        let a = channels.next().and_then(parse_alpha_channel).unwrap_or(255);
         return Some(Rgba::with_alpha(r, g, b, a));
     }
 
